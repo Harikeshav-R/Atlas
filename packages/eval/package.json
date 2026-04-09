@@ -1,0 +1,23 @@
+{
+  "name": "@atlas/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "test": "vitest run",
+    "eval": "tsx src/runner.ts",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@atlas/agents": "workspace:*",
+    "@atlas/harness": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "vitest": "^4.1.4"
+  }
+}
