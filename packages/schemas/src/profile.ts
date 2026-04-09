@@ -40,7 +40,7 @@ export const ProfileSchema = z.object({
       remote: z.enum(['remote', 'hybrid', 'onsite', 'any']).default('any'),
       minSalary: z.number().nonnegative().optional(),
     })
-    .default({}),
+    .prefault({ roles: [], locations: [], remote: 'any' }),
 });
 
 export type Profile = z.infer<typeof ProfileSchema>;

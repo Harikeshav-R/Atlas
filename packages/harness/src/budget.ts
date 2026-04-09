@@ -47,16 +47,16 @@ export class BudgetTracker {
   private check(): void {
     const u = this.usage();
     if (u.tokens > this.limits.maxTokens) {
-      throw new AtlasError('BUDGET_EXCEEDED', 'token budget exceeded', u);
+      throw new AtlasError('BUDGET_EXCEEDED', 'token budget exceeded', { ...u });
     }
     if (u.costMilliUsd > this.limits.maxCostMilliUsd) {
-      throw new AtlasError('BUDGET_EXCEEDED', 'cost budget exceeded', u);
+      throw new AtlasError('BUDGET_EXCEEDED', 'cost budget exceeded', { ...u });
     }
     if (u.wallClockMs > this.limits.maxWallClockMs) {
-      throw new AtlasError('BUDGET_EXCEEDED', 'wall-clock budget exceeded', u);
+      throw new AtlasError('BUDGET_EXCEEDED', 'wall-clock budget exceeded', { ...u });
     }
     if (u.toolCalls > this.limits.maxToolCalls) {
-      throw new AtlasError('BUDGET_EXCEEDED', 'tool-call budget exceeded', u);
+      throw new AtlasError('BUDGET_EXCEEDED', 'tool-call budget exceeded', { ...u });
     }
   }
 }
