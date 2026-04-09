@@ -140,3 +140,6 @@ vite.config.ts.timestamp-*
 
 # Idea
 .idea/
+
+# Turborepo
+.turbo/
