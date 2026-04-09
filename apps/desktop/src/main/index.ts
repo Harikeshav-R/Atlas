@@ -10,7 +10,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    show: false,
+    show: true,
     webPreferences: {
       preload: resolve(here, '../preload/index.js'),
       contextIsolation: true,
@@ -20,24 +20,39 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   });
 
+  const isDev = !!process.env.ELECTRON_RENDERER_URL;
+  const csp = isDev
+    ? "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: ws: http://localhost:* http://127.0.0.1:*; img-src 'self' data: blob:; connect-src 'self' ws: http://localhost:* http://127.0.0.1:*"
+    : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+
   session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
     cb({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-        ],
+        'Content-Security-Policy': [csp],
       },
     });
   });
 
-  if (process.env.ELECTRON_RENDERER_URL) {
-    await win.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    await win.loadFile(resolve(here, '../renderer/index.html'));
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    log.error({ code, desc, url }, 'renderer failed to load');
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    log.error({ details }, 'renderer process gone');
+  });
+
+  try {
+    if (isDev) {
+      log.info({ url: process.env.ELECTRON_RENDERER_URL }, 'loading dev renderer');
+      await win.loadURL(process.env.ELECTRON_RENDERER_URL!);
+      win.webContents.openDevTools({ mode: 'detach' });
+    } else {
+      await win.loadFile(resolve(here, '../renderer/index.html'));
+    }
+  } catch (err) {
+    log.error({ err }, 'loadURL/loadFile threw');
   }
 
-  win.once('ready-to-show', () => win.show());
   return win;
 }
 
