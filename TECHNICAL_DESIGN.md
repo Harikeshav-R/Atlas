@@ -1377,7 +1377,7 @@ The scrubbing pipeline is conservative: when in doubt, redact. Users can inspect
 
 ### Setup
 
-- Node 20+ (check with a `engines` field and a preinstall check).
+- Node 25+ (check with a `engines` field and a preinstall check).
 - pnpm 9+.
 - A `.tool-versions` file for `asdf` users.
 - A `./scripts/setup.sh` that installs dependencies, rebuilds native modules, and runs initial DB migrations.
