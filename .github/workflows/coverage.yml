@@ -30,4 +30,4 @@ jobs:
 
       - name: Run Tests with Coverage
         # This assumes Vitest coverage is configured, otherwise it runs standard tests
-        run: pnpm run test --coverage
+        run: pnpm run test -- --coverage

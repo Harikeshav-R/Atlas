@@ -27,12 +27,20 @@
   "devDependencies": {
     "@changesets/cli": "^2.30.0",
     "@types/node": "^25.5.2",
+    "@vitest/coverage-v8": "^4.1.4",
+    "esbuild": "^0.25.12",
     "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",
     "jiti": "^2.6.1",
     "prettier": "^3.8.1",
     "turbo": "^2.9.5",
     "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.1"
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^4.1.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.25.0"
+    }
   }
 }
