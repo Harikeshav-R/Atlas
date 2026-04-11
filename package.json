@@ -28,7 +28,7 @@
     "@changesets/cli": "^2.30.0",
     "@types/node": "^25.6.0",
     "@vitest/coverage-v8": "^4.1.4",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.0",
     "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",
     "jiti": "^2.6.1",
