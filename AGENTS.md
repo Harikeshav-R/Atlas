@@ -1,4 +1,4 @@
-# AGENTS.md
+# CLAUDE.md
 
 > Instructions for coding agents (Claude Code, Cursor, Gemini CLI, etc.) working on Project Atlas. Read this file at the start of every session. Follow it.
 
@@ -8,17 +8,57 @@
 
 **Project Atlas** is a local-first, open-source Electron desktop app that uses AI agents to discover, evaluate, and apply to jobs on the user's behalf. It's fully agentic: the LLM orchestrates work by calling MCP tools; deterministic code is the tool library, not the orchestrator. Everything runs on the user's machine with BYO-API-key. The product is for non-technical white-collar job seekers — UI quality and safety are non-negotiable.
 
-## Source of truth
+---
 
-There are three documents in the project root. **Read them in order the first time you touch the project:**
+## Documentation structure — read this carefully
 
-1. **`product-plan.md`** — The high-level product: vision, features, user flows, phases, risks. Start here to understand *what* we're building and *why*.
-2. **`technical-design.md`** — The detailed engineering design: architecture, harness, MCP servers, database schema, subsystems, conventions, build/release. This is where *how* questions are answered.
-3. **`CLAUDE.md`** (this file) — The rules and patterns you follow on every task.
+The technical documentation is split across multiple files in `docs/` so that you only load the documents relevant to your current task. **Loading every doc on every task wastes context and degrades your performance. Load selectively.**
 
-**When `technical-design.md` and `CLAUDE.md` disagree with anything else (including your own instincts), they win.** When those two disagree with each other, stop and ask.
+### Always load on every session
 
-Never invent architecture that isn't in these docs. If you think something is missing or wrong, surface it as a question — do not silently improvise.
+1. **`product-plan.md`** (project root) — The high-level product: vision, features, user flows, phases, risks. Read once at the start of any session to understand _what_ Atlas is and _why_ it exists. You don't need to re-read it every task, but you should have it in context for the first task of a session.
+2. **`CLAUDE.md`** (this file) — The rules and patterns you follow on every task.
+3. **`docs/00-index.md`** — The router. Tells you which technical documents to load for which task.
+4. **`docs/01-foundations.md`** — Repo layout, runtime topology, cross-cutting conventions (IDs, time, errors, logging, validation, naming). **Every other technical doc assumes these conventions. Load this on every task that touches code.**
+
+### Load based on the task
+
+The other documents are loaded _only when the task requires them_. Use the table in `docs/00-index.md` to decide. The full document map:
+
+| #   | File                                                    | Scope                                                                                                                                                                |
+| --- | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 02  | `docs/02-agent-runtime.md`                              | Agent harness, Model Router, MCP tool library, tool design, prompt engineering, budgets, traces, approval flow, prompt injection defense, agent evaluation framework |
+| 03  | `docs/03-persistence.md`                                | Database schema, migrations, file system layout, secrets management                                                                                                  |
+| 04  | `docs/04-app-shell.md`                                  | Electron security hardening, IPC layer, worker pool, renderer architecture                                                                                           |
+| 05  | `docs/05-subsystems-discovery-evaluation-generation.md` | Canonical profile schema, discovery, evaluation, CV/cover letter generation                                                                                          |
+| 06  | `docs/06-subsystems-application-stories-negotiation.md` | Application engine, story bank, negotiation, scheduler, notifications                                                                                                |
+| 07  | `docs/07-delivery.md`                                   | Testing, build/packaging/release, observability, dev workflow, PDF pipeline, first-run UX, runbook                                                                   |
+| 08  | `docs/08-reference.md`                                  | Quick-reference tables, out-of-scope list, glossary                                                                                                                  |
+
+### Loading protocol
+
+When you receive a task, follow this protocol:
+
+1. **Identify the task type.** Is it adding a tool, building a UI screen, fixing a bug in the Application Agent, writing a migration, etc.?
+2. **Open `docs/00-index.md`** and find the matching row in the "Task → required reading" lookup table.
+3. **Load the documents listed there**, plus `docs/01-foundations.md` (always), plus `product-plan.md` if you don't already have product context.
+4. **Do not load other docs unless you discover during the task that you need them.** If you find a cross-reference like "see `docs/03-persistence.md §4`," decide based on whether the missing context actually matters for what you're doing — load it if it does, skip if it doesn't.
+5. **Never load all eight docs at once "just to be safe."** That defeats the purpose of the split and burns your context budget.
+
+### Document priority when in conflict
+
+- **`technical-design` documents and `CLAUDE.md` win over your training intuitions.** When you think "I would normally do X" and a doc says "do Y," do Y.
+- **`CLAUDE.md` wins over technical docs only on the rules listed below as "Non-negotiable rules."** For everything else, technical docs are the detailed authority.
+- **When two technical docs disagree**, stop and ask. Don't pick one silently.
+- **When you think a doc is wrong or missing something**, surface it as a question. Do not improvise.
+
+### Cross-references
+
+Documents reference each other as `docs/02-agent-runtime.md §11` (read as "section 11 of the agent runtime doc"). When you see a cross-reference:
+
+- If the referenced section is essential to your task, load that doc.
+- If it's tangential, skip it.
+- Section numbers are stable within a doc; if you find a stale cross-reference, fix it in the same PR you're working on.
 
 ---
 
@@ -61,33 +101,21 @@ pnpm db:generate          # generate Drizzle migration from schema change
 
 ---
 
-## Repo layout (summary)
+## Where code lives (quick map)
 
-See `technical-design.md` Section 1 for the full breakdown. Quick map:
+Full layout in `docs/01-foundations.md §1`. Quick map:
 
-```
-apps/desktop/             Electron app (main + preload + renderer)
-packages/
-  harness/                Agent harness — the loop, budget, trace, scoping
-  model-router/           Vercel AI SDK wrapper with stage-based routing
-  schemas/                Shared Zod schemas — single source of truth for types
-  mcp-atlas-*/            Internal MCP servers (db, profile, fs, web, user, stories, cost)
-  agents/                 Agent definitions (prompts, tool allowlists, configs)
-  db/                     Drizzle schema, migrations, query helpers
-  pdf-templates/          CV and cover letter HTML/CSS templates
-  scrapers/               Per-platform scraping adapters
-  eval/                   Agent eval runner and fixtures
-  shared/                 Logger, errors, IDs, time utilities
-```
+- **Business logic an agent calls** → an MCP tool in `packages/mcp-atlas-*`
+- **Pure utility used across packages** → `packages/shared`
+- **Types used across packages** → `packages/schemas` (as Zod schemas)
+- **Persistence** → `packages/db`
+- **Renderer code** → `apps/desktop/renderer`
+- **Agent definitions** → `packages/agents`
+- **Per-platform scraping** → `packages/scrapers`
+- **PDF templates** → `packages/pdf-templates`
+- **Eval fixtures** → `packages/eval`
 
-**Where code should live:**
-- Business logic that an agent calls → an MCP tool in the appropriate `mcp-atlas-*` package.
-- Pure utility used across packages → `packages/shared`.
-- Types used across packages → `packages/schemas` (as Zod schemas; TS types are inferred).
-- Persistence → `packages/db`.
-- Anything the renderer shows → `apps/desktop/renderer`.
-
-**If you don't know where something belongs, ask.** Don't create new top-level packages without approval.
+If you don't know where something belongs, ask. Don't create new top-level packages without approval.
 
 ---
 
@@ -97,19 +125,19 @@ These are invariants. Violating them breaks the product. No task is worth breaki
 
 ### Architecture
 
-1. **The LLM is the orchestrator; code is the tool library.** Do not write hard-coded pipelines that replace agent reasoning. If a capability belongs to an agent, implement it as an MCP tool the agent calls. If it's deterministic plumbing (scheduling, dedup, DB writes), it's code.
-2. **Everything the agent touches is an MCP tool.** No direct TypeScript function exposure to agents. All capabilities go through the MCP tool layer with Zod-validated args and returns.
-3. **The agent harness owns enforcement.** Budgets, tool scoping, approval gating, kill switches, untrusted-content wrapping, and trace capture happen in the harness, not in prompts. Never "trust the prompt" to enforce a rule.
-4. **Workers never touch SQLite.** `better-sqlite3` is synchronous and not process-safe. Workers request data from the main process via IPC. See `technical-design.md` Section 20.
-5. **Prompts live in code, not in the database.** System prompts are TypeScript template strings in `packages/agents/src/{agent-name}/prompt.ts`.
-6. **The canonical profile is YAML, derived by the Profile Parser Agent.** Don't parse CVs in other parts of the code. Don't add alternative profile formats.
+1. **The LLM is the orchestrator; code is the tool library.** Do not write hard-coded pipelines that replace agent reasoning. If a capability belongs to an agent, implement it as an MCP tool the agent calls. If it's deterministic plumbing (scheduling, dedup, DB writes), it's code. Details: `docs/02-agent-runtime.md`.
+2. **Everything the agent touches is an MCP tool.** No direct TypeScript function exposure to agents. All capabilities go through the MCP tool layer with Zod-validated args and returns. Details: `docs/02-agent-runtime.md §6`.
+3. **The agent harness owns enforcement.** Budgets, tool scoping, approval gating, kill switches, untrusted-content wrapping, and trace capture happen in the harness, not in prompts. Never "trust the prompt" to enforce a rule. Details: `docs/02-agent-runtime.md §1`.
+4. **Workers never touch SQLite.** `better-sqlite3` is synchronous and not process-safe. Workers request data from the main process via IPC. Details: `docs/04-app-shell.md §3`.
+5. **Prompts live in code, not in the database.** System prompts are TypeScript template strings in `packages/agents/src/{agent-name}/prompt.ts`. Details: `docs/02-agent-runtime.md §8`.
+6. **The canonical profile is YAML, derived by the Profile Parser Agent.** Don't parse CVs in other parts of the code. Don't add alternative profile formats. Details: `docs/05-subsystems-discovery-evaluation-generation.md §1`.
 
 ### Safety
 
-7. **Irreversible actions are gated on `atlas-user.request_approval`.** Any tool that submits a form, deletes a file, or sends something irreversibly must be a gated tool. The harness enforces this via the trace's approval events. Read `technical-design.md` Section 11 and 12 before touching the Application Agent or any submission tool.
-8. **All scraped/untrusted content must be wrapped in `<untrusted_content>` markers** before reaching the model. Use the `wrapUntrusted` helper. Never put scraped text into a system prompt.
-9. **Secrets never appear in logs, traces, or error messages.** Use `keytar` for storage. The log layer has a scrubbing middleware; never disable it. If you're writing a log line that might contain a secret, redact it explicitly.
-10. **Electron security hardening is not optional.** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP. The renderer never loads remote content. Review `technical-design.md` Section 18 before touching Electron config.
+7. **Irreversible actions are gated on `atlas-user.request_approval`.** Any tool that submits a form, deletes a file, or sends something irreversibly must be a gated tool. The harness enforces this via the trace's approval events. **Read `docs/02-agent-runtime.md §11` and `§12` before touching the Application Agent or any submission tool.**
+8. **All scraped/untrusted content must be wrapped in `<untrusted_content>` markers** before reaching the model. Use the `wrapUntrusted` helper. Never put scraped text into a system prompt. Details: `docs/02-agent-runtime.md §12`.
+9. **Secrets never appear in logs, traces, or error messages.** Use `keytar` for storage. The log layer has a scrubbing middleware; never disable it. Details: `docs/03-persistence.md §4`.
+10. **Electron security hardening is not optional.** `contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`, strict CSP. The renderer never loads remote content. Details: `docs/04-app-shell.md §1`.
 
 ### Code quality
 
@@ -123,16 +151,18 @@ These are invariants. Violating them breaks the product. No task is worth breaki
 ### Testing
 
 17. **New code ships with tests.** Unit tests for pure logic, integration tests for anything crossing a module boundary, agent eval fixtures for agent behavior changes.
-18. **Mock LLMs, mock network, never mock SQLite.** Tests use a real `better-sqlite3` against an in-memory or temp-file DB.
+18. **Mock LLMs, mock network, never mock SQLite.** Tests use a real `better-sqlite3` against an in-memory or temp-file DB. Details: `docs/07-delivery.md §1`.
 19. **If you change a prompt, add or update an eval fixture.** Silent prompt changes are the most expensive bugs in this project.
 
 ---
 
 ## Common tasks
 
-Step-by-step patterns for the most frequent kinds of change. Follow these exactly.
+Step-by-step patterns for the most frequent kinds of change. Each task lists the docs you should load before starting.
 
 ### Add a new MCP tool to an existing internal server
+
+**Load:** `docs/01-foundations.md`, `docs/02-agent-runtime.md`
 
 1. Open the server package (e.g., `packages/mcp-atlas-db`).
 2. Define Zod schemas for the tool's arguments and return value in `src/tools/{tool-name}.schemas.ts`.
@@ -142,7 +172,8 @@ Step-by-step patterns for the most frequent kinds of change. Follow these exactl
 6. If the tool is used by an existing agent, update that agent's tool allowlist in `packages/agents`.
 7. Run `pnpm typecheck && pnpm test`.
 
-**Tool design checklist** (from `technical-design.md` Section 7):
+**Tool design checklist** (full version: `docs/02-agent-runtime.md §7`):
+
 - Small and unambiguous — one responsibility per tool.
 - Descriptive name (`get_profile`, not `profile`).
 - Argument names match the domain (`listing_id`, not `params`).
@@ -153,29 +184,35 @@ Step-by-step patterns for the most frequent kinds of change. Follow these exactl
 
 ### Add a new agent
 
+**Load:** `docs/01-foundations.md`, `docs/02-agent-runtime.md`, plus the relevant subsystem doc (`docs/05-...` or `docs/06-...`) if the agent belongs to one.
+
 1. Create `packages/agents/src/{agent-name}/` with:
    - `prompt.ts` — the system prompt as a template string with placeholders.
    - `schemas.ts` — Zod schemas for the agent's input and expected output.
    - `definition.ts` — the agent definition object (name, prompt, tool allowlist, default model stage, fallback model, budgets, schemas).
    - `index.ts` — exports the definition.
 2. Register the agent in `packages/agents/src/registry.ts`.
-3. The prompt follows the six-section structure from `technical-design.md` Section 8: Identity → Goal → Tools → Constraints → Output → Untrusted Content Stanza. Do not deviate.
+3. The prompt follows the six-section structure from `docs/02-agent-runtime.md §8`: Identity → Goal → Tools → Constraints → Output → Untrusted Content Stanza. Do not deviate.
 4. Keep the tool allowlist **small** — 5–8 tools max. Weaker models get confused by large toolboxes.
-5. Write at least three eval fixtures in `packages/eval/fixtures/{agent-name}/`: a happy-path case, an edge case, and a case that should fail gracefully. Include `expected.yaml` with deterministic assertions (no-forbidden-tool-called, budget-not-exceeded, output-schema-valid) and LLM-as-judge assertions for content quality.
+5. Write at least three eval fixtures in `packages/eval/fixtures/{agent-name}/`: a happy-path case, an edge case, and a case that should fail gracefully. Include `expected.yaml` with deterministic assertions and LLM-as-judge assertions for content quality.
 6. Run `pnpm eval -- --suite {agent-name}` and verify the suite passes against the reference model.
-7. Update `technical-design.md` Appendix A table if this is a new primary agent.
+7. Update the agents table in `docs/08-reference.md §1` if this is a new primary agent.
 
 ### Add a database migration
+
+**Load:** `docs/01-foundations.md`, `docs/03-persistence.md`
 
 1. Modify the Drizzle schema in `packages/db/src/schema/{table}.ts`.
 2. Run `pnpm db:generate` — this produces a new SQL migration file in `packages/db/migrations/`.
 3. Inspect the generated SQL. Migrations must be **forward-only** and **idempotent** where possible. Never write a down migration.
-4. If the change is destructive (rename, drop, type change), split it across multiple releases: add new column → backfill → switch reads → switch writes → drop old in a later release. See `technical-design.md` Section 15.
+4. If the change is destructive (rename, drop, type change), split it across multiple releases: add new column → backfill → switch reads → switch writes → drop old in a later release. Details: `docs/03-persistence.md §2`.
 5. Test the migration on a copy of a populated dev DB: `pnpm db:migrate` with a backup ready.
 6. Add a test that verifies the post-migration schema and data integrity.
 7. **Never delete user data in a migration.** If a feature is removed, stop writing to its tables and leave them in place.
 
 ### Add an IPC channel
+
+**Load:** `docs/01-foundations.md`, `docs/04-app-shell.md`
 
 1. Define input and output Zod schemas in `packages/schemas/src/ipc/{namespace}.ts`.
 2. Add the channel name to the IPC channel registry. Name it `namespace.verb` (e.g., `runs.kill`, `profile.import`).
@@ -186,6 +223,8 @@ Step-by-step patterns for the most frequent kinds of change. Follow these exactl
 
 ### Add a UI screen
 
+**Load:** `docs/01-foundations.md`, `docs/04-app-shell.md`, plus the subsystem doc for whatever the screen is about.
+
 1. Create a new route file under `apps/desktop/renderer/src/routes/`. TanStack Router picks it up via file-based routing.
 2. Build the screen with shadcn/ui components only. Never introduce a new component library.
 3. Use TanStack Query for anything coming from the main process. Use Zustand only for UI-local cross-component state.
@@ -195,33 +234,49 @@ Step-by-step patterns for the most frequent kinds of change. Follow these exactl
 
 ### Add a scraper adapter
 
+**Load:** `docs/01-foundations.md`, `docs/05-subsystems-discovery-evaluation-generation.md`
+
 1. Create `packages/scrapers/src/{platform}/` with `list.ts`, `fetch.ts`, `canonicalize.ts`, and `adapter.ts` exporting the uniform interface.
-2. Implement against the platform's public API where possible (Greenhouse, Ashby, Lever all have structured endpoints — see `technical-design.md` Section 23).
+2. Implement against the platform's public API where possible. See `docs/05-subsystems-discovery-evaluation-generation.md §2` for known platform endpoints.
 3. Save HTML fixtures in `packages/scrapers/src/{platform}/__fixtures__/` for tests.
 4. Write unit tests that parse the fixtures and verify the expected shape.
 5. Register the adapter in `packages/scrapers/src/registry.ts` so the scheduler can dispatch to it.
 6. Update the `sources` table schema if the adapter needs new config fields.
 
+### Touching the Application Agent or approval flow
+
+**Load:** `docs/01-foundations.md`, `docs/02-agent-runtime.md` (carefully — especially §11 and §12), `docs/06-subsystems-application-stories-negotiation.md`
+
+This is the highest-stakes part of the codebase. Mistakes are user-visible and potentially embarrassing.
+
+1. Read `docs/02-agent-runtime.md §11` (approval flow) end to end before writing any code.
+2. Read `docs/02-agent-runtime.md §12` (prompt injection defense) for the threat model.
+3. Read `docs/06-subsystems-application-stories-negotiation.md §1` for the Application Agent's specific design.
+4. **If your task involves bypassing or relaxing any safety check, stop and ask.** Do not "improve" the approval flow without explicit approval.
+5. Add eval fixtures specifically targeting the safety properties: "agent never calls submit without approval," "agent honors the kill switch," "agent terminates cleanly on unexpected page."
+
+### Add a PDF template
+
+**Load:** `docs/01-foundations.md`, `docs/07-delivery.md`, `docs/05-subsystems-discovery-evaluation-generation.md §4`
+
+1. Create `packages/pdf-templates/{template-id}/` with `template.html`, `styles.css`, `fonts/`, and `manifest.json`.
+2. The template is Mustache; **no embedded logic.** All computation happens in the generator agent.
+3. Define the expected context schema in `manifest.json` (Zod-compatible structure).
+4. Bundle fonts as woff2 in the template's `fonts/` directory.
+5. Test rendering with a fixture context: `pnpm test:integration -- pdf-templates`.
+6. Add a preview image to the template directory for the Settings picker.
+
 ---
 
 ## Testing expectations
 
-Read `technical-design.md` Section 31 for the full strategy. Summary:
+Full strategy in `docs/07-delivery.md §1`. Quick rules:
 
-- **Unit tests** for pure functions, schemas, tool implementations with mocked deps. Target >80% coverage on `shared`, `schemas`, `db`, and tool implementations.
-- **Integration tests** for MCP servers in-process, scraper adapters against fixtures, the harness loop with a fake Model Router, IPC handlers with a test DB.
+- **Unit tests** for pure functions and schemas — target >80% coverage on `shared`, `schemas`, `db`, and tool implementations.
+- **Integration tests** for module-boundary code (MCP servers, scrapers, IPC handlers, the harness loop).
 - **Agent eval tests** for agent behavior. Mandatory for prompt or agent definition changes.
 - **E2E tests** with Playwright Test for renderer flows. Use a mock Model Router.
 - **Never test against real LLM providers in CI.** Always mock. The eval runner is the one exception — it runs against pinned models and is invoked manually or on release branches.
-
-**Mocking rules:**
-- LLMs → mocked (always)
-- Network → mocked with fixtures
-- Playwright → mocked for unit, real browser against local test server for e2e
-- SQLite → never mocked, always real (in-memory or temp file)
-- Filesystem → never mocked, always temp directory
-- Time → mocked via `@atlas/shared/time`
-- keytar → mocked (cross-test pollution in real keychain is painful)
 
 ---
 
@@ -239,6 +294,7 @@ Checklist. Run through all of these:
 - [ ] No `console.log`, no `any`, no unhandled promise rejections
 - [ ] No secrets, API keys, or PII in committed fixtures
 - [ ] Commit message follows Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`, `test:`)
+- [ ] Cross-references in docs you touched are still accurate
 
 ---
 
@@ -259,11 +315,12 @@ Hard "no" list. If you find yourself wanting to do any of these, stop and ask.
 - **Never write a tool that takes an arbitrary URL and sends arbitrary data to it.** That's a data exfiltration primitive.
 - **Never submit a form in auto-apply code without verifying there's a matching approval event in the trace.** The harness enforces this; don't try to work around it.
 - **Never commit real scraped HTML containing a real person's name, email, or resume as a test fixture.** Use synthetic data or scrubbed fixtures.
-- **Never invent a new internal MCP server without checking `technical-design.md` Section 6.** The seven servers there are the complete set for v1.
+- **Never invent a new internal MCP server without checking `docs/02-agent-runtime.md §6`.** The seven servers there are the complete set for v1.
 - **Never make the renderer a Node process ("just temporarily, for testing").** It is never a Node process. Not even once.
 - **Never use React class components, Redux, or MobX.** The stack is function components + TanStack Query + Zustand.
 - **Never add a new top-level dependency without justifying it.** Every new npm package is a maintenance and security burden. Prefer writing 50 lines over adding a 200-KB dependency.
 - **Never change a migration file after it's been committed.** Write a new migration that fixes the problem.
+- **Never load all eight technical docs at once "to be safe."** Use the lookup table in `docs/00-index.md` and load only what the task needs.
 
 ---
 
@@ -271,16 +328,18 @@ Hard "no" list. If you find yourself wanting to do any of these, stop and ask.
 
 Do not guess on any of these. Surface a question instead.
 
-- The task requires adding architecture not described in `technical-design.md`.
+- The task requires adding architecture not described in the technical docs.
 - The task requires changing a core invariant from the "Non-negotiable rules" section above.
 - The task touches the Application Agent, submission tools, or the approval flow — these are high-stakes and mistakes are user-visible.
 - The task requires a new MCP server, a new agent, or a new provider adapter.
 - The task involves a third-party API not currently integrated.
 - The task asks you to store something sensitive (credentials, tokens, PII) and you're not sure how.
 - The task requires relaxing a safety rule "just this once."
-- The product plan and the technical design disagree on the right approach.
+- The product plan and a technical doc disagree on the right approach.
+- Two technical docs disagree with each other.
 - You find a bug in a core component (harness, IPC, DB) while working on something else.
 - The existing tests don't cover the area you're modifying and you can't tell what correct behavior should be.
+- You're not sure which docs to load for the task.
 
 A question is always cheaper than a rollback.
 
@@ -290,7 +349,7 @@ A question is always cheaper than a rollback.
 
 - **Small files.** 300 lines is a smell, 500 lines is a bug. Refactor before you can't.
 - **Pure functions where possible.** Side effects live at clearly-marked boundaries (IPC handlers, MCP tool bodies, DB writes, PDF renders).
-- **Comments explain *why*, not *what*.** If the code is unclear, rewrite it instead of commenting it.
+- **Comments explain _why_, not _what_.** If the code is unclear, rewrite it instead of commenting it.
 - **No clever code.** Boring, obvious code wins. This project will be maintained by a solo dev over years.
 - **No premature abstractions.** Wait for three concrete examples before extracting a shared abstraction.
 - **Early returns over nested ifs.**
@@ -320,7 +379,9 @@ Before submitting code that does any of these, verify:
 
 ---
 
-## Glossary (quick reference — full version in `technical-design.md` Appendix C)
+## Glossary (quick reference)
+
+Full glossary in `docs/08-reference.md §6`. Top hits:
 
 - **Agent** — a declarative config (prompt + tool allowlist + model stage + budgets) instantiated per run by the harness.
 - **Harness** — the code that runs agents with budget enforcement, trace capture, tool scoping, and approval gating.
@@ -340,4 +401,4 @@ Before submitting code that does any of these, verify:
 
 This project's success depends on agentic behavior working reliably and safely. The rules above are not bureaucracy — every one exists because the alternative is a bug that the user experiences as "the app submitted my application to the wrong job" or "I spent $200 on Claude overnight." Keep the user safe and in control. When in doubt, default to caution, approval, and asking.
 
-If anything in this file is unclear, surface it as a question in your response instead of guessing. Guessing on Atlas is expensive.
+If anything in this file or the technical docs is unclear, surface it as a question in your response instead of guessing. Guessing on Atlas is expensive.
