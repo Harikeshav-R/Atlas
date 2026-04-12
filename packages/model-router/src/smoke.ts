@@ -32,7 +32,7 @@ async function main() {
     console.log('\nResponse:', text);
     console.log('Usage:', usage);
     
-    const cost = router.calculateCost(modelId, usage.promptTokens, usage.completionTokens);
+    const cost = router.calculateCost(modelId, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
     console.log('Calculated Cost:', cost.toFixed(6), 'USD');
     console.log('\n✅ Test passed!');
   } catch (error: any) {
