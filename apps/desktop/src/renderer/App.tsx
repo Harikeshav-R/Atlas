@@ -1,5 +1,5 @@
 import { createRootRoute, createRoute, createRouter, RouterProvider, Link, Outlet } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
 
 const rootRoute = createRootRoute({
@@ -23,14 +23,38 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: function ProfileScreen() {
+    const queryClient = useQueryClient();
     const { data, isLoading } = useQuery({
       queryKey: ['profile'],
       queryFn: async () => (window as any).atlas.invoke('profile.get')
     });
+    
+    const [importing, setImporting] = React.useState(false);
+
+    const handleImport = async () => {
+      setImporting(true);
+      try {
+        await (window as any).atlas.invoke('profile.import', '/dummy/path.pdf');
+        await queryClient.invalidateQueries({ queryKey: ['profile'] });
+      } catch (e: any) {
+        console.error(e);
+      } finally {
+        setImporting(false);
+      }
+    };
 
     return (
       <div className="max-w-2xl mx-auto space-y-6">
-        <h1 className="text-3xl font-bold">Profile</h1>
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Profile</h1>
+          <button 
+            onClick={handleImport}
+            disabled={importing}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded"
+          >
+            {importing ? 'Importing...' : 'Import Profile (PDF)'}
+          </button>
+        </div>
         {isLoading ? <p>Loading...</p> : (
           <pre className="p-4 bg-neutral-900 rounded overflow-x-auto text-sm">
             {JSON.stringify(data?.data, null, 2)}

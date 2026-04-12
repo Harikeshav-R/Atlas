@@ -1,16 +1,45 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import * as fs from 'node:fs/promises';
+import { resolve } from 'node:path';
+import pdf from 'pdf-parse';
 
 export interface FsServerDeps {
-  /** Absolute sandbox roots. All paths passed to tools must resolve within one of these. */
-  readonly sandboxRoots: readonly string[];
+  readonly allowedRoots: string[];
 }
 
-/**
- * `atlas-fs` MCP server — sandboxed read/write for documents and attachments.
- * Resolves every path against `sandboxRoots` and rejects traversal attempts.
- */
-export function createServer(_deps: FsServerDeps): McpServer {
+export function createServer(deps: FsServerDeps): McpServer {
   const server = new McpServer({ name: 'atlas-fs', version: '0.0.0' });
-  // TODO: read_file, write_file, list_dir, delete_file (gated)
+
+  function checkSandbox(path: string) {
+    const resolved = resolve(path);
+    if (!deps.allowedRoots.some(root => resolved.startsWith(root))) {
+      throw new Error(`Path ${path} is outside of allowed roots`);
+    }
+    return resolved;
+  }
+
+  server.tool(
+    'read',
+    'Read a file from the sandboxed filesystem. Supports text and PDF extraction.',
+    { path: z.string() },
+    async ({ path }) => {
+      try {
+        const safePath = checkSandbox(path);
+        
+        if (safePath.toLowerCase().endsWith('.pdf')) {
+          const dataBuffer = await fs.readFile(safePath);
+          const data = await pdf(dataBuffer);
+          return { content: [{ type: 'text', text: data.text }] };
+        }
+        
+        const text = await fs.readFile(safePath, 'utf-8');
+        return { content: [{ type: 'text', text }] };
+      } catch (e: any) {
+        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      }
+    }
+  );
+
   return server;
 }

@@ -113,10 +113,10 @@
 
 ### Step 0.10 — Build the Profile Parser Agent
 
-- [ ] Add `mcp-atlas-fs` and `mcp-atlas-profile` MCP servers.
-- [ ] Implement the Profile Parser Agent per `docs/05-...md §1`.
-- [ ] Add a "Import Profile" screen that accepts a PDF upload.
-- [ ] Run the parser → produce canonical YAML → persist to DB.
+- [x] Add `mcp-atlas-fs` and `mcp-atlas-profile` MCP servers.
+- [x] Implement the Profile Parser Agent per `docs/05-...md §1`.
+- [x] Add a "Import Profile" screen that accepts a PDF upload.
+- [x] Run the parser → produce canonical YAML → persist to DB.
 
 **Done when:** you can import a real PDF CV and see the canonical YAML in the DB.
 

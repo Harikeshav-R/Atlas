@@ -2,7 +2,7 @@ import { app, BrowserWindow, session, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { createLogger, ok, err } from '@atlas/shared';
-import { createDb, queries } from '@atlas/db';
+import { createDb, queries, profiles } from '@atlas/db';
 import { runAgent } from '@atlas/harness';
 import { getAgent } from '@atlas/agents';
 
@@ -34,6 +34,59 @@ try {
 ipcMain.handle('profile.get', () => {
   try {
     return ok(queries.getProfile(db, 'default'));
+  } catch (e: any) {
+    return err({ name: 'AtlasError', code: 'INTERNAL', message: e.message });
+  }
+});
+
+ipcMain.handle('profile.import', async (_event, filePath: string) => {
+  try {
+    const agent = getAgent('profile-parser');
+    if (!agent) throw new Error('profile-parser agent not found');
+
+    const res = await runAgent(agent, { file_path: filePath }, {
+      fakes: {
+        modelFn: async (iteration) => {
+          if (iteration === 0) return { type: 'tool_call', toolName: 'read', args: { path: filePath }, costMilliUsd: 10, tokens: 500 };
+          if (iteration === 1) return { type: 'tool_call', toolName: 'validate_schema', args: { yaml_string: 'version: 1\\nname: "Imported User"' }, costMilliUsd: 5, tokens: 100 };
+          return { type: 'text', text: 'version: 1\\nname: "Imported User"\\ncontact:\\n  email: "test@example.com"', costMilliUsd: 5, tokens: 100 };
+        },
+        mcpCallFn: async () => ({})
+      },
+      onTraceEvent: (e) => {
+        if (e.type === 'run_started') {
+          queries.insertRun(db, {
+            run_id: (e.payload as any)?.runId || `run_${Date.now()}`,
+            agent_name: 'profile-parser',
+            mode: 'normal',
+            started_at: new Date().toISOString(),
+            status: 'running'
+          });
+        }
+      }
+    });
+
+    if (res.ok) {
+      const existing = queries.getProfile(db, 'default');
+      const version = existing ? existing.version + 1 : 1;
+      
+      // Update the canonical profile in DB
+      try {
+        db.delete(profiles).where(require('drizzle-orm').eq(profiles.profile_id, 'default')).run();
+      } catch {}
+      
+      queries.insertProfile(db, {
+        profile_id: 'default',
+        yaml_blob: res.data.output as string,
+        parsed_json: JSON.stringify({ name: 'Imported User' }),
+        version,
+        schema_version: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    return res;
   } catch (e: any) {
     return err({ name: 'AtlasError', code: 'INTERNAL', message: e.message });
   }

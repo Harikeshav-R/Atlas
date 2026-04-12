@@ -12,10 +12,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@atlas/db": "workspace:*",
     "@atlas/schemas": "workspace:*",
     "@atlas/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "yaml": "^2.8.3",
     "zod": "^4.3.6"
   },
-  "devDependencies": { "vitest": "^4.1.4" }
+  "devDependencies": {
+    "vitest": "^4.1.4"
+  }
 }
