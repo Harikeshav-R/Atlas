@@ -56,11 +56,11 @@
 
 ### Step 0.4 — Build `@atlas/db` with Phase 0 tables
 
-- [ ] Install `better-sqlite3` and Drizzle.
-- [ ] Define schemas for `profiles`, `runs`, `trace_events`, `approvals`, `costs`, `model_pricing`, `audit_log`. (Other tables come in later phases.)
-- [ ] Generate the initial migration.
-- [ ] Write a `createDb(path)` helper and query helpers for the above tables.
-- [ ] Unit tests against an in-memory DB.
+- [x] Install `better-sqlite3` and Drizzle.
+- [x] Define schemas for `profiles`, `runs`, `trace_events`, `approvals`, `costs`, `model_pricing`, `audit_log`. (Other tables come in later phases.)
+- [x] Generate the initial migration.
+- [x] Write a `createDb(path)` helper and query helpers for the above tables.
+- [x] Unit tests against an in-memory DB.
 
 **Done when:** migrations apply cleanly, helpers work, tests pass.
 
