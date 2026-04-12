@@ -4,7 +4,7 @@ import { runs } from './runs.ts';
 export const traceEvents = sqliteTable('trace_events', {
   event_id: text('event_id').primaryKey(),
   run_id: text('run_id').notNull().references(() => runs.run_id, { onDelete: 'cascade' }),
-  parent_event_id: text('parent_event_id').references((): unknown => traceEvents.event_id, { onDelete: 'cascade' }),
+  parent_event_id: text('parent_event_id').references((): any => traceEvents.event_id, { onDelete: 'cascade' }),
   step_index: integer('step_index').notNull(),
   timestamp: text('timestamp').notNull(),
   type: text('type').notNull(),

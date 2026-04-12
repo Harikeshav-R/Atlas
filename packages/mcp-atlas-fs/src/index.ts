@@ -2,8 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
 import { resolve } from 'node:path';
-import * as pdfImport from 'pdf-parse';
-const pdf = (pdfImport as unknown as { default: typeof pdfImport }).default || pdfImport;
+import { PDFParse } from 'pdf-parse';
 
 export interface FsServerDeps {
   readonly allowedRoots: string[];
@@ -32,7 +31,8 @@ export function createServer(deps: FsServerDeps): McpServer {
         
         if (safePath.toLowerCase().endsWith('.pdf')) {
           const dataBuffer = await fs.readFile(safePath);
-          const data = await pdf(dataBuffer);
+          const parser = new PDFParse({ data: dataBuffer });
+          const data = await parser.getText();
           return { content: [{ type: 'text', text: data.text }] };
         }
         
