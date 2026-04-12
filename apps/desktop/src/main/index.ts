@@ -11,7 +11,17 @@ const here = dirname(fileURLToPath(import.meta.url));
 
 // Phase 0 DB setup
 const dbPath = resolve(app.getPath('userData'), 'atlas.sqlite');
-const db = createDb(dbPath);
+
+// Resolve migrations path
+let migrationsPath: string;
+if (app.isPackaged) {
+  migrationsPath = resolve(process.resourcesPath, 'migrations');
+} else {
+  // In dev, we can point directly to the source package
+  migrationsPath = resolve(here, '../../../../packages/db/migrations');
+}
+
+const db = createDb(dbPath, migrationsPath);
 
 // Seed fake profile
 try {

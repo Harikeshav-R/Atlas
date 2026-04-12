@@ -26,6 +26,13 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false
     },
+    "extraResources": [
+      {
+        "from": "../../packages/db/migrations",
+        "to": "migrations",
+        "filter": ["**/*"]
+      }
+    ],
     "files": [
       "out/**/*",
       "package.json"

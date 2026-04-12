@@ -19,10 +19,12 @@ export function openDb(opts: OpenDbOptions): AtlasDb {
   return drizzle(sqlite, { schema });
 }
 
-export function createDb(path: string): AtlasDb {
+export function createDb(path: string, migrationsFolder?: string): AtlasDb {
   const db = openDb({ path });
-  const here = dirname(fileURLToPath(import.meta.url));
-  const migrationsFolder = resolve(here, '../migrations');
+  if (!migrationsFolder) {
+    const here = dirname(fileURLToPath(import.meta.url));
+    migrationsFolder = resolve(here, '../migrations');
+  }
   migrate(db, { migrationsFolder });
   return db;
 }
