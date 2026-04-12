@@ -5,6 +5,7 @@ export const IpcChannels = {
   profileImport: 'profile.import',
   profileGet: 'profile.get',
   runsStart: 'runs.start',
+  runsGet: 'runs.get',
   runsKill: 'runs.kill',
   runsList: 'runs.list',
   approvalsRespond: 'approvals.respond',

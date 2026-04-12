@@ -103,11 +103,11 @@
 
 ### Step 0.9 — Build the Electron shell
 
-- [ ] `apps/desktop` with `electron-vite` setup.
-- [ ] Main process: hardened per `docs/04-app-shell.md §1`. Loads DB, spawns MCP servers, registers harness.
-- [ ] Preload script exposing a tiny IPC surface (`runs.start`, `runs.get`).
-- [ ] Renderer: React + Tailwind + TanStack Router with two screens — Profile viewer (read-only) and Trace viewer.
-- [ ] Wire "Run echo-profile agent" button → IPC → harness → trace renders in Trace viewer.
+- [x] `apps/desktop` with `electron-vite` setup.
+- [x] Main process: hardened per `docs/04-app-shell.md §1`. Loads DB, spawns MCP servers, registers harness.
+- [x] Preload script exposing a tiny IPC surface (`runs.start`, `runs.get`).
+- [x] Renderer: React + Tailwind + TanStack Router with two screens — Profile viewer (read-only) and Trace viewer.
+- [x] Wire "Run echo-profile agent" button → IPC → harness → trace renders in Trace viewer.
 
 **Done when:** you click a button in the app window, the agent runs, and you see the full trace update live.
 
