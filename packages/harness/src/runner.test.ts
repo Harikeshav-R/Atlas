@@ -41,7 +41,7 @@ describe('Agent Harness', () => {
     let callCount = 0;
     const opts: RunOptions = {
       fakes: {
-        modelFn: async (iteration, lastErr) => {
+        modelFn: async (_iteration, lastErr) => {
           if (callCount === 0) {
             callCount++;
             return { type: 'tool_call', toolName: 'bad_tool', args: {}, costMilliUsd: 0, tokens: 0 };
@@ -68,7 +68,7 @@ describe('Agent Harness', () => {
 
     const opts: RunOptions = {
       fakes: {
-        modelFn: async (iteration, lastErr) => {
+        modelFn: async (_iteration, lastErr) => {
           if (callCount === 0) {
             callCount++;
             return { type: 'tool_call', toolName: 'echo', args: { wrong_field: 123 }, costMilliUsd: 0, tokens: 0 };

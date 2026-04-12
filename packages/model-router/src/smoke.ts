@@ -10,7 +10,7 @@ async function main() {
 
   const router = new ModelRouter({
     openRouterApiKey: apiKey,
-    getPricing: (modelId) => {
+    getPricing: (_modelId) => {
       // Mock pricing for the smoke test
       return {
         prompt_token_cost_usd_per_million: 0.1,
@@ -35,9 +35,10 @@ async function main() {
     const cost = router.calculateCost(modelId, usage.inputTokens ?? 0, usage.outputTokens ?? 0);
     console.log('Calculated Cost:', cost.toFixed(6), 'USD');
     console.log('\n✅ Test passed!');
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error('\n❌ Test failed!');
-    console.error(error.message);
+    console.error(message);
     process.exit(1);
   }
 }

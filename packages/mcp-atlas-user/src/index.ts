@@ -64,8 +64,9 @@ export function createServer(deps: UserServerDeps): McpServer {
         return {
           content: [{ type: 'text', text: JSON.stringify(result) }]
         };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );
@@ -80,8 +81,9 @@ export function createServer(deps: UserServerDeps): McpServer {
       try {
         const response = await deps.askUser(question);
         return { content: [{ type: 'text', text: response }] };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );
@@ -96,8 +98,9 @@ export function createServer(deps: UserServerDeps): McpServer {
       try {
         deps.notifyUser(message, level);
         return { content: [{ type: 'text', text: 'Notification sent' }] };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );

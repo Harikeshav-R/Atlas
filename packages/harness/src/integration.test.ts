@@ -64,7 +64,10 @@ describe('Harness to MCP Integration', () => {
         mcpCallFn: async (toolName, args) => {
           const result = await dbClient.callTool({ name: toolName, arguments: args as Record<string, unknown> });
           const content = result.content as Array<{ type: string; text?: string }>;
-          if (result.isError) throw new Error(String(content[0]?.type === 'text' ? content[0].text : 'error'));
+          if (result.isError) {
+            const firstContent = content[0];
+            throw new Error(String(firstContent?.type === 'text' ? firstContent.text : 'error'));
+          }
           return result;
         },
       }
@@ -80,7 +83,7 @@ describe('Harness to MCP Integration', () => {
     // Also test mcp-atlas-user
     const userServer = createUserServer({
       db,
-      requestUserApproval: async (id) => ({ status: 'granted' }),
+      requestUserApproval: async (_id) => ({ status: 'granted' }),
       askUser: async () => 'yes',
       notifyUser: () => {}
     });

@@ -18,13 +18,14 @@ export function createServer(deps: ProfileServerDeps): McpServer {
       description: 'Read the canonical user profile',
       inputSchema: { include_private: z.boolean().default(false) }
     },
-    async ({ include_private }) => {
+    async ({ include_private: _include_private }) => {
       try {
         const profile = queries.getProfile(deps.db, 'default');
         if (!profile) return { isError: true, content: [{ type: 'text', text: 'Profile not found' }] };
         return { content: [{ type: 'text', text: profile.yaml_blob }] };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );
@@ -43,8 +44,9 @@ export function createServer(deps: ProfileServerDeps): McpServer {
           return { content: [{ type: 'text', text: `Invalid schema: ${result.error.message}` }] };
         }
         return { content: [{ type: 'text', text: 'Valid schema' }] };
-      } catch (e: any) {
-        return { content: [{ type: 'text', text: `YAML parse error: ${e.message}` }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { content: [{ type: 'text', text: `YAML parse error: ${message}` }] };
       }
     }
   );

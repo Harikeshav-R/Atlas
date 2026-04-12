@@ -2,6 +2,16 @@ import { createRootRoute, createRoute, createRouter, RouterProvider, Link, Outle
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
 
+interface AtlasApi {
+  invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
+}
+
+declare global {
+  interface Window {
+    atlas: AtlasApi;
+  }
+}
+
 const rootRoute = createRootRoute({
   component: () => (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex h-screen overflow-hidden">
@@ -26,7 +36,7 @@ const indexRoute = createRoute({
     const queryClient = useQueryClient();
     const { data, isLoading } = useQuery({
       queryKey: ['profile'],
-      queryFn: async () => (window as any).atlas.invoke('profile.get')
+      queryFn: async () => window.atlas.invoke('profile.get')
     });
     
     const [importing, setImporting] = React.useState(false);
@@ -34,9 +44,9 @@ const indexRoute = createRoute({
     const handleImport = async () => {
       setImporting(true);
       try {
-        await (window as any).atlas.invoke('profile.import', '/dummy/path.pdf');
+        await window.atlas.invoke('profile.import', '/dummy/path.pdf');
         await queryClient.invalidateQueries({ queryKey: ['profile'] });
-      } catch (e: any) {
+      } catch (e: unknown) {
         console.error(e);
       } finally {
         setImporting(false);
@@ -69,16 +79,17 @@ const traceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/trace',
   component: function TraceScreen() {
-    const [result, setResult] = React.useState<any>(null);
+    const [result, setResult] = React.useState<unknown>(null);
     const [loading, setLoading] = React.useState(false);
 
     const runAgent = async () => {
       setLoading(true);
       try {
-        const res = await (window as any).atlas.invoke('runs.start', 'echo-profile');
+        const res = await window.atlas.invoke('runs.start', 'echo-profile');
         setResult(res);
-      } catch (e: any) {
-        setResult({ error: e.message });
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        setResult({ error: message });
       } finally {
         setLoading(false);
       }

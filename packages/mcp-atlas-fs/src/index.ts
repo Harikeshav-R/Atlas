@@ -3,7 +3,7 @@ import { z } from 'zod';
 import * as fs from 'node:fs/promises';
 import { resolve } from 'node:path';
 import * as pdfImport from 'pdf-parse';
-const pdf = (pdfImport as any).default || pdfImport;
+const pdf = (pdfImport as unknown as { default: typeof pdfImport }).default || pdfImport;
 
 export interface FsServerDeps {
   readonly allowedRoots: string[];
@@ -38,8 +38,9 @@ export function createServer(deps: FsServerDeps): McpServer {
         
         const text = await fs.readFile(safePath, 'utf-8');
         return { content: [{ type: 'text', text }] };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );

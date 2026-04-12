@@ -21,7 +21,7 @@ export type ModelResponse =
 export interface TraceEvent {
   type: 'run_started' | 'model_call' | 'tool_call' | 'error' | 'run_finished';
   timestamp: string;
-  payload?: any;
+  payload?: unknown;
 }
 
 export interface RunResult {
@@ -100,8 +100,9 @@ export async function runAgent(
           const toolResult = await options.fakes.mcpCallFn(response.toolName, response.args);
           onTrace({ type: 'tool_call', timestamp: new Date(now()).toISOString(), payload: { toolName: response.toolName, result: toolResult } });
           lastError = undefined; 
-        } catch (e: any) {
-          lastError = `Tool execution failed: ${e.message}`;
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          lastError = `Tool execution failed: ${message}`;
           onTrace({ type: 'error', timestamp: new Date(now()).toISOString(), payload: { error: lastError } });
         }
       }
@@ -112,15 +113,16 @@ export async function runAgent(
     onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { status: 'failed', reason: 'max_iterations' } });
     return ok({ runId: ctx.runId, output: null, status: 'failed' });
 
-  } catch (e: any) {
+  } catch (e: unknown) {
     if (e instanceof AtlasError && e.code === 'BUDGET_EXCEEDED') {
       const isTimeout = e.message.includes('wall-clock');
       const status = isTimeout ? 'timeout' : 'budget_exhausted';
       onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { status } });
       return ok({ runId: ctx.runId, output: null, status });
     }
-    onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { status: 'failed', error: e.message } });
-    const eJson = e instanceof AtlasError ? e.toJSON() : { name: 'AtlasError', code: 'INTERNAL', message: e.message } as AtlasErrorJSON;
+    const message = e instanceof Error ? e.message : String(e);
+    onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { status: 'failed', error: message } });
+    const eJson = e instanceof AtlasError ? e.toJSON() : { name: 'AtlasError', code: 'INTERNAL', message } as AtlasErrorJSON;
     return err(eJson);
   }
 }

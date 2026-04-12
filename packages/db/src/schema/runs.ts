@@ -2,7 +2,7 @@ import { sqliteTable, text, integer, index, real } from 'drizzle-orm/sqlite-core
 
 export const runs = sqliteTable('runs', {
   run_id: text('run_id').primaryKey(),
-  parent_run_id: text('parent_run_id').references((): any => runs.run_id, { onDelete: 'set null' }),
+  parent_run_id: text('parent_run_id').references((): unknown => runs.run_id, { onDelete: 'set null' }),
   agent_name: text('agent_name').notNull(),
   mode: text('mode').notNull(), // normal | dry-run | eval
   input_hash: text('input_hash'),

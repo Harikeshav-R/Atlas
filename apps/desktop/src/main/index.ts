@@ -5,6 +5,7 @@ import { createLogger, ok, err } from '@atlas/shared';
 import { createDb, queries, profiles } from '@atlas/db';
 import { runAgent } from '@atlas/harness';
 import { getAgent } from '@atlas/agents';
+import { eq } from 'drizzle-orm';
 
 const log = createLogger('main');
 const here = dirname(fileURLToPath(import.meta.url));
@@ -44,8 +45,9 @@ try {
 ipcMain.handle('profile.get', () => {
   try {
     return ok(queries.getProfile(db, 'default'));
-  } catch (e: any) {
-    return err({ name: 'AtlasError', code: 'INTERNAL', message: e.message });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
   }
 });
 
@@ -65,8 +67,9 @@ ipcMain.handle('profile.import', async (_event, filePath: string) => {
       },
       onTraceEvent: (e) => {
         if (e.type === 'run_started') {
+          const payload = e.payload as { runId?: string } | undefined;
           queries.insertRun(db, {
-            run_id: (e.payload as any)?.runId || `run_${Date.now()}`,
+            run_id: payload?.runId || `run_${Date.now()}`,
             agent_name: 'profile-parser',
             mode: 'normal',
             started_at: new Date().toISOString(),
@@ -82,7 +85,7 @@ ipcMain.handle('profile.import', async (_event, filePath: string) => {
       
       // Update the canonical profile in DB
       try {
-        db.delete(profiles).where(require('drizzle-orm').eq(profiles.profile_id, 'default')).run();
+        db.delete(profiles).where(eq(profiles.profile_id, 'default')).run();
       } catch {}
       
       queries.insertProfile(db, {
@@ -97,8 +100,9 @@ ipcMain.handle('profile.import', async (_event, filePath: string) => {
     }
 
     return res;
-  } catch (e: any) {
-    return err({ name: 'AtlasError', code: 'INTERNAL', message: e.message });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
   }
 });
 
@@ -120,8 +124,9 @@ ipcMain.handle('runs.start', async (_event, agentName: string) => {
         log.info({ type: e.type }, 'Trace event');
         if (e.type === 'run_started') {
           // ensure run row exists
+          const payload = e.payload as { runId?: string } | undefined;
           queries.insertRun(db, {
-            run_id: (e.payload as any)?.runId || `run_${Date.now()}`,
+            run_id: payload?.runId || `run_${Date.now()}`,
             agent_name: agentName,
             mode: 'normal',
             started_at: new Date().toISOString(),
@@ -132,8 +137,9 @@ ipcMain.handle('runs.start', async (_event, agentName: string) => {
     });
 
     return res;
-  } catch (e: any) {
-    return err({ name: 'AtlasError', code: 'INTERNAL', message: e.message });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
   }
 });
 

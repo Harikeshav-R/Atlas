@@ -60,7 +60,10 @@ describe('echo-profile agent', () => {
         mcpCallFn: async (toolName, args) => {
           const result = await dbClient.callTool({ name: toolName, arguments: args as Record<string, unknown> });
           const content = result.content as Array<{ type: string; text?: string }>;
-          if (result.isError) throw new Error(String(content[0]?.text || 'error'));
+          if (result.isError) {
+            const firstContent = content[0];
+            throw new Error(String(firstContent?.text || 'error'));
+          }
           return result;
         },
         mcpTools: new Map([

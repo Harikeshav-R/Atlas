@@ -9,7 +9,8 @@ describe('ModelRouter Phase 0', () => {
     
     const model = router.getModel('triage');
     expect(model).toBeDefined();
-    expect((model as any).provider).toContain('openrouter');
+    expect(model).toHaveProperty('provider');
+    expect((model as { provider: string }).provider).toContain('openrouter');
   });
 
   it('calculates cost from pricing lookup', () => {

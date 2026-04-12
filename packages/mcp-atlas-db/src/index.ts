@@ -29,8 +29,9 @@ export function createServer(deps: DbServerDeps): McpServer {
         return {
           content: [{ type: 'text', text: JSON.stringify(profile) }]
         };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );
@@ -67,8 +68,9 @@ export function createServer(deps: DbServerDeps): McpServer {
           duration_ms: args.duration_ms
         });
         return { content: [{ type: 'text', text: 'Success' }] };
-      } catch (e: any) {
-        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : String(e);
+        return { isError: true, content: [{ type: 'text', text: message }] };
       }
     }
   );
