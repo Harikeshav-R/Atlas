@@ -20,6 +20,10 @@
     "@atlas/db": "workspace:*",
     "@atlas/mcp-atlas-db": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "tsx": "^4.19.0",
     "vitest": "^4.1.4"
+  }
+}
+4"
   }
 }
