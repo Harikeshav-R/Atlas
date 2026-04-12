@@ -1,12 +1,100 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { newId } from '@atlas/shared';
+import type { AtlasDb } from '@atlas/db';
+import { queries } from '@atlas/db';
+
+export interface UserServerDeps {
+  readonly db: AtlasDb;
+  readonly requestUserApproval: (approvalId: string) => Promise<{ status: string, responseNote?: string }>;
+  readonly askUser: (question: string) => Promise<string>;
+  readonly notifyUser: (message: string, level: string) => void;
+}
 
 /**
  * `atlas-user` MCP server — human-in-the-loop primitives.
  * `request_approval` is the canonical gating mechanism for irreversible
  * actions. See technical-design.md Section 11.
  */
-export function createServer(): McpServer {
+export function createServer(deps: UserServerDeps): McpServer {
   const server = new McpServer({ name: 'atlas-user', version: '0.0.0' });
-  // TODO: ask_user, request_approval, notify_user
+
+  server.tool(
+    'request_approval',
+    'Request user approval for a gated action',
+    {
+      run_id: z.string(),
+      scope: z.string(),
+      title: z.string(),
+      description: z.string(),
+      screenshot_path: z.string().optional(),
+      options: z.array(z.string())
+    },
+    async (args) => {
+      const approval_id = newId('approval');
+      const now = new Date().toISOString();
+      const timeout_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      
+      queries.insertApproval(deps.db, {
+        approval_id,
+        run_id: args.run_id,
+        scope: args.scope,
+        title: args.title,
+        description: args.description,
+        screenshot_path: args.screenshot_path,
+        options_json: JSON.stringify(args.options),
+        status: 'pending',
+        requested_at: now,
+        timeout_at
+      });
+
+      try {
+        const result = await deps.requestUserApproval(approval_id);
+        
+        queries.updateApprovalResponse(
+          deps.db, 
+          approval_id, 
+          result.status, 
+          JSON.stringify(result), 
+          new Date().toISOString()
+        );
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result) }]
+        };
+      } catch (e: any) {
+        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      }
+    }
+  );
+
+  server.tool(
+    'ask',
+    'Ask the user a question',
+    { question: z.string() },
+    async ({ question }) => {
+      try {
+        const response = await deps.askUser(question);
+        return { content: [{ type: 'text', text: response }] };
+      } catch (e: any) {
+        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      }
+    }
+  );
+
+  server.tool(
+    'notify',
+    'Send a desktop notification to the user',
+    { message: z.string(), level: z.string().default('info') },
+    async ({ message, level }) => {
+      try {
+        deps.notifyUser(message, level);
+        return { content: [{ type: 'text', text: 'Notification sent' }] };
+      } catch (e: any) {
+        return { isError: true, content: [{ type: 'text', text: e.message }] };
+      }
+    }
+  );
+
   return server;
 }

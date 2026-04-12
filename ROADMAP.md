@@ -75,10 +75,10 @@
 
 ### Step 0.6 — Build `mcp-atlas-db` and `mcp-atlas-user`
 
-- [ ] Use `@modelcontextprotocol/sdk` to build both servers as stdio-transport MCP servers.
-- [ ] `atlas-db`: minimal tools — `get_profile`, `write_trace_event`.
-- [ ] `atlas-user`: `request_approval` (blocking on a promise bound to an approval ID), `ask`, `notify`.
-- [ ] Integration test: harness → MCP client → server → DB write, end to end.
+- [x] Use `@modelcontextprotocol/sdk` to build both servers as stdio-transport MCP servers.
+- [x] `atlas-db`: minimal tools — `get_profile`, `write_trace_event`.
+- [x] `atlas-user`: `request_approval` (blocking on a promise bound to an approval ID), `ask`, `notify`.
+- [x] Integration test: harness → MCP client → server → DB write, end to end.
 
 **Done when:** the harness can call these servers and the DB reflects the result.
 

@@ -235,6 +235,15 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@atlas/db':
+        specifier: workspace:*
+        version: link:../db
+      '@atlas/mcp-atlas-db':
+        specifier: workspace:*
+        version: link:../mcp-atlas-db
+      '@atlas/mcp-atlas-user':
+        specifier: workspace:*
+        version: link:../mcp-atlas-user
       vitest:
         specifier: ^4.1.4
         version: 4.1.4(@opentelemetry/api@1.9.0)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.4)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0))
@@ -327,6 +336,9 @@ importers:
 
   packages/mcp-atlas-user:
     dependencies:
+      '@atlas/db':
+        specifier: workspace:*
+        version: link:../db
       '@atlas/shared':
         specifier: workspace:*
         version: link:../shared
