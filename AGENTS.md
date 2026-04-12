@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 > Instructions for coding agents (Claude Code, Cursor, Gemini CLI, etc.) working on Project Atlas. Read this file at the start of every session. Follow it.
 
@@ -16,10 +16,11 @@ The technical documentation is split across multiple files in `docs/` so that yo
 
 ### Always load on every session
 
-1. **`product-plan.md`** (project root) — The high-level product: vision, features, user flows, phases, risks. Read once at the start of any session to understand _what_ Atlas is and _why_ it exists. You don't need to re-read it every task, but you should have it in context for the first task of a session.
-2. **`CLAUDE.md`** (this file) — The rules and patterns you follow on every task.
-3. **`docs/00-index.md`** — The router. Tells you which technical documents to load for which task.
-4. **`docs/01-foundations.md`** — Repo layout, runtime topology, cross-cutting conventions (IDs, time, errors, logging, validation, naming). **Every other technical doc assumes these conventions. Load this on every task that touches code.**
+1. **`PRODUCT_PLAN.md`** (project root) — The high-level product: vision, features, user flows, phases, risks. Read once at the start of any session to understand _what_ Atlas is and _why_ it exists. You don't need to re-read it every task, but you should have it in context for the first task of a session.
+2. **`ROADMAP.md`** (project root) — The sequential execution plan. Tells you _what phase the project is in_, _what step is currently being worked on_, and _what comes next_. Load this at the start of every session and whenever you're unsure whether something is in scope for the current step. See "Using the roadmap" below.
+3. **`AGENTS.md`** (this file) — The rules and patterns you follow on every task.
+4. **`docs/00-index.md`** — The router. Tells you which technical documents to load for which task.
+5. **`docs/01-foundations.md`** — Repo layout, runtime topology, cross-cutting conventions (IDs, time, errors, logging, validation, naming). **Every other technical doc assumes these conventions. Load this on every task that touches code.**
 
 ### Load based on the task
 
@@ -41,14 +42,14 @@ When you receive a task, follow this protocol:
 
 1. **Identify the task type.** Is it adding a tool, building a UI screen, fixing a bug in the Application Agent, writing a migration, etc.?
 2. **Open `docs/00-index.md`** and find the matching row in the "Task → required reading" lookup table.
-3. **Load the documents listed there**, plus `docs/01-foundations.md` (always), plus `product-plan.md` if you don't already have product context.
+3. **Load the documents listed there**, plus `docs/01-foundations.md` (always), plus `PRODUCT_PLAN.md` if you don't already have product context.
 4. **Do not load other docs unless you discover during the task that you need them.** If you find a cross-reference like "see `docs/03-persistence.md §4`," decide based on whether the missing context actually matters for what you're doing — load it if it does, skip if it doesn't.
 5. **Never load all eight docs at once "just to be safe."** That defeats the purpose of the split and burns your context budget.
 
 ### Document priority when in conflict
 
-- **`technical-design` documents and `CLAUDE.md` win over your training intuitions.** When you think "I would normally do X" and a doc says "do Y," do Y.
-- **`CLAUDE.md` wins over technical docs only on the rules listed below as "Non-negotiable rules."** For everything else, technical docs are the detailed authority.
+- **`technical-design` documents and `AGENTS.md` win over your training intuitions.** When you think "I would normally do X" and a doc says "do Y," do Y.
+- **`AGENTS.md` wins over technical docs only on the rules listed below as "Non-negotiable rules."** For everything else, technical docs are the detailed authority.
 - **When two technical docs disagree**, stop and ask. Don't pick one silently.
 - **When you think a doc is wrong or missing something**, surface it as a question. Do not improvise.
 
@@ -59,6 +60,52 @@ Documents reference each other as `docs/02-agent-runtime.md §11` (read as "sect
 - If the referenced section is essential to your task, load that doc.
 - If it's tangential, skip it.
 - Section numbers are stable within a doc; if you find a stale cross-reference, fix it in the same PR you're working on.
+
+---
+
+## Using the roadmap
+
+`ROADMAP.md` at the project root is the sequential execution plan: six phases (0 through 5), each broken into numbered steps with checkboxes and definition-of-done criteria. **It is the source of truth for "what should I be building right now."** Treat it as authoritative for scope and sequencing decisions.
+
+### At the start of every session
+
+1. **Open `ROADMAP.md` and find the current step.** The current step is the lowest-numbered unchecked box in the lowest-numbered unfinished phase. If the user tells you a specific step to work on, that takes precedence.
+2. **Read the step's "definition of done" carefully.** Don't start work until you understand what "done" looks like. The definition of done is the spec.
+3. **Check the phase gate** at the end of the current phase. Gates are hard stops — the project does not advance to the next phase until gate criteria are met. If you notice gate criteria slipping during your work (e.g., a safety eval is failing in Phase 3), surface it immediately.
+4. **Load the technical docs the step implies**, using `docs/00-index.md`'s lookup table.
+
+### During a task
+
+- **Stay inside the current step's scope.** If the roadmap says Step 1.3 is "Build one scraper adapter end-to-end" and you notice the Evaluation Agent (Step 1.5) could be improved, do not drift into Step 1.5. Note the observation, finish Step 1.3, and return later.
+- **Do not build features from later phases** even if they look easier or you have "spare" context. Later phases depend on earlier phases being solid, and out-of-order work creates debt.
+- **If the roadmap and a technical doc disagree on scope** — for example, a technical doc describes a table that the roadmap says is added in a later step — the roadmap wins on sequencing. The technical doc describes the _final state_; the roadmap describes _when to get there_.
+- **If you're about to add a new package, table, agent, MCP server, or screen that isn't mentioned in the current step's definition of done**, stop and ask. Scope creep in a solo spare-time project is the most common reason projects die.
+
+### Marking steps done
+
+- **A step is done only when its definition of done is fully met**, not when "most of it works." Partial completion is worse than visible incompletion.
+- When you finish a step: check the box in `ROADMAP.md`, commit the change as part of the PR (`docs: complete roadmap step X.Y`), and note any follow-ups discovered during the step in a brief comment next to the checkbox or as a GitHub issue.
+- **Do not check a box you didn't personally verify.** If the user tells you a step is done, verify before marking it.
+
+### When the roadmap itself needs updating
+
+The roadmap is a living document. Update it when:
+
+- A step turns out to need sub-steps that weren't obvious when it was written.
+- A dependency between steps is discovered (e.g., Step 2.3 actually needs something from Step 2.5 done first).
+- A step becomes obsolete because of an earlier design change.
+- The phase gate criteria need to tighten or loosen based on what you learned.
+
+**Do not add new phases, new features, or move work between phases without explicit user approval.** Refining _within_ a step is fine; restructuring the plan is not.
+
+### Relationship to the other always-loaded docs
+
+- **`PRODUCT_PLAN.md`** tells you _what_ Atlas is and _why_ each feature exists. Use it to understand intent.
+- **`ROADMAP.md`** tells you _when_ to build each feature and in _what order_. Use it to decide what to work on now.
+- **`AGENTS.md`** (this file) tells you _how_ to build things — the rules, conventions, and prohibitions that apply regardless of which feature you're building.
+- **`docs/*.md`** tell you the _detailed design_ of each subsystem. Load selectively per `docs/00-index.md`.
+
+If these four kinds of docs conflict: on _what to build right now_, roadmap wins. On _how to build it_, AGENTS.md wins. On _what the feature is supposed to do_, PRODUCT_PLAN.md wins. On _technical detail of the design_, the specific technical doc wins.
 
 ---
 
@@ -321,6 +368,8 @@ Hard "no" list. If you find yourself wanting to do any of these, stop and ask.
 - **Never add a new top-level dependency without justifying it.** Every new npm package is a maintenance and security burden. Prefer writing 50 lines over adding a 200-KB dependency.
 - **Never change a migration file after it's been committed.** Write a new migration that fixes the problem.
 - **Never load all eight technical docs at once "to be safe."** Use the lookup table in `docs/00-index.md` and load only what the task needs.
+- **Never build ahead of the roadmap.** If the current step is 1.3, do not start on 1.5 "because you have time." Later phases depend on earlier phases being solid; out-of-order work creates debt that compounds.
+- **Never check a roadmap box you didn't verify personally.** "The user said it's done" is not verification.
 
 ---
 
@@ -329,6 +378,8 @@ Hard "no" list. If you find yourself wanting to do any of these, stop and ask.
 Do not guess on any of these. Surface a question instead.
 
 - The task requires adding architecture not described in the technical docs.
+- The task asks you to build something that isn't part of the current roadmap step's definition of done, or that belongs to a later phase.
+- The task requires a roadmap change (new step, reordered steps, new phase, modified phase gate).
 - The task requires changing a core invariant from the "Non-negotiable rules" section above.
 - The task touches the Application Agent, submission tools, or the approval flow — these are high-stakes and mistakes are user-visible.
 - The task requires a new MCP server, a new agent, or a new provider adapter.
@@ -399,6 +450,6 @@ Full glossary in `docs/08-reference.md §6`. Top hits:
 
 ## Final note
 
-This project's success depends on agentic behavior working reliably and safely. The rules above are not bureaucracy — every one exists because the alternative is a bug that the user experiences as "the app submitted my application to the wrong job" or "I spent $200 on Claude overnight." Keep the user safe and in control. When in doubt, default to caution, approval, and asking.
+This project's success depends on agentic behavior working reliably and safely, and on shipping incrementally rather than trying to build everything at once. The rules above are not bureaucracy — every one exists because the alternative is a bug that the user experiences as "the app submitted my application to the wrong job" or "I spent $200 on Claude overnight" or "the project stalled at 60% done because too many things were half-built." Keep the user safe and in control. Keep the project moving one roadmap step at a time. When in doubt, default to caution, approval, and asking.
 
-If anything in this file or the technical docs is unclear, surface it as a question in your response instead of guessing. Guessing on Atlas is expensive.
+If anything in this file, the technical docs, the roadmap, or the product plan is unclear, surface it as a question in your response instead of guessing. Guessing on Atlas is expensive.
