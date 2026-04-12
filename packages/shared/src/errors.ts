@@ -42,3 +42,43 @@ export type Result<T, E = AtlasErrorJSON> =
 
 export const ok = <T>(data: T): Result<T, never> => ({ ok: true, data });
 export const err = <E = AtlasErrorJSON>(error: E): Result<never, E> => ({ ok: false, error });
+
+/**
+ * Wraps a promise and returns a Result.
+ * Prevents try/catch boilerplate in async hot paths.
+ */
+export async function tryCatch<T>(promise: Promise<T>): Promise<Result<T>> {
+  try {
+    const data = await promise;
+    return ok(data);
+  } catch (e) {
+    if (e instanceof AtlasError) {
+      return err(e.toJSON());
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    return err({
+      name: 'AtlasError',
+      code: 'INTERNAL',
+      message,
+    });
+  }
+}
+
+/**
+ * Wraps a synchronous function and returns a Result.
+ */
+export function tryCatchSync<T>(fn: () => T): Result<T> {
+  try {
+    return ok(fn());
+  } catch (e) {
+    if (e instanceof AtlasError) {
+      return err(e.toJSON());
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    return err({
+      name: 'AtlasError',
+      code: 'INTERNAL',
+      message,
+    });
+  }
+}

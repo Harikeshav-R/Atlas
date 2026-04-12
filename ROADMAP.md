@@ -4,7 +4,7 @@
 >
 > **Solo-dev, spare-time pace assumption:** ~10 hours/week. Total estimate ~21 calendar weeks of active work (6–9 months of elapsed time). Adjust based on your actual pace; the *order* matters more than the *dates*.
 >
-> **Companion docs:** `product-plan.md` for the what/why, `CLAUDE.md` for coding rules, `docs/00-index.md` for technical reference.
+> **Companion docs:** `product-plan.md` for the what/why, `AGENTS.md` for coding rules, `docs/00-index.md` for technical reference.
 
 ---
 
@@ -26,31 +26,31 @@
 
 ### Step 0.1 — Decide on the project name and license
 
-- [ ] Check `npm`, GitHub, and USPTO for "Atlas" conflicts. If heavily conflicted, pick an alternative.
-- [ ] Create `LICENSE` file (AGPL v3 full text).
-- [ ] Create `CONTRIBUTING.md` with DCO sign-off instructions.
-- [ ] Create a minimal `README.md` with name, one-liner, license.
-- [ ] `git init`, push to GitHub as a public repo.
+- [x] Check `npm`, GitHub, and USPTO for "Atlas" conflicts. If heavily conflicted, pick an alternative.
+- [x] Create `LICENSE` file (AGPL v3 full text).
+- [x] Create `CONTRIBUTING.md` with DCO sign-off instructions.
+- [x] Create a minimal `README.md` with name, one-liner, license.
+- [x] `git init`, push to GitHub as a public repo.
 
 **Done when:** repo exists publicly with license and README.
 
 ### Step 0.2 — Scaffold the monorepo
 
-- [ ] `pnpm init` at root, set `"packageManager": "pnpm@9.x"`.
-- [ ] Create `pnpm-workspace.yaml` listing `apps/*` and `packages/*`.
-- [ ] Install Turborepo, create `turbo.json` with a basic `build`/`test`/`lint` pipeline.
-- [ ] Create `tsconfig.base.json` at root with strict mode, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`.
-- [ ] Create empty package dirs per `docs/01-foundations.md §1`.
-- [ ] Set up ESLint, Prettier, `lint-staged`, `husky` pre-commit.
-- [ ] Drop in `CLAUDE.md`, `product-plan.md`, and `docs/` from the outputs.
+- [x] `pnpm init` at root, set `"packageManager": "pnpm@9.x"`.
+- [x] Create `pnpm-workspace.yaml` listing `apps/*` and `packages/*`.
+- [x] Install Turborepo, create `turbo.json` with a basic `build`/`test`/`lint` pipeline.
+- [x] Create `tsconfig.base.json` at root with strict mode, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`.
+- [x] Create empty package dirs per `docs/01-foundations.md §1`.
+- [x] Set up ESLint, Prettier, `lint-staged`, `husky` pre-commit.
+- [x] Drop in `AGENTS.md`, `PRODUCT_PLAN.md`, and `docs/` from the outputs.
 
 **Done when:** `pnpm install && pnpm typecheck && pnpm lint` all succeed on an empty repo.
 
 ### Step 0.3 — Build `@atlas/shared` and `@atlas/schemas`
 
-- [ ] `@atlas/shared`: `newId(prefix)`, `now()` (mockable), `AtlasError`, `tryCatch`, `pino` logger with scrubbing middleware, `wrapUntrusted` helper.
-- [ ] `@atlas/schemas`: start with IPC base types, a stub canonical profile schema, tool I/O base types.
-- [ ] Unit tests for each utility.
+- [x] `@atlas/shared`: `newId(prefix)`, `now()` (mockable), `AtlasError`, `tryCatch`, `pino` logger with scrubbing middleware, `wrapUntrusted` helper.
+- [x] `@atlas/schemas`: start with IPC base types, a stub canonical profile schema, tool I/O base types.
+- [x] Unit tests for each utility.
 
 **Done when:** both packages publish-ready locally and tested.
 
