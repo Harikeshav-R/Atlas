@@ -9,7 +9,7 @@ export default defineConfig({
       outDir: 'out/main',
       rollupOptions: {
         input: resolve(__dirname, 'src/main/index.ts'),
-        external: ['electron'],
+        external: ['electron', 'better-sqlite3', 'keytar'],
       },
     },
   },
@@ -18,7 +18,7 @@ export default defineConfig({
       outDir: 'out/preload',
       rollupOptions: {
         input: resolve(__dirname, 'src/preload/index.ts'),
-        external: ['electron'],
+        external: ['electron', 'better-sqlite3', 'keytar'],
         output: {
           format: 'cjs',
           entryFileNames: '[name].js',

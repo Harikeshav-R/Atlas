@@ -12,10 +12,12 @@ export interface ProfileServerDeps {
 export function createServer(deps: ProfileServerDeps): McpServer {
   const server = new McpServer({ name: 'atlas-profile', version: '0.0.0' });
 
-  server.tool(
+  server.registerTool(
     'read',
-    'Read the canonical user profile',
-    { include_private: z.boolean().default(false) },
+    {
+      description: 'Read the canonical user profile',
+      inputSchema: { include_private: z.boolean().default(false) }
+    },
     async ({ include_private }) => {
       try {
         const profile = queries.getProfile(deps.db, 'default');
@@ -27,10 +29,12 @@ export function createServer(deps: ProfileServerDeps): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     'validate_schema',
-    'Validate a YAML string against the canonical profile schema',
-    { yaml_string: z.string() },
+    {
+      description: 'Validate a YAML string against the canonical profile schema',
+      inputSchema: { yaml_string: z.string() }
+    },
     async ({ yaml_string }) => {
       try {
         const parsed = yaml.parse(yaml_string);

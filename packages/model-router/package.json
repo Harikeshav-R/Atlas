@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.69",
     "@atlas/shared": "workspace:*",
+    "@openrouter/ai-sdk-provider": "^2.5.1",
     "ai": "^6.0.156",
     "zod": "^4.3.6"
   },

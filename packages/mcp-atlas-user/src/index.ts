@@ -19,16 +19,18 @@ export interface UserServerDeps {
 export function createServer(deps: UserServerDeps): McpServer {
   const server = new McpServer({ name: 'atlas-user', version: '0.0.0' });
 
-  server.tool(
+  server.registerTool(
     'request_approval',
-    'Request user approval for a gated action',
     {
-      run_id: z.string(),
-      scope: z.string(),
-      title: z.string(),
-      description: z.string(),
-      screenshot_path: z.string().optional(),
-      options: z.array(z.string())
+      description: 'Request user approval for a gated action',
+      inputSchema: {
+        run_id: z.string(),
+        scope: z.string(),
+        title: z.string(),
+        description: z.string(),
+        screenshot_path: z.string().optional(),
+        options: z.array(z.string())
+      }
     },
     async (args) => {
       const approval_id = newId('approval');
@@ -68,10 +70,12 @@ export function createServer(deps: UserServerDeps): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     'ask',
-    'Ask the user a question',
-    { question: z.string() },
+    {
+      description: 'Ask the user a question',
+      inputSchema: { question: z.string() }
+    },
     async ({ question }) => {
       try {
         const response = await deps.askUser(question);
@@ -82,10 +86,12 @@ export function createServer(deps: UserServerDeps): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     'notify',
-    'Send a desktop notification to the user',
-    { message: z.string(), level: z.string().default('info') },
+    {
+      description: 'Send a desktop notification to the user',
+      inputSchema: { message: z.string(), level: z.string().default('info') }
+    },
     async ({ message, level }) => {
       try {
         deps.notifyUser(message, level);

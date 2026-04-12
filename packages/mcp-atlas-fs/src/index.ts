@@ -2,7 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import * as fs from 'node:fs/promises';
 import { resolve } from 'node:path';
-import pdf from 'pdf-parse';
+import * as pdfImport from 'pdf-parse';
+const pdf = (pdfImport as any).default || pdfImport;
 
 export interface FsServerDeps {
   readonly allowedRoots: string[];
@@ -19,10 +20,12 @@ export function createServer(deps: FsServerDeps): McpServer {
     return resolved;
   }
 
-  server.tool(
+  server.registerTool(
     'read',
-    'Read a file from the sandboxed filesystem. Supports text and PDF extraction.',
-    { path: z.string() },
+    {
+      description: 'Read a file from the sandboxed filesystem. Supports text and PDF extraction.',
+      inputSchema: { path: z.string() }
+    },
     async ({ path }) => {
       try {
         const safePath = checkSandbox(path);

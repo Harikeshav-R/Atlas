@@ -14,10 +14,12 @@ export interface DbServerDeps {
 export function createServer(deps: DbServerDeps): McpServer {
   const server = new McpServer({ name: 'atlas-db', version: '0.0.0' });
 
-  server.tool(
+  server.registerTool(
     'get_profile',
-    'Get the canonical user profile',
-    { profile_id: z.string() },
+    {
+      description: 'Get the canonical user profile',
+      inputSchema: { profile_id: z.string() }
+    },
     async ({ profile_id }) => {
       try {
         const profile = queries.getProfile(deps.db, profile_id);
@@ -33,20 +35,22 @@ export function createServer(deps: DbServerDeps): McpServer {
     }
   );
 
-  server.tool(
+  server.registerTool(
     'write_trace_event',
-    'Write a trace event for a run (harness only)',
-    { 
-      event_id: z.string(),
-      run_id: z.string(),
-      parent_event_id: z.string().optional(),
-      step_index: z.number(),
-      timestamp: z.string(),
-      type: z.string(),
-      actor: z.string().optional(),
-      payload_json: z.string().optional(),
-      cost_usd: z.number().optional(),
-      duration_ms: z.number().optional()
+    {
+      description: 'Write a trace event for a run (harness only)',
+      inputSchema: {
+        event_id: z.string(),
+        run_id: z.string(),
+        parent_event_id: z.string().optional(),
+        step_index: z.number(),
+        timestamp: z.string(),
+        type: z.string(),
+        actor: z.string().optional(),
+        payload_json: z.string().optional(),
+        cost_usd: z.number().optional(),
+        duration_ms: z.number().optional()
+      }
     },
     async (args) => {
       try {
