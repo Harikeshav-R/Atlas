@@ -66,10 +66,10 @@
 
 ### Step 0.5 — Build the harness skeleton with fakes
 
-- [ ] `@atlas/harness`: the `run(agentDef, input, options)` function per `docs/02-agent-runtime.md §1`.
-- [ ] Implement: budget enforcement, iteration cap, wall-time cap, tool scoping, kill switch, trace capture, schema-feedback retries.
-- [ ] Do NOT integrate real MCP or real models yet — use fakes that return scripted responses.
-- [ ] Unit tests covering each enforcement point.
+- [x] `@atlas/harness`: the `run(agentDef, input, options)` function per `docs/02-agent-runtime.md §1`.
+- [x] Implement: budget enforcement, iteration cap, wall-time cap, tool scoping, kill switch, trace capture, schema-feedback retries.
+- [x] Do NOT integrate real MCP or real models yet — use fakes that return scripted responses.
+- [x] Unit tests covering each enforcement point.
 
 **Done when:** the harness runs a fake agent with a fake model and fake tools, enforces every limit correctly, and produces a valid trace. This is the most important test in the project — get it right.
 

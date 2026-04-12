@@ -44,7 +44,7 @@ export class BudgetTracker {
     };
   }
 
-  private check(): void {
+  check(): void {
     const u = this.usage();
     if (u.tokens > this.limits.maxTokens) {
       throw new AtlasError('BUDGET_EXCEEDED', 'token budget exceeded', { ...u });
