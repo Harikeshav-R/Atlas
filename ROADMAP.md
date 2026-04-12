@@ -93,11 +93,11 @@
 
 ### Step 0.8 — Build the echo-profile agent
 
-- [ ] Agent definition in `packages/agents/src/echo-profile/`.
-- [ ] Prompt: "Read the profile via `atlas-db.get_profile` and echo back the user's name."
-- [ ] Tool allowlist: `atlas-db.get_profile` only.
-- [ ] Seed a fake profile in the DB.
-- [ ] Run the agent via the harness end-to-end. Verify trace, cost, result.
+- [x] Agent definition in `packages/agents/src/echo-profile/`.
+- [x] Prompt: "Read the profile via `atlas-db.get_profile` and echo back the user's name."
+- [x] Tool allowlist: `atlas-db.get_profile` only.
+- [x] Seed a fake profile in the DB.
+- [x] Run the agent via the harness end-to-end. Verify trace, cost, result.
 
 **Done when:** `pnpm run agent echo-profile` prints the name and writes a complete trace.
 
