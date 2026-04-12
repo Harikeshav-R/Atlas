@@ -122,9 +122,9 @@
 
 ### Step 0.11 — Package as a `.dmg`
 
-- [ ] `electron-builder` config for macOS DMG (unsigned is fine for now).
-- [ ] `pnpm build` produces a working DMG.
-- [ ] Install the DMG on your own machine and run the Phase 0 flow.
+- [x] `electron-builder` config for macOS DMG (unsigned is fine for now).
+- [x] `pnpm build` produces a working DMG.
+- [x] Install the DMG on your own machine and run the Phase 0 flow.
 
 **Done when:** the app installs from a DMG and does everything above.
 

@@ -13,6 +13,24 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit"
   },
+  "build": {
+    "appId": "com.atlas.app",
+    "productName": "Atlas",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ]
+  },
   "dependencies": {
     "@atlas/agents": "workspace:*",
     "@atlas/db": "workspace:*",
@@ -47,6 +65,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.2.2",
     "vite": "^8.0.8",
