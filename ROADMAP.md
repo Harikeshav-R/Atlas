@@ -84,10 +84,10 @@
 
 ### Step 0.7 — Build `@atlas/model-router` with Anthropic only
 
-- [ ] Install `ai` SDK and the Anthropic adapter.
-- [ ] Implement stage-based routing with a hard-coded mapping for Phase 0.
-- [ ] Cost tracking via token counts → `model_pricing` lookup.
-- [ ] No fallback chains yet (Phase 2).
+- [x] Install `ai` SDK and the Anthropic adapter.
+- [x] Implement stage-based routing with a hard-coded mapping for Phase 0.
+- [x] Cost tracking via token counts → `model_pricing` lookup.
+- [x] No fallback chains yet (Phase 2).
 
 **Done when:** `generateText` works through the router and costs are recorded.
 
