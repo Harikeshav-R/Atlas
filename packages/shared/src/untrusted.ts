@@ -12,5 +12,6 @@ export function wrapUntrusted(
   url?: string,
 ): string {
   const urlAttr = url ? ` url="${escapeAttr(url)}"` : '';
-  return `<untrusted_content source="${escapeAttr(source)}"${urlAttr}>\n${content}\n</untrusted_content>`;
+  const safeContent = content.replace(/<\/untrusted_content>/gi, '< / untrusted_content >');
+  return `<untrusted_content source="${escapeAttr(source)}"${urlAttr}>\n${safeContent}\n</untrusted_content>`;
 }
