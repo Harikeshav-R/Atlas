@@ -13,6 +13,10 @@ export const IpcChannels = {
   listingsGet: 'listings.get',
   listingsCreateFromUrl: 'listings.createFromUrl',
   listingsEvaluate: 'listings.evaluate',
+  settingsGet: 'settings.get',
+  settingsSave: 'settings.save',
+  settingsSetApiKey: 'settings.setApiKey',
+  settingsDeleteApiKey: 'settings.deleteApiKey',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

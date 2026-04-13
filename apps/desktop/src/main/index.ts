@@ -270,6 +270,59 @@ ipcMain.handle('listings.evaluate', async (_event, listingId: string) => {
   }
 });
 
+// Settings handlers
+// For Phase 1 MVP, settings are stored in the preferences table.
+// API keys would use keytar in production; for now we use the preferences table.
+ipcMain.handle('settings.get', () => {
+  try {
+    const prefs = queries.getPreferences(db, 'default');
+    return ok(prefs ?? {
+      model_routing_json: JSON.stringify({
+        triage: 'anthropic/claude-haiku-4-5',
+        evaluation: 'anthropic/claude-sonnet-4-5',
+        generation: 'anthropic/claude-sonnet-4-5',
+        verification: 'anthropic/claude-sonnet-4-5',
+        navigation: 'anthropic/claude-sonnet-4-5',
+        interaction: 'anthropic/claude-sonnet-4-5',
+      }),
+      budgets_json: JSON.stringify({ monthlyBudgetUsd: 50 }),
+    });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('settings.save', (_event, settings: Record<string, unknown>) => {
+  try {
+    queries.upsertPreferences(db, {
+      preferences_id: 'default_prefs',
+      profile_id: 'default',
+      model_routing_json: settings.modelRouting ? JSON.stringify(settings.modelRouting) : undefined,
+      budgets_json: settings.budgets ? JSON.stringify(settings.budgets) : undefined,
+      scoring_weights_json: settings.scoringWeights ? JSON.stringify(settings.scoringWeights) : undefined,
+      grade_thresholds_json: settings.gradeThresholds ? JSON.stringify(settings.gradeThresholds) : undefined,
+      updated_at: nowISO(),
+    });
+    return ok(true);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('settings.setApiKey', (_event, provider: string, _apiKey: string) => {
+  // In production: keytar.setPassword('atlas', `llm-provider/${provider}`, apiKey)
+  // For Phase 1 MVP, we store a flag indicating the key is set
+  log.info({ provider }, 'API key set (stub — keytar not wired yet)');
+  return ok(true);
+});
+
+ipcMain.handle('settings.deleteApiKey', (_event, provider: string) => {
+  log.info({ provider }, 'API key deleted (stub)');
+  return ok(true);
+});
+
 async function createMainWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({
     width: 1400,

@@ -24,6 +24,7 @@ const rootRoute = createRootRoute({
           <Link to="/" className="block p-2 rounded hover:bg-neutral-800 [&.active]:bg-neutral-800">Profile</Link>
           <Link to="/listings" className="block p-2 rounded hover:bg-neutral-800 [&.active]:bg-neutral-800">Listings</Link>
           <Link to="/trace" className="block p-2 rounded hover:bg-neutral-800 [&.active]:bg-neutral-800">Trace Viewer</Link>
+          <Link to="/settings" className="block p-2 rounded hover:bg-neutral-800 [&.active]:bg-neutral-800">Settings</Link>
         </nav>
       </div>
       <div className="flex-1 overflow-auto bg-neutral-950 p-8">
@@ -386,9 +387,165 @@ const traceRoute = createRoute({
   }
 });
 
+// --- Settings Screen ---
+
+const MODEL_STAGES = ['triage', 'evaluation', 'generation', 'verification', 'navigation', 'interaction'] as const;
+
+const PROVIDER_OPTIONS = [
+  { value: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5 (cheapest)' },
+  { value: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5 (balanced)' },
+  { value: 'anthropic/claude-opus-4-5', label: 'Claude Opus 4.5 (strongest)' },
+  { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+  { value: 'openai/gpt-4o', label: 'GPT-4o' },
+];
+
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: function SettingsScreen() {
+    const queryClient = useQueryClient();
+    const [apiKey, setApiKey] = React.useState('');
+    const [selectedProvider, setSelectedProvider] = React.useState('anthropic');
+    const [monthlyBudget, setMonthlyBudget] = React.useState(50);
+    const [modelRouting, setModelRouting] = React.useState<Record<string, string>>({});
+    const [saved, setSaved] = React.useState(false);
+
+    const { data: settingsResult } = useQuery({
+      queryKey: ['settings'],
+      queryFn: () => window.atlas.invoke<IpcResult<{ model_routing_json?: string; budgets_json?: string }>>('settings.get'),
+    });
+
+    React.useEffect(() => {
+      if (settingsResult?.ok) {
+        const data = settingsResult.data;
+        if (data.model_routing_json) {
+          try { setModelRouting(JSON.parse(data.model_routing_json)); } catch { /* ignore */ }
+        }
+        if (data.budgets_json) {
+          try {
+            const budgets = JSON.parse(data.budgets_json);
+            if (budgets.monthlyBudgetUsd) setMonthlyBudget(budgets.monthlyBudgetUsd);
+          } catch { /* ignore */ }
+        }
+      }
+    }, [settingsResult]);
+
+    const saveApiKey = async () => {
+      if (!apiKey.trim()) return;
+      await window.atlas.invoke('settings.setApiKey', selectedProvider, apiKey);
+      setApiKey('');
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    };
+
+    const saveSettings = async () => {
+      await window.atlas.invoke('settings.save', {
+        modelRouting,
+        budgets: { monthlyBudgetUsd: monthlyBudget },
+      });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    };
+
+    const updateStageModel = (stage: string, model: string) => {
+      setModelRouting((prev) => ({ ...prev, [stage]: model }));
+    };
+
+    return (
+      <div className="max-w-2xl mx-auto space-y-8">
+        <h1 className="text-3xl font-bold">Settings</h1>
+
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b border-neutral-800 pb-2">API Keys</h2>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm text-neutral-400 mb-1">Provider</label>
+              <select
+                value={selectedProvider}
+                onChange={(e) => setSelectedProvider(e.target.value)}
+                className="w-full bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm"
+              >
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm text-neutral-400 mb-1">API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={saveApiKey}
+                  disabled={!apiKey.trim()}
+                  className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  Save Key
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b border-neutral-800 pb-2">Model Routing</h2>
+          <p className="text-sm text-neutral-500">Assign a model to each stage. Cheaper models for triage, stronger models for evaluation.</p>
+          <div className="space-y-3">
+            {MODEL_STAGES.map((stage) => (
+              <div key={stage} className="flex items-center gap-4">
+                <label className="w-32 text-sm text-neutral-400 capitalize">{stage}</label>
+                <select
+                  value={modelRouting[stage] ?? ''}
+                  onChange={(e) => updateStageModel(stage, e.target.value)}
+                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm"
+                >
+                  {PROVIDER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold border-b border-neutral-800 pb-2">Budget</h2>
+          <div>
+            <label className="block text-sm text-neutral-400 mb-1">Monthly Budget (USD)</label>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              value={monthlyBudget}
+              onChange={(e) => setMonthlyBudget(Number(e.target.value))}
+              className="w-32 bg-neutral-900 border border-neutral-700 rounded px-3 py-2 text-sm"
+            />
+          </div>
+        </section>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={saveSettings}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded font-medium text-sm"
+          >
+            Save Settings
+          </button>
+          {saved && <span className="text-green-400 text-sm">Saved</span>}
+        </div>
+      </div>
+    );
+  },
+});
+
 // --- Router ---
 
-const routeTree = rootRoute.addChildren([indexRoute, listingsRoute, listingDetailRoute, traceRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, listingsRoute, listingDetailRoute, traceRoute, settingsRoute]);
 const router = createRouter({ routeTree });
 
 export function App() {
