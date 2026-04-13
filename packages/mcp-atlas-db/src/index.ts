@@ -44,13 +44,13 @@ export function createServer(deps: DbServerDeps): McpServer {
         event_id: z.string(),
         run_id: z.string(),
         parent_event_id: z.string().optional(),
-        step_index: z.number(),
+        step_index: z.number().int().min(0),
         timestamp: z.string(),
         type: z.string(),
         actor: z.string().optional(),
         payload_json: z.string().optional(),
-        cost_usd: z.number().optional(),
-        duration_ms: z.number().optional()
+        cost_usd: z.number().min(0).optional(),
+        duration_ms: z.number().int().min(0).optional()
       }
     },
     async (args) => {
