@@ -13,7 +13,11 @@ export function createServer(deps: FsServerDeps): McpServer {
 
   function checkSandbox(path: string) {
     const resolved = resolve(path);
-    if (!deps.allowedRoots.some(root => resolved.startsWith(root))) {
+    const isAllowed = deps.allowedRoots.some(root => {
+      const rel = relative(root, resolved);
+      return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+    });
+    if (!isAllowed) {
       throw new Error(`Path ${path} is outside of allowed roots`);
     }
     return resolved;

@@ -67,7 +67,7 @@ ipcMain.handle('profile.import', async (_event, filePath: string) => {
       },
       onTraceEvent: (e) => {
         if (e.type === 'run_started') {
-          const runId = (e.payload as any)?.runId;
+          const runId = (e.payload as { runId?: string })?.runId;
           if (!runId) {
             log.error({ event: e }, 'run_started event missing runId; skipping run insert');
             return;
