@@ -5,14 +5,15 @@ import detailFixture from './__fixtures__/job-detail.json';
 
 describe('GreenhouseAdapter', () => {
   const adapter = new GreenhouseAdapter();
-  let fetchSpy: ReturnType<typeof vi.spyOn<typeof globalThis, 'fetch'>>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('unmocked fetch'));
+    fetchSpy = vi.fn().mockRejectedValue(new Error('unmocked fetch'));
+    vi.stubGlobal('fetch', fetchSpy);
   });
 
   afterEach(() => {
-    fetchSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   describe('list', () => {
