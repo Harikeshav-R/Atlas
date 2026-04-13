@@ -140,42 +140,42 @@ Before Phase 1: harness tests pass, the kill switch works mid-run, traces are co
 
 ### Step 1.1 — Add remaining DB tables
 
-- [ ] `listings`, `listing_snapshots`, `evaluations`, `scorecards`, `preferences`. Migrations forward-only.
+- [x] `listings`, `listing_snapshots`, `evaluations`, `scorecards`, `preferences`. Migrations forward-only.
 
 ### Step 1.2 — Build `mcp-atlas-web`
 
-- [ ] `search` (via DuckDuckGo HTML or user's Brave API key) and `fetch` (with markdown extraction).
-- [ ] Per-domain rate limiting, response size caps, caching.
+- [x] `search` (via DuckDuckGo HTML or user's Brave API key) and `fetch` (with markdown extraction).
+- [x] Per-domain rate limiting, response size caps, caching.
 
 ### Step 1.3 — Build one scraper adapter end-to-end
 
-- [ ] Pick Greenhouse (simplest public API). Implement `list`, `fetch`, `canonicalize` per `docs/05-...md §2`.
-- [ ] Dedup via URL canonicalization against `listings` table.
-- [ ] Test against saved HTML fixtures.
+- [x] Pick Greenhouse (simplest public API). Implement `list`, `fetch`, `canonicalize` per `docs/05-...md §2`.
+- [x] Dedup via URL canonicalization against `listings` table.
+- [x] Test against saved HTML fixtures.
 
 ### Step 1.4 — Build the Triage Agent
 
-- [ ] Small, cheap, single-call agent returning a go/no-go with a numeric score.
-- [ ] Eval fixtures with expected grades.
+- [x] Small, cheap, single-call agent returning a go/no-go with a numeric score.
+- [x] Eval fixtures with expected grades.
 
 ### Step 1.5 — Build the Evaluation Agent
 
-- [ ] Full 6-block output, validated by Zod.
-- [ ] Tools: `atlas-db.*`, `atlas-profile.*`, `atlas-web.*`.
-- [ ] Eval fixtures covering strong/weak/ambiguous matches.
+- [x] Full 6-block output, validated by Zod.
+- [x] Tools: `atlas-db.*`, `atlas-profile.*`, `atlas-web.*`.
+- [x] Eval fixtures covering strong/weak/ambiguous matches.
 
 ### Step 1.6 — Renderer: Listing detail screen
 
-- [ ] Paste-URL flow → fetch → triage → evaluate.
-- [ ] Show the 6 blocks and scorecard. Grade badge. Re-evaluate button.
+- [x] Paste-URL flow → fetch → triage → evaluate.
+- [x] Show the 6 blocks and scorecard. Grade badge. Re-evaluate button.
 
 ### Step 1.7 — Settings screen for providers, models, budgets
 
-- [ ] API key input → keytar. Stage-to-model mapping. Monthly budget.
+- [x] API key input → keytar. Stage-to-model mapping. Monthly budget.
 
 ### Step 1.8 — Onboarding for Phase 1
 
-- [ ] Minimum viable first-run: import profile → add API key → paste URL.
+- [x] Minimum viable first-run: import profile → add API key → paste URL.
 
 ### 🚪 Phase 1 Gate
 
