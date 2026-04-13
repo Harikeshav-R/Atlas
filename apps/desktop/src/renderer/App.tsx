@@ -1,7 +1,7 @@
 import { createRootRoute, createRoute, createRouter, RouterProvider, Link, Outlet } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
-import type { IpcResult, Profile } from '@atlas/schemas';
+import type { IpcResult } from '@atlas/schemas';
 
 interface AtlasApi {
   invoke: <T = unknown>(channel: string, ...args: unknown[]) => Promise<T>;
@@ -37,7 +37,7 @@ const indexRoute = createRoute({
     const queryClient = useQueryClient();
     const { data, isLoading } = useQuery({
       queryKey: ['profile'],
-      queryFn: async () => window.atlas.invoke<IpcResult<Profile>>('profile.get')
+      queryFn: async () => window.atlas.invoke<IpcResult<{ profile_id: string; yaml_blob: string; parsed_json: string }>>('profile.get')
     });
     
     const [importing, setImporting] = React.useState(false);
