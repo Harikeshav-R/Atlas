@@ -1,7 +1,7 @@
 import { app, BrowserWindow, session, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createLogger, ok, err } from '@atlas/shared';
+import { createLogger, ok, err, newId, now } from '@atlas/shared';
 import { createDb, queries, profiles } from '@atlas/db';
 import { runAgent } from '@atlas/harness';
 import { getAgent } from '@atlas/agents';
@@ -128,10 +128,10 @@ ipcMain.handle('runs.start', async (_event, agentName: string) => {
           // ensure run row exists
           const payload = e.payload as { runId?: string } | undefined;
           queries.insertRun(db, {
-            run_id: payload?.runId || `run_${Date.now()}`,
+            run_id: payload?.runId || newId('run'),
             agent_name: agentName,
             mode: 'normal',
-            started_at: new Date().toISOString(),
+            started_at: new Date(now()).toISOString(),
             status: 'running'
           });
         }

@@ -44,7 +44,7 @@ export async function runAgent(
   const killSwitch = options?.killSwitch ?? (() => false);
   const onTrace = options?.onTraceEvent ?? (() => {});
 
-  onTrace({ type: 'run_started', timestamp: new Date(now()).toISOString(), payload: { input } });
+  onTrace({ type: 'run_started', timestamp: new Date(now()).toISOString(), payload: { input, runId: ctx.runId } });
 
   let iteration = 0;
   const maxIterations = 50; 
