@@ -1,4 +1,4 @@
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import type { AtlasDb } from './client.ts';
 import {
   profiles, runs, traceEvents, approvals, costs, modelPricing, auditLog,

@@ -1,9 +1,8 @@
 import { app, BrowserWindow, session, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
 import { createLogger, ok, err, newId, nowISO } from '@atlas/shared';
-import { createDb, queries, profiles, listings } from '@atlas/db';
+import { createDb, queries, profiles } from '@atlas/db';
 import { runAgent } from '@atlas/harness';
 import { getAgent } from '@atlas/agents';
 import { eq } from 'drizzle-orm';

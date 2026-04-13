@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const listings = sqliteTable('listings', {
   listing_id: text('listing_id').primaryKey(),
