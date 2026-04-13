@@ -1,6 +1,6 @@
 /**
  * Wraps untrusted content in standard markers for the LLM.
- * See docs/02-agent-runtime.md Section 12 for the threat model.
+ * See doc/02-agent-runtime.md Section 12 for the threat model.
  */
 function escapeAttr(s: string): string {
   return s.replace(/[<>"'&]/g, (c) => `&#${c.charCodeAt(0)};`);
