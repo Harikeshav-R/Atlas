@@ -10,7 +10,13 @@ export type IdPrefix =
   | 'approval'
   | 'trace'
   | 'event'
-  | 'doc';
+  | 'doc'
+  | 'snapshot'
+  | 'eval'
+  | 'scorecard'
+  | 'pref'
+  | 'cost'
+  | 'log';
 
 export type PrefixedId<P extends IdPrefix = IdPrefix> = `${P}_${string}`;
 

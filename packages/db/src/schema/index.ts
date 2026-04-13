@@ -5,3 +5,8 @@ export * from './approvals.ts';
 export * from './costs.ts';
 export * from './model_pricing.ts';
 export * from './audit_log.ts';
+export * from './listings.ts';
+export * from './listing_snapshots.ts';
+export * from './evaluations.ts';
+export * from './scorecards.ts';
+export * from './preferences.ts';

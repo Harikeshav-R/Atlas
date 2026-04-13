@@ -8,6 +8,13 @@
       "when": 1776012591118,
       "tag": "0000_happy_colossus",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776102438733,
+      "tag": "0001_sad_ted_forrester",
+      "breakpoints": true
     }
   ]
 }
