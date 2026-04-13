@@ -25,3 +25,7 @@ export const IpcResultSchema = <T extends z.ZodTypeAny>(data: T) =>
     z.object({ ok: z.literal(true), data }),
     z.object({ ok: z.literal(false), error: IpcErrorSchema }),
   ]);
+
+export type IpcResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: z.infer<typeof IpcErrorSchema> };

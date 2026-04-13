@@ -1,9 +1,10 @@
 import { createRootRoute, createRoute, createRouter, RouterProvider, Link, Outlet } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import React from 'react';
+import type { IpcResult, Profile } from '@atlas/schemas';
 
 interface AtlasApi {
-  invoke: (channel: string, ...args: unknown[]) => Promise<unknown>;
+  invoke: <T = unknown>(channel: string, ...args: unknown[]) => Promise<T>;
 }
 
 declare global {
@@ -36,7 +37,7 @@ const indexRoute = createRoute({
     const queryClient = useQueryClient();
     const { data, isLoading } = useQuery({
       queryKey: ['profile'],
-      queryFn: async () => window.atlas.invoke('profile.get')
+      queryFn: async () => window.atlas.invoke<IpcResult<Profile>>('profile.get')
     });
     
     const [importing, setImporting] = React.useState(false);
@@ -67,7 +68,7 @@ const indexRoute = createRoute({
         </div>
         {isLoading ? <p>Loading...</p> : (
           <pre className="p-4 bg-neutral-900 rounded overflow-x-auto text-sm">
-            {JSON.stringify(data?.data, null, 2)}
+            {data?.ok && JSON.stringify(data.data, null, 2)}
           </pre>
         )}
       </div>
@@ -108,7 +109,7 @@ const traceRoute = createRoute({
           </button>
         </div>
         
-        {result && (
+        {!!result && (
           <div className="p-6 bg-neutral-900 rounded-lg shadow-sm border border-neutral-800">
             <h3 className="text-lg font-medium mb-4">Run Result</h3>
             <pre className="text-sm overflow-x-auto text-neutral-300">

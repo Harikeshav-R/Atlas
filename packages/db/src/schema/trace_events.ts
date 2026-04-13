@@ -1,10 +1,10 @@
-import { sqliteTable, text, integer, index, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, real, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { runs } from './runs.ts';
 
 export const traceEvents = sqliteTable('trace_events', {
   event_id: text('event_id').primaryKey(),
   run_id: text('run_id').notNull().references(() => runs.run_id, { onDelete: 'cascade' }),
-  parent_event_id: text('parent_event_id').references((): any => traceEvents.event_id, { onDelete: 'cascade' }),
+  parent_event_id: text('parent_event_id').references((): AnySQLiteColumn => traceEvents.event_id, { onDelete: 'cascade' }),
   step_index: integer('step_index').notNull(),
   timestamp: text('timestamp').notNull(),
   type: text('type').notNull(),
