@@ -41,12 +41,12 @@ export function createServer(deps: ProfileServerDeps): McpServer {
         const parsed = yaml.parse(yaml_string);
         const result = ProfileSchema.safeParse(parsed);
         if (!result.success) {
-          return { content: [{ type: 'text', text: `Invalid schema: ${result.error.message}` }] };
+          return { isError: true, content: [{ type: 'text', text: `Invalid schema: ${result.error.message}` }] };
         }
         return { content: [{ type: 'text', text: 'Valid schema' }] };
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
-        return { content: [{ type: 'text', text: `YAML parse error: ${message}` }] };
+        return { isError: true, content: [{ type: 'text', text: `YAML parse error: ${message}` }] };
       }
     }
   );

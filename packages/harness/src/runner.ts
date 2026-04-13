@@ -53,7 +53,7 @@ export async function runAgent(
   try {
     while (iteration < maxIterations) {
       if (killSwitch()) {
-        onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { status: 'killed' } });
+        onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { runId: ctx.runId, status: 'killed' } });
         return ok({ runId: ctx.runId, output: null, status: 'killed' });
       }
 
@@ -71,7 +71,7 @@ export async function runAgent(
       onTrace({ type: 'model_call', timestamp: new Date(now()).toISOString(), payload: response });
 
       if (response.type === 'text') {
-        onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { status: 'succeeded', output: response.text } });
+        onTrace({ type: 'run_finished', timestamp: new Date(now()).toISOString(), payload: { runId: ctx.runId, status: 'succeeded', output: response.text } });
         return ok({ runId: ctx.runId, output: response.text, status: 'succeeded' });
       }
 
