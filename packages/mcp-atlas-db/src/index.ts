@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { AtlasDb } from '@atlas/db';
 import { queries } from '@atlas/db';
 import { z } from 'zod';
+import { wrapUntrusted } from '@atlas/shared';
 
 export interface DbServerDeps {
   readonly db: AtlasDb;
@@ -27,7 +28,7 @@ export function createServer(deps: DbServerDeps): McpServer {
           return { isError: true, content: [{ type: 'text', text: `Profile ${profile_id} not found` }] };
         }
         return {
-          content: [{ type: 'text', text: JSON.stringify(profile) }]
+          content: [{ type: 'text', text: wrapUntrusted(JSON.stringify(profile), 'get_profile') }]
         };
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
