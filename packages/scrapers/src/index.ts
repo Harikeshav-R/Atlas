@@ -1,9 +1,12 @@
-import type { Listing } from '@atlas/schemas';
+export type { ScraperAdapter, SourceConfig, DiscoveredListing } from './types.ts';
+export { DiscoveredListingSchema } from './types.ts';
+export { GreenhouseAdapter } from './greenhouse/index.ts';
 
-export interface ScraperAdapter {
-  readonly platform: string;
-  list(sourceConfig: unknown): Promise<readonly Listing[]>;
-  fetch(url: string): Promise<Listing>;
-}
+import type { ScraperAdapter } from './types.ts';
+import { GreenhouseAdapter } from './greenhouse/index.ts';
 
-export const scraperRegistry: Readonly<Record<string, ScraperAdapter>> = Object.freeze({});
+const greenhouse = new GreenhouseAdapter();
+
+export const scraperRegistry: Readonly<Record<string, ScraperAdapter>> = Object.freeze({
+  ats_greenhouse: greenhouse,
+});

@@ -1,0 +1,8 @@
+{
+  "id": 12345,
+  "title": "Senior Software Engineer",
+  "absolute_url": "https://boards.greenhouse.io/acme/jobs/12345",
+  "location": { "name": "San Francisco, CA" },
+  "content": "<h2>About the Role</h2><p>We are looking for a Senior Software Engineer to join our team.</p><h2>Requirements</h2><ul><li>5+ years of experience with TypeScript</li><li>Strong understanding of distributed systems</li><li>Experience with React and Node.js</li></ul><h2>Benefits</h2><p>Competitive salary &amp; equity. Health, dental, and vision insurance.</p>",
+  "departments": [{ "name": "Engineering" }]
+}

@@ -1,0 +1,25 @@
+{
+  "jobs": [
+    {
+      "id": 12345,
+      "title": "Senior Software Engineer",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/12345",
+      "location": { "name": "San Francisco, CA" },
+      "departments": [{ "name": "Engineering" }]
+    },
+    {
+      "id": 67890,
+      "title": "Product Manager",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/67890",
+      "location": { "name": "Remote" },
+      "departments": [{ "name": "Product" }]
+    },
+    {
+      "id": 11111,
+      "title": "Data Scientist",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/11111",
+      "location": { "name": "New York, NY (Hybrid)" },
+      "departments": [{ "name": "Data" }]
+    }
+  ]
+}
