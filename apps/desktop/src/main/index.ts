@@ -1,10 +1,154 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, session, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createLogger } from '@atlas/shared';
+import { createLogger, ok, err, newId, now } from '@atlas/shared';
+import { createDb, queries, profiles } from '@atlas/db';
+import { runAgent } from '@atlas/harness';
+import { getAgent } from '@atlas/agents';
+import { eq } from 'drizzle-orm';
 
 const log = createLogger('main');
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Phase 0 DB setup
+const dbPath = resolve(app.getPath('userData'), 'atlas.sqlite');
+
+// Resolve migrations path
+let migrationsPath: string;
+if (app.isPackaged) {
+  migrationsPath = resolve(process.resourcesPath, 'migrations');
+} else {
+  // In dev, we can point directly to the source package
+  migrationsPath = resolve(here, '../../../../packages/db/migrations');
+}
+
+const db = createDb(dbPath, migrationsPath);
+
+// Seed fake profile
+try {
+  if (!queries.getProfile(db, 'default')) {
+    queries.insertProfile(db, {
+      profile_id: 'default',
+      yaml_blob: 'name: Atlas User',
+      parsed_json: '{"name":"Atlas User"}',
+      version: 1,
+      schema_version: 1,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+  }
+} catch (e) {
+  log.error({ err: e }, 'Failed to seed profile');
+}
+
+// IPC handlers
+ipcMain.handle('profile.get', () => {
+  try {
+    return ok(queries.getProfile(db, 'default'));
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('profile.import', async (_event, filePath: string) => {
+  try {
+    const agent = getAgent('profile-parser');
+    if (!agent) throw new Error('profile-parser agent not found');
+
+    const res = await runAgent(agent, { file_path: filePath }, {
+      fakes: {
+        modelFn: async (iteration) => {
+          if (iteration === 0) return { type: 'tool_call', toolName: 'read', args: { path: filePath }, costMilliUsd: 10, tokens: 500 };
+          if (iteration === 1) return { type: 'tool_call', toolName: 'validate_schema', args: { yaml_string: 'version: 1\\nname: "Imported User"' }, costMilliUsd: 5, tokens: 100 };
+          return { type: 'text', text: 'version: 1\\nname: "Imported User"\\ncontact:\\n  email: "test@example.com"', costMilliUsd: 5, tokens: 100 };
+        },
+        mcpCallFn: async () => ({})
+      },
+      onTraceEvent: (e) => {
+        if (e.type === 'run_started') {
+          const runId = (e.payload as { runId?: string })?.runId;
+          if (!runId) {
+            log.error({ event: e }, 'run_started event missing runId; skipping run insert');
+            return;
+          }
+          queries.insertRun(db, {
+            run_id: runId,
+            agent_name: 'profile-parser',
+            mode: 'normal',
+            started_at: new Date().toISOString(),
+            status: 'running'
+          });
+        }
+      }
+    });
+
+    if (res.ok) {
+      const existing = queries.getProfile(db, 'default');
+      const version = existing ? existing.version + 1 : 1;
+      
+      // Update the canonical profile in DB
+      db.delete(profiles).where(eq(profiles.profile_id, 'default')).run();
+      
+      queries.insertProfile(db, {
+        profile_id: 'default',
+        yaml_blob: res.data.output as string,
+        parsed_json: JSON.stringify({ name: 'Imported User' }),
+        version,
+        schema_version: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    return res;
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('runs.start', async (_event, agentName: string) => {
+  try {
+    const agent = getAgent(agentName);
+    if (!agent) throw new Error('Agent not found');
+
+    const res = await runAgent(agent, { profile_id: 'default' }, {
+      fakes: {
+        modelFn: async (iteration) => {
+          if (iteration === 0) return { type: 'tool_call', toolName: 'get_profile', args: { profile_id: 'default' }, costMilliUsd: 10, tokens: 100 };
+          return { type: 'text', text: 'Atlas User', costMilliUsd: 5, tokens: 50 };
+        },
+        mcpCallFn: async () => ({ name: 'Atlas User' })
+      },
+      onTraceEvent: (e) => {
+        // In real impl, we insert trace event into DB here
+        log.info({ type: e.type }, 'Trace event');
+        if (e.type === 'run_started') {
+          // ensure run row exists
+          const payload = e.payload as { runId?: string } | undefined;
+          queries.insertRun(db, {
+            run_id: payload?.runId || newId('run'),
+            agent_name: agentName,
+            mode: 'normal',
+            started_at: new Date(now()).toISOString(),
+            status: 'running'
+          });
+        }
+      }
+    });
+
+    return res;
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('runs.get', (_event, runId: string) => {
+  // Stub for now, normally we fetch traces from db
+  return ok({ runId, traces: [] });
+});
 
 async function createMainWindow(): Promise<BrowserWindow> {
   const win = new BrowserWindow({
@@ -34,41 +178,30 @@ async function createMainWindow(): Promise<BrowserWindow> {
     });
   });
 
-  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
-    log.error({ code, desc, url }, 'renderer failed to load');
-  });
-  win.webContents.on('render-process-gone', (_e, details) => {
-    log.error({ details }, 'renderer process gone');
+  win.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
   });
 
-  try {
-    if (isDev) {
-      log.info({ url: process.env.ELECTRON_RENDERER_URL }, 'loading dev renderer');
-      await win.loadURL(process.env.ELECTRON_RENDERER_URL!);
-      win.webContents.openDevTools({ mode: 'detach' });
-    } else {
-      await win.loadFile(resolve(here, '../renderer/index.html'));
-    }
-  } catch (err) {
-    log.error({ err }, 'loadURL/loadFile threw');
+  win.webContents.on('will-navigate', (e, url) => {
+    if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
+    if (!isDev && url.startsWith('file://')) return;
+    e.preventDefault();
+  });
+
+  if (isDev) {
+    await win.loadURL(process.env.ELECTRON_RENDERER_URL!);
+    win.webContents.openDevTools({ mode: 'detach' });
+  } else {
+    await win.loadFile(resolve(here, '../renderer/index.html'));
   }
 
   return win;
 }
 
 app.whenReady().then(async () => {
-  log.info('atlas desktop starting');
   await createMainWindow();
-  app.on('activate', async () => {
-    if (BrowserWindow.getAllWindows().length === 0) await createMainWindow();
-  });
 });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('web-contents-created', (_e, contents) => {
-  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  contents.on('will-navigate', (e) => e.preventDefault());
 });

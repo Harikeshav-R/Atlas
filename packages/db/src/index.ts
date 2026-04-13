@@ -1,2 +1,3 @@
 export * from './client.ts';
-export * as schema from './schema/index.ts';
+export * from './schema/index.ts';
+export * as queries from './queries.ts';

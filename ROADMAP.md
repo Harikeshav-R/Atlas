@@ -4,7 +4,7 @@
 >
 > **Solo-dev, spare-time pace assumption:** ~10 hours/week. Total estimate ~21 calendar weeks of active work (6–9 months of elapsed time). Adjust based on your actual pace; the *order* matters more than the *dates*.
 >
-> **Companion docs:** `product-plan.md` for the what/why, `CLAUDE.md` for coding rules, `docs/00-index.md` for technical reference.
+> **Companion docs:** `product-plan.md` for the what/why, `AGENTS.md` for coding rules, `docs/00-index.md` for technical reference.
 
 ---
 
@@ -26,105 +26,105 @@
 
 ### Step 0.1 — Decide on the project name and license
 
-- [ ] Check `npm`, GitHub, and USPTO for "Atlas" conflicts. If heavily conflicted, pick an alternative.
-- [ ] Create `LICENSE` file (AGPL v3 full text).
-- [ ] Create `CONTRIBUTING.md` with DCO sign-off instructions.
-- [ ] Create a minimal `README.md` with name, one-liner, license.
-- [ ] `git init`, push to GitHub as a public repo.
+- [x] Check `npm`, GitHub, and USPTO for "Atlas" conflicts. If heavily conflicted, pick an alternative.
+- [x] Create `LICENSE` file (AGPL v3 full text).
+- [x] Create `CONTRIBUTING.md` with DCO sign-off instructions.
+- [x] Create a minimal `README.md` with name, one-liner, license.
+- [x] `git init`, push to GitHub as a public repo.
 
 **Done when:** repo exists publicly with license and README.
 
 ### Step 0.2 — Scaffold the monorepo
 
-- [ ] `pnpm init` at root, set `"packageManager": "pnpm@9.x"`.
-- [ ] Create `pnpm-workspace.yaml` listing `apps/*` and `packages/*`.
-- [ ] Install Turborepo, create `turbo.json` with a basic `build`/`test`/`lint` pipeline.
-- [ ] Create `tsconfig.base.json` at root with strict mode, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`.
-- [ ] Create empty package dirs per `docs/01-foundations.md §1`.
-- [ ] Set up ESLint, Prettier, `lint-staged`, `husky` pre-commit.
-- [ ] Drop in `CLAUDE.md`, `product-plan.md`, and `docs/` from the outputs.
+- [x] `pnpm init` at root, set `"packageManager": "pnpm@9.x"`.
+- [x] Create `pnpm-workspace.yaml` listing `apps/*` and `packages/*`.
+- [x] Install Turborepo, create `turbo.json` with a basic `build`/`test`/`lint` pipeline.
+- [x] Create `tsconfig.base.json` at root with strict mode, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`.
+- [x] Create empty package dirs per `docs/01-foundations.md §1`.
+- [x] Set up ESLint, Prettier, `lint-staged`, `husky` pre-commit.
+- [x] Drop in `AGENTS.md`, `PRODUCT_PLAN.md`, and `docs/` from the outputs.
 
 **Done when:** `pnpm install && pnpm typecheck && pnpm lint` all succeed on an empty repo.
 
 ### Step 0.3 — Build `@atlas/shared` and `@atlas/schemas`
 
-- [ ] `@atlas/shared`: `newId(prefix)`, `now()` (mockable), `AtlasError`, `tryCatch`, `pino` logger with scrubbing middleware, `wrapUntrusted` helper.
-- [ ] `@atlas/schemas`: start with IPC base types, a stub canonical profile schema, tool I/O base types.
-- [ ] Unit tests for each utility.
+- [x] `@atlas/shared`: `newId(prefix)`, `now()` (mockable), `AtlasError`, `tryCatch`, `pino` logger with scrubbing middleware, `wrapUntrusted` helper.
+- [x] `@atlas/schemas`: start with IPC base types, a stub canonical profile schema, tool I/O base types.
+- [x] Unit tests for each utility.
 
 **Done when:** both packages publish-ready locally and tested.
 
 ### Step 0.4 — Build `@atlas/db` with Phase 0 tables
 
-- [ ] Install `better-sqlite3` and Drizzle.
-- [ ] Define schemas for `profiles`, `runs`, `trace_events`, `approvals`, `costs`, `model_pricing`, `audit_log`. (Other tables come in later phases.)
-- [ ] Generate the initial migration.
-- [ ] Write a `createDb(path)` helper and query helpers for the above tables.
-- [ ] Unit tests against an in-memory DB.
+- [x] Install `better-sqlite3` and Drizzle.
+- [x] Define schemas for `profiles`, `runs`, `trace_events`, `approvals`, `costs`, `model_pricing`, `audit_log`. (Other tables come in later phases.)
+- [x] Generate the initial migration.
+- [x] Write a `createDb(path)` helper and query helpers for the above tables.
+- [x] Unit tests against an in-memory DB.
 
 **Done when:** migrations apply cleanly, helpers work, tests pass.
 
 ### Step 0.5 — Build the harness skeleton with fakes
 
-- [ ] `@atlas/harness`: the `run(agentDef, input, options)` function per `docs/02-agent-runtime.md §1`.
-- [ ] Implement: budget enforcement, iteration cap, wall-time cap, tool scoping, kill switch, trace capture, schema-feedback retries.
-- [ ] Do NOT integrate real MCP or real models yet — use fakes that return scripted responses.
-- [ ] Unit tests covering each enforcement point.
+- [x] `@atlas/harness`: the `run(agentDef, input, options)` function per `docs/02-agent-runtime.md §1`.
+- [x] Implement: budget enforcement, iteration cap, wall-time cap, tool scoping, kill switch, trace capture, schema-feedback retries.
+- [x] Do NOT integrate real MCP or real models yet — use fakes that return scripted responses.
+- [x] Unit tests covering each enforcement point.
 
 **Done when:** the harness runs a fake agent with a fake model and fake tools, enforces every limit correctly, and produces a valid trace. This is the most important test in the project — get it right.
 
 ### Step 0.6 — Build `mcp-atlas-db` and `mcp-atlas-user`
 
-- [ ] Use `@modelcontextprotocol/sdk` to build both servers as stdio-transport MCP servers.
-- [ ] `atlas-db`: minimal tools — `get_profile`, `write_trace_event`.
-- [ ] `atlas-user`: `request_approval` (blocking on a promise bound to an approval ID), `ask`, `notify`.
-- [ ] Integration test: harness → MCP client → server → DB write, end to end.
+- [x] Use `@modelcontextprotocol/sdk` to build both servers as stdio-transport MCP servers.
+- [x] `atlas-db`: minimal tools — `get_profile`, `write_trace_event`.
+- [x] `atlas-user`: `request_approval` (blocking on a promise bound to an approval ID), `ask`, `notify`.
+- [x] Integration test: harness → MCP client → server → DB write, end to end.
 
 **Done when:** the harness can call these servers and the DB reflects the result.
 
 ### Step 0.7 — Build `@atlas/model-router` with Anthropic only
 
-- [ ] Install `ai` SDK and the Anthropic adapter.
-- [ ] Implement stage-based routing with a hard-coded mapping for Phase 0.
-- [ ] Cost tracking via token counts → `model_pricing` lookup.
-- [ ] No fallback chains yet (Phase 2).
+- [x] Install `ai` SDK and the Anthropic adapter.
+- [x] Implement stage-based routing with a hard-coded mapping for Phase 0.
+- [x] Cost tracking via token counts → `model_pricing` lookup.
+- [x] No fallback chains yet (Phase 2).
 
 **Done when:** `generateText` works through the router and costs are recorded.
 
 ### Step 0.8 — Build the echo-profile agent
 
-- [ ] Agent definition in `packages/agents/src/echo-profile/`.
-- [ ] Prompt: "Read the profile via `atlas-db.get_profile` and echo back the user's name."
-- [ ] Tool allowlist: `atlas-db.get_profile` only.
-- [ ] Seed a fake profile in the DB.
-- [ ] Run the agent via the harness end-to-end. Verify trace, cost, result.
+- [x] Agent definition in `packages/agents/src/echo-profile/`.
+- [x] Prompt: "Read the profile via `atlas-db.get_profile` and echo back the user's name."
+- [x] Tool allowlist: `atlas-db.get_profile` only.
+- [x] Seed a fake profile in the DB.
+- [x] Run the agent via the harness end-to-end. Verify trace, cost, result.
 
 **Done when:** `pnpm run agent echo-profile` prints the name and writes a complete trace.
 
 ### Step 0.9 — Build the Electron shell
 
-- [ ] `apps/desktop` with `electron-vite` setup.
-- [ ] Main process: hardened per `docs/04-app-shell.md §1`. Loads DB, spawns MCP servers, registers harness.
-- [ ] Preload script exposing a tiny IPC surface (`runs.start`, `runs.get`).
-- [ ] Renderer: React + Tailwind + TanStack Router with two screens — Profile viewer (read-only) and Trace viewer.
-- [ ] Wire "Run echo-profile agent" button → IPC → harness → trace renders in Trace viewer.
+- [x] `apps/desktop` with `electron-vite` setup.
+- [x] Main process: hardened per `docs/04-app-shell.md §1`. Loads DB, spawns MCP servers, registers harness.
+- [x] Preload script exposing a tiny IPC surface (`runs.start`, `runs.get`).
+- [x] Renderer: React + Tailwind + TanStack Router with two screens — Profile viewer (read-only) and Trace viewer.
+- [x] Wire "Run echo-profile agent" button → IPC → harness → trace renders in Trace viewer.
 
 **Done when:** you click a button in the app window, the agent runs, and you see the full trace update live.
 
 ### Step 0.10 — Build the Profile Parser Agent
 
-- [ ] Add `mcp-atlas-fs` and `mcp-atlas-profile` MCP servers.
-- [ ] Implement the Profile Parser Agent per `docs/05-...md §1`.
-- [ ] Add a "Import Profile" screen that accepts a PDF upload.
-- [ ] Run the parser → produce canonical YAML → persist to DB.
+- [x] Add `mcp-atlas-fs` and `mcp-atlas-profile` MCP servers.
+- [x] Implement the Profile Parser Agent per `docs/05-...md §1`.
+- [x] Add a "Import Profile" screen that accepts a PDF upload.
+- [x] Run the parser → produce canonical YAML → persist to DB.
 
 **Done when:** you can import a real PDF CV and see the canonical YAML in the DB.
 
 ### Step 0.11 — Package as a `.dmg`
 
-- [ ] `electron-builder` config for macOS DMG (unsigned is fine for now).
-- [ ] `pnpm build` produces a working DMG.
-- [ ] Install the DMG on your own machine and run the Phase 0 flow.
+- [x] `electron-builder` config for macOS DMG (unsigned is fine for now).
+- [x] `pnpm build` produces a working DMG.
+- [x] Install the DMG on your own machine and run the Phase 0 flow.
 
 **Done when:** the app installs from a DMG and does everything above.
 

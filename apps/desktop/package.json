@@ -13,6 +13,33 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit"
   },
+  "build": {
+    "appId": "com.atlas.app",
+    "productName": "Atlas",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "extraResources": [
+      {
+        "from": "../../packages/db/migrations",
+        "to": "migrations",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "files": [
+      "out/**/*",
+      "package.json"
+    ]
+  },
   "dependencies": {
     "@atlas/agents": "workspace:*",
     "@atlas/db": "workspace:*",
@@ -30,8 +57,10 @@
     "@playwright/mcp": "^0.0.70",
     "@tanstack/react-query": "^5.97.0",
     "@tanstack/react-router": "^1.168.10",
+    "better-sqlite3": "^12.8.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.2",
     "keytar": "^7.9.0",
     "lucide-react": "^1.8.0",
     "react": "^19.2.5",
@@ -47,6 +76,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "electron": "^41.2.0",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.2.2",
     "vite": "^8.0.8",
