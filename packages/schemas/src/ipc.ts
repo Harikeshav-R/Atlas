@@ -10,6 +10,9 @@ export const IpcChannels = {
   runsList: 'runs.list',
   approvalsRespond: 'approvals.respond',
   listingsList: 'listings.list',
+  listingsGet: 'listings.get',
+  listingsCreateFromUrl: 'listings.createFromUrl',
+  listingsEvaluate: 'listings.evaluate',
 } as const;
 
 export type IpcChannel = (typeof IpcChannels)[keyof typeof IpcChannels];

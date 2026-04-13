@@ -1,8 +1,9 @@
 import { app, BrowserWindow, session, ipcMain } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { createLogger, ok, err, newId, now } from '@atlas/shared';
-import { createDb, queries, profiles } from '@atlas/db';
+import { createHash } from 'node:crypto';
+import { createLogger, ok, err, newId, nowISO } from '@atlas/shared';
+import { createDb, queries, profiles, listings } from '@atlas/db';
 import { runAgent } from '@atlas/harness';
 import { getAgent } from '@atlas/agents';
 import { eq } from 'drizzle-orm';
@@ -131,7 +132,7 @@ ipcMain.handle('runs.start', async (_event, agentName: string) => {
             run_id: payload?.runId || newId('run'),
             agent_name: agentName,
             mode: 'normal',
-            started_at: new Date(now()).toISOString(),
+            started_at: nowISO(),
             status: 'running'
           });
         }
@@ -148,6 +149,125 @@ ipcMain.handle('runs.start', async (_event, agentName: string) => {
 ipcMain.handle('runs.get', (_event, runId: string) => {
   // Stub for now, normally we fetch traces from db
   return ok({ runId, traces: [] });
+});
+
+// Listings handlers
+ipcMain.handle('listings.list', () => {
+  try {
+    const result = queries.listListings(db, { limit: 50 });
+    return ok(result);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('listings.get', (_event, listingId: string) => {
+  try {
+    const listing = queries.getListing(db, listingId);
+    if (!listing) return err({ name: 'AtlasError', code: 'NOT_FOUND', message: 'Listing not found' });
+
+    const evaluation = queries.getEvaluationForListing(db, listingId);
+    const scorecard = evaluation ? queries.getScorecard(db, evaluation.evaluation_id) : undefined;
+
+    return ok({ listing, evaluation, scorecard });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('listings.createFromUrl', async (_event, url: string) => {
+  try {
+    // Canonicalize the URL
+    const parsed = new URL(url);
+    const canonicalUrl = `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+
+    // Check for existing listing with this URL
+    const existing = queries.getListingByUrl(db, canonicalUrl);
+    if (existing) {
+      return ok(existing);
+    }
+
+    // Fetch the page content to extract job info
+    // For Phase 1 MVP, we create a stub listing with the URL;
+    // the evaluation agent will read the full details via web tools
+    const timestamp = nowISO();
+    const listingId = newId('listing');
+
+    queries.insertListing(db, {
+      listing_id: listingId,
+      canonical_url: canonicalUrl,
+      company_name: parsed.hostname.replace(/^(www\.|boards\.)/, '').split('.')[0] ?? 'Unknown',
+      role_title: 'Pending evaluation...',
+      first_seen_at: timestamp,
+      last_seen_at: timestamp,
+      status: 'active',
+    });
+
+    return ok(queries.getListing(db, listingId));
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
+});
+
+ipcMain.handle('listings.evaluate', async (_event, listingId: string) => {
+  try {
+    const listing = queries.getListing(db, listingId);
+    if (!listing) return err({ name: 'AtlasError', code: 'NOT_FOUND', message: 'Listing not found' });
+
+    // For Phase 1 MVP, run with fakes — real model integration comes when
+    // the model router is wired up to actual providers via Settings
+    const agent = getAgent('evaluation.deep');
+    if (!agent) return err({ name: 'AtlasError', code: 'INTERNAL', message: 'Evaluation agent not found' });
+
+    const runId = newId('run');
+    const timestamp = nowISO();
+
+    queries.insertRun(db, {
+      run_id: runId,
+      agent_name: 'evaluation.deep',
+      mode: 'normal',
+      started_at: timestamp,
+      status: 'running',
+    });
+
+    // Placeholder evaluation result — in production this comes from the agent
+    // For now we create a stub evaluation so the UI can render
+    const evaluationId = newId('eval');
+    const profileRow = queries.getProfile(db, 'default');
+    const profileVersion = profileRow?.version ?? 1;
+
+    const stubSixBlocks = {
+      roleSummary: { dayToDay: ['Evaluation pending — run with a configured API key to get real results'] },
+      cvMatch: { matches: [{ requirement: 'Pending', gap: false }], gapsSummary: 'Pending evaluation' },
+      levelStrategy: { targetSeniority: 'Pending', emphasize: [], deemphasize: [] },
+      compResearch: { leveragePoints: [], sources: [] },
+      personalization: { companyNews: [], productLaunches: [], engineeringBlog: [], coverLetterHooks: [] },
+      interviewPrep: { stages: [], gaps: [] },
+    };
+
+    queries.insertEvaluation(db, {
+      evaluation_id: evaluationId,
+      listing_id: listingId,
+      profile_version: profileVersion,
+      agent_run_id: runId,
+      grade: 'C',
+      score: 5.5,
+      six_blocks_json: JSON.stringify(stubSixBlocks),
+      summary_text: 'Stub evaluation — configure an API key in Settings to run real evaluations.',
+      created_at: timestamp,
+    });
+
+    queries.updateRunStatus(db, runId, 'succeeded', nowISO());
+
+    const evaluation = queries.getEvaluation(db, evaluationId);
+    return ok(evaluation);
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return err({ name: 'AtlasError', code: 'INTERNAL', message });
+  }
 });
 
 async function createMainWindow(): Promise<BrowserWindow> {
