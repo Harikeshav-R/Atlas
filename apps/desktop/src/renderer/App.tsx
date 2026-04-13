@@ -543,9 +543,149 @@ const settingsRoute = createRoute({
   },
 });
 
+// --- Onboarding Screen ---
+
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/onboarding',
+  component: function OnboardingScreen() {
+    const [step, setStep] = React.useState(0);
+    const [apiKey, setApiKey] = React.useState('');
+    const [url, setUrl] = React.useState('');
+    const [importing, setImporting] = React.useState(false);
+    const queryClient = useQueryClient();
+
+    const handleImportProfile = async () => {
+      setImporting(true);
+      try {
+        await window.atlas.invoke('profile.import', '/dummy/path.pdf');
+        await queryClient.invalidateQueries({ queryKey: ['profile'] });
+        setStep(1);
+      } catch { /* ignore */ } finally {
+        setImporting(false);
+      }
+    };
+
+    const handleSaveApiKey = async () => {
+      if (!apiKey.trim()) return;
+      await window.atlas.invoke('settings.setApiKey', 'anthropic', apiKey);
+      setApiKey('');
+      setStep(2);
+    };
+
+    const handleEvaluateUrl = async () => {
+      if (!url.trim()) return;
+      const result = await window.atlas.invoke<IpcResult<ListingRow>>('listings.createFromUrl', url);
+      if (result?.ok) {
+        window.location.hash = `/listings/${result.data.listing_id}`;
+      }
+    };
+
+    const steps = [
+      {
+        title: 'Import your profile',
+        description: 'Upload your CV or resume as a PDF. Atlas will parse it into a structured profile that powers all evaluations.',
+        action: (
+          <button
+            onClick={handleImportProfile}
+            disabled={importing}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-lg font-medium"
+          >
+            {importing ? 'Importing...' : 'Import PDF'}
+          </button>
+        ),
+      },
+      {
+        title: 'Add your API key',
+        description: 'Atlas uses LLMs to evaluate jobs. Add your Anthropic API key to get started. You can add other providers later in Settings.',
+        action: (
+          <div className="flex gap-2 max-w-md">
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-..."
+              className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-4 py-3 text-sm"
+            />
+            <button
+              onClick={handleSaveApiKey}
+              disabled={!apiKey.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-lg font-medium"
+            >
+              Save
+            </button>
+          </div>
+        ),
+      },
+      {
+        title: 'Paste a job URL',
+        description: 'Paste any job listing URL and Atlas will fetch it, evaluate it against your profile, and show you a detailed analysis.',
+        action: (
+          <div className="flex gap-2 max-w-lg">
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://boards.greenhouse.io/..."
+              className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-4 py-3 text-sm"
+            />
+            <button
+              onClick={handleEvaluateUrl}
+              disabled={!url.trim()}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-3 rounded-lg font-medium"
+            >
+              Evaluate
+            </button>
+          </div>
+        ),
+      },
+    ];
+
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl font-bold mb-3">Welcome to Atlas</h1>
+          <p className="text-neutral-400 text-lg">Let&apos;s get you set up in three quick steps.</p>
+        </div>
+
+        <div className="flex justify-center mb-10">
+          {steps.map((_, i) => (
+            <div key={i} className="flex items-center">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                i < step ? 'bg-green-600' : i === step ? 'bg-blue-600' : 'bg-neutral-700'
+              }`}>
+                {i < step ? '\u2713' : i + 1}
+              </div>
+              {i < steps.length - 1 && (
+                <div className={`w-16 h-0.5 ${i < step ? 'bg-green-600' : 'bg-neutral-700'}`} />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="text-center space-y-6">
+          <h2 className="text-2xl font-semibold">{steps[step]?.title}</h2>
+          <p className="text-neutral-400">{steps[step]?.description}</p>
+          <div className="flex justify-center">
+            {steps[step]?.action}
+          </div>
+          {step > 0 && step < steps.length && (
+            <button
+              onClick={() => setStep((s) => s + 1)}
+              className="text-sm text-neutral-500 hover:text-neutral-300"
+            >
+              Skip this step
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  },
+});
+
 // --- Router ---
 
-const routeTree = rootRoute.addChildren([indexRoute, listingsRoute, listingDetailRoute, traceRoute, settingsRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, listingsRoute, listingDetailRoute, traceRoute, settingsRoute, onboardingRoute]);
 const router = createRouter({ routeTree });
 
 export function App() {
