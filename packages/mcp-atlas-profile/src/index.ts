@@ -4,6 +4,7 @@ import type { AtlasDb } from '@atlas/db';
 import { queries } from '@atlas/db';
 import { ProfileSchema } from '@atlas/schemas';
 import yaml from 'yaml';
+import { wrapUntrusted } from '@atlas/shared';
 
 export interface ProfileServerDeps {
   readonly db: AtlasDb;
@@ -22,7 +23,7 @@ export function createServer(deps: ProfileServerDeps): McpServer {
       try {
         const profile = queries.getProfile(deps.db, 'default');
         if (!profile) return { isError: true, content: [{ type: 'text', text: 'Profile not found' }] };
-        return { content: [{ type: 'text', text: profile.yaml_blob }] };
+        return { content: [{ type: 'text', text: wrapUntrusted(profile.yaml_blob, 'read') }] };
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
         return { isError: true, content: [{ type: 'text', text: message }] };
