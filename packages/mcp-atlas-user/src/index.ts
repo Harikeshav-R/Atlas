@@ -53,10 +53,13 @@ export function createServer(deps: UserServerDeps): McpServer {
       try {
         const result = await deps.requestUserApproval(approval_id);
         
+        const ValidStatusSchema = z.enum(['pending', 'granted', 'denied', 'timed_out']);
+        const validStatus = ValidStatusSchema.parse(result.status);
+
         queries.updateApprovalResponse(
           deps.db, 
           approval_id, 
-          result.status, 
+          validStatus, 
           JSON.stringify(result), 
           new Date().toISOString()
         );
