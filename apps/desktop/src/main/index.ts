@@ -67,9 +67,13 @@ ipcMain.handle('profile.import', async (_event, filePath: string) => {
       },
       onTraceEvent: (e) => {
         if (e.type === 'run_started') {
-          const payload = e.payload as { runId?: string } | undefined;
+          const runId = (e.payload as any)?.runId;
+          if (!runId) {
+            log.error({ event: e }, 'run_started event missing runId; skipping run insert');
+            return;
+          }
           queries.insertRun(db, {
-            run_id: payload?.runId || `run_${Date.now()}`,
+            run_id: runId,
             agent_name: 'profile-parser',
             mode: 'normal',
             started_at: new Date().toISOString(),
@@ -84,9 +88,7 @@ ipcMain.handle('profile.import', async (_event, filePath: string) => {
       const version = existing ? existing.version + 1 : 1;
       
       // Update the canonical profile in DB
-      try {
-        db.delete(profiles).where(eq(profiles.profile_id, 'default')).run();
-      } catch {}
+      db.delete(profiles).where(eq(profiles.profile_id, 'default')).run();
       
       queries.insertProfile(db, {
         profile_id: 'default',
@@ -174,6 +176,16 @@ async function createMainWindow(): Promise<BrowserWindow> {
         'Content-Security-Policy': [csp],
       },
     });
+  });
+
+  win.webContents.setWindowOpenHandler(() => {
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (e, url) => {
+    if (isDev && url.startsWith(process.env.ELECTRON_RENDERER_URL!)) return;
+    if (!isDev && url.startsWith('file://')) return;
+    e.preventDefault();
   });
 
   if (isDev) {
