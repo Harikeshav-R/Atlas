@@ -227,10 +227,19 @@ class LLMRequest(BaseModel):
 | **Claude Code** *(default CLI)* | CLI | `claude -p "<prompt>" --output-format json --json-schema '<schema>'` | JSON envelope; result in `structured_output`, text in `result`, cost in `total_cost_usd` |
 | OpenAI Codex CLI | CLI | `codex exec --skip-git-repo-check --sandbox read-only --output-schema <file> "<prompt>"` | Final JSON on stdout conforming to schema (`--json` for JSONL event stream) |
 | Google Antigravity CLI | CLI | `agy -p "<prompt>" --output-format json --json-schema '<schema>'` | JSON envelope; result in `structured_output`, text in `response`, `status`, `usage` |
-| **OpenRouter** *(default API)* | API | HTTPS chat-completions | JSON mode / structured outputs |
-| Amazon Bedrock | API | `boto3` Bedrock Runtime `invoke_model` / Converse | Tool/JSON output; model id + region configurable |
-| Anthropic API | API | Messages API | Structured outputs |
-| Generic OpenAI-compatible | API | `base_url` + key | Covers local servers (Ollama/LM Studio), Together, etc. |
+| **OpenRouter** *(default API)* | API | via **LiteLLM** | JSON mode / structured outputs |
+| Amazon Bedrock | API | via **LiteLLM** | Model id + region configurable |
+| Anthropic API | API | via **LiteLLM** | Structured outputs |
+| Google Gemini, DeepSeek, Groq, … | API | via **LiteLLM** | 100+ providers, one interface |
+| Generic OpenAI-compatible / local (Ollama, LM Studio) | API | via **LiteLLM** | `base_url` + key |
+
+> **API backends go through [LiteLLM](https://github.com/BerriAI/litellm) behind Atlas's own
+> `LLMProvider` interface** (§5.1a) — one library covers OpenRouter, Bedrock, Anthropic,
+> Gemini, DeepSeek, Groq, Ollama, and any OpenAI-compatible endpoint, so Atlas doesn't
+> hand-roll a `boto3`/`httpx`/`anthropic` adapter per vendor. The coding-**CLI** backends
+> (Claude Code / Codex / Antigravity) are **not** LiteLLM — they remain Atlas's own
+> subprocess adapters (LiteLLM can't drive them). Keeping LiteLLM behind our interface means
+> the API path stays swappable if we ever outgrow it.
 
 **CLI adapter design (the hard part)**
 
@@ -283,13 +292,44 @@ adapter strategy exploits that:
 - **Failover**: on hard error, auth failure, or quota/rate-limit, try the next backend in
   the configured chain (e.g. Claude Code → OpenRouter).
 
+**API adapter design (LiteLLM, behind our interface)**
+
+A single `LiteLLMProvider` implements the `LLMProvider` interface for **all** API backends,
+so adding a vendor is config, not code. Design (patterns validated by the reference project
+Resume-Matcher, which uses LiteLLM in a very similar app — see §19):
+
+- **One `litellm.Router`** (cached) fronts all API providers, configured with a
+  `RetryPolicy`. **Transport retries live in the Router** (network/5xx/rate-limit backoff);
+  callers must **not** re-retry transport — they only handle *content-quality* retries
+  (bad JSON). Keeping these two retry layers separate avoids multiplicative retry storms.
+- **Model capabilities come from a registry, not hardcoded** — whether a model supports JSON
+  mode, its max tokens, and temperature limits are queried per model, so Atlas requests JSON
+  mode only where supported and degrades gracefully elsewhere.
+- **Adaptive timeouts** scaled by expected token count and a per-provider factor (a long
+  tailoring call gets more time than a one-line classify).
+- **Single `resolve_api_key()` path**: keys come from the keyring and are passed to LiteLLM
+  **directly, never via `os.environ`**. **Local providers (Ollama/LM Studio) deliberately
+  skip the env-key fallback** so a paid cloud key can never leak to a local endpoint.
+- Because it sits behind `LLMProvider`, the rest of Atlas is agnostic to LiteLLM; it could be
+  swapped for direct SDKs later without touching callers.
+
 **Cross-cutting AI features**
 
 - **Provider-agnostic prompt library** (`atlas/ai/prompts/`): every AI task is a versioned
   prompt template + expected output schema.
-- **Structured output contract**: Atlas requests JSON with a Pydantic schema and validates
-  the response; on invalid output it runs a bounded repair loop, then surfaces a clear
-  error.
+- **Structured output contract** (a `complete_json()` helper shared by every backend):
+  Atlas requests JSON against a Pydantic-derived schema and validates the response, with a
+  layered recovery strategy before it gives up:
+  1. **Happy path** — read the backend's native structured field (CLI `structured_output` /
+     LiteLLM JSON mode) and validate against the schema.
+  2. **Brace-balancing extraction** — if the payload is wrapped in prose or a code fence,
+     extract the first balanced JSON object (`_extract_json`-style) and re-validate.
+  3. **Content-quality retry** — on malformed/truncated JSON, retry a bounded number of
+     times, **escalating temperature** slightly to break a stuck deterministic failure.
+  4. **JSON-mode → prompt-only fallback** — if a model's JSON mode misbehaves, drop to a
+     plain prompt that instructs "return only JSON between delimiters" and extract from that.
+  5. Only then surface a clear error (and optionally fail over to the next backend).
+  These are **content** retries, distinct from the Router's **transport** retries (above).
 - **Cost/latency accounting**: usage recorded per call when available; per-day and
   per-application cost visible in the TUI; configurable spend caps for API backends.
 - **Caching**: content-addressed cache keyed on (prompt template version, model, inputs)
@@ -432,6 +472,18 @@ that silently drops jobs).
 Given a `JobPosting` + master resume + profile emphasis, produce a **one-page** tailored
 resume.
 
+**Two tailoring modes** (pattern adapted from Resume-Matcher, §19):
+
+- **Diff mode (preferred)** — when the master resume is well structured (parsed into blocks
+  with content IDs), the AI produces a **skill-target plan** (which posting requirements to
+  hit) → generates **targeted diffs** against specific blocks → Atlas **applies** them →
+  a **verify** pass confirms the result. Small, reviewable, traceable edits rather than a
+  wholesale rewrite; each diff is attributable to a content ID and a reason.
+- **Full-output fallback** — if structured data is thin or diff mode fails validation, fall
+  back to generating the full tailored content in one pass.
+
+The pipeline in either mode:
+
 1. **Relevance selection**: AI ranks master-resume bullets/projects/skills by relevance to
    the posting's requirements and keywords, returning selections **by content ID** with
    per-item reasons.
@@ -446,7 +498,16 @@ resume.
 4. **Keyword alignment (ATS)**: ensures relevant real keywords from the posting appear
    where truthfully supported; reports which desired keywords could **not** be truthfully
    included (feeding gap suggestions).
-5. **Output**: a structured `TailoredResume` (selected content + final wording + layout
+5. **Refinement & AI-phrase scrub**: a final pass injects still-missing supported keywords,
+   checks alignment, and **scrubs AI-tell phrasing** (generic filler like "leveraged
+   synergies", "spearheaded a plethora") so the output reads like the user, not a model.
+6. **Local safety nets (defense-in-depth, deterministic — not the LLM)**: after generation,
+   Atlas re-validates that **personal info, employment dates, real skills, and custom
+   sections were preserved** and not dropped or altered by the model. A specific known
+   failure it guards: **LLMs silently drop month precision on dates**, so Atlas restores
+   dates from the source master resume. This runs regardless of honesty level and feeds
+   §11's traceability check.
+7. **Output**: a structured `TailoredResume` (selected content + final wording + layout
    hints) plus a diff view vs. the master, an explanation of every include/exclude/reword
    decision, and the rendered PDF (§5.11).
 
@@ -787,6 +848,9 @@ Regardless of level, Atlas always:
 
 - Runs the traceability validator and **flags** any claim it can't trace to the master, so
   the user sees exactly what was inferred/added and can accept or reject it.
+- Runs the **deterministic local safety nets** (§5.7 step 6) that preserve personal info,
+  employment dates (including the month-precision restore), real skills, and custom
+  sections — a non-LLM backstop so the model can't silently drop or corrupt factual content.
 - Produces **gap suggestions** — desired job keywords/skills that were *not* truthfully
   supportable — so the user can add real ones to the master resume.
 
@@ -862,10 +926,12 @@ abstractions:
 | Calendar | **caldav** + `icalendar` |
 | Email | **imaplib**/`imap-tools` (Gmail API later) |
 | AI — CLI | `subprocess` adapters for claude/codex/antigravity (all support `--output-format json` + JSON schema; see Appendix A) |
-| AI — API | `boto3` (Bedrock), `httpx` (OpenRouter/OpenAI-compat), `anthropic` |
+| AI — API | **LiteLLM** (`Router` + `RetryPolicy`) behind Atlas's `LLMProvider` interface — OpenRouter, Bedrock, Anthropic, Gemini, DeepSeek, Groq, Ollama, OpenAI-compat |
+| Prompt templating | **Jinja2** (versioned templates + JSON schemas per AI task) |
+| Doc → text (optional resume import) | `markitdown` (DOCX) + `pdfminer.six` (PDF) — for ingesting non-Markdown master resumes later |
 | Packaging & distribution | `uv build` → PyPI; install via `uv tool install atlas` / `pipx install atlas` (all-OS) |
-| Testing | **pytest**, `pytest-textual`, VCR-style HTTP fixtures, fake AI provider |
-| Lint/format/type | **ruff**, **mypy** |
+| Testing | **pytest**, `pytest-asyncio`, `respx` (mock httpx/LiteLLM), `pytest-textual`, recorded HTTP fixtures, fake AI provider |
+| Lint/format/type | **ruff**, **mypy --strict** |
 
 ---
 
@@ -886,9 +952,10 @@ atlas/
 │  ├─ db/                     # SQLModel models, session, Alembic migrations
 │  ├─ ai/
 │  │  ├─ base.py              # LLMProvider protocol, request/response
-│  │  ├─ cli/                 # claude, codex, antigravity adapters
-│  │  ├─ api/                 # bedrock, openrouter, anthropic, openai-compat
-│  │  ├─ prompts/             # versioned templates + schemas
+│  │  ├─ complete_json.py     # structured-output contract + repair/fallback
+│  │  ├─ cli/                 # claude, codex, antigravity subprocess adapters
+│  │  ├─ api/                 # LiteLLMProvider (Router + RetryPolicy), key resolution
+│  │  ├─ prompts/             # versioned Jinja2 templates + JSON schemas per task
 │  │  ├─ cache.py  router.py  # caching + failover chain
 │  ├─ profiles/               # onboarding Q&A, preferences
 │  ├─ resume/                 # master resume parse/version
@@ -972,14 +1039,18 @@ The document specs everything; build order is phased. Each phase is independentl
 
 - **Fake AI provider** returning canned structured responses → deterministic tests of
   tailoring/scoring/rendering without spending tokens or network.
-- **Recorded HTTP fixtures** for ATS/aggregator/scrape adapters (golden postings).
+- **Recorded HTTP fixtures** for ATS/aggregator/scrape adapters (golden postings); **`respx`**
+  to mock httpx/LiteLLM calls at the transport boundary.
 - **Renderer snapshot tests**: assert one-page output and stable layout per theme.
 - **Schema-contract tests**: every AI task's output validates against its Pydantic schema;
-  JSON-repair loop tested against malformed samples.
+  the `complete_json()` repair/fallback loop tested against malformed/truncated samples.
 - **TUI tests** via Textual's testing harness (key flows: onboard, tailor, status move).
-- **Honesty validator tests**: assert flagged claims trace (or fail to trace) to master
-  blocks correctly.
-- `ruff` + `mypy` in CI; `pytest` matrix on supported OSes.
+- **Honesty validator + safety-net tests**: assert flagged claims trace (or fail to trace)
+  to master blocks, and that the date-restore/preservation nets fire correctly.
+- **Test markers** (`unit` / `service` / `integration` / `eval`), with **real-LLM `eval`
+  tests excluded from the default run** and skipped absent a configured key — matching the
+  isolated-by-default policy in `AGENTS.md` §6.
+- `ruff` + `mypy --strict` in CI; `pytest` matrix on Windows/macOS/Linux at 100% coverage.
 
 ---
 
@@ -1013,6 +1084,10 @@ The document specs everything; build order is phased. Each phase is independentl
 | Resume honesty default | **`light_inference`** (with traceability validator + flags, §11). |
 | Phase 0 backends | **Claude Code** (CLI default) + **OpenRouter** (API failover). |
 | Target OS | **Windows, macOS, and Linux** — all first-class (§12.1). |
+| API-backend abstraction | **LiteLLM** behind Atlas's `LLMProvider` interface (§5.1a). CLI backends stay custom subprocess adapters. |
+| Prompt storage | **Jinja2** templates (not plain Python constants). |
+| Structured-output recovery | `complete_json()` layered repair + JSON-mode→prompt fallback (§5.1). |
+| Tailoring approach | **Diff mode** preferred, full-output fallback; deterministic post-LLM safety nets (§5.7). |
 
 ### 18.2 Remaining open questions (revisit during build)
 
@@ -1026,6 +1101,52 @@ The document specs everything; build order is phased. Each phase is independentl
   uploads).
 - Post-v1: revisit interview-prep assistance (company research briefs, question banks) if
   users want it.
+
+---
+
+## 19. Reference Projects
+
+### 19.1 Resume-Matcher (srbhr/Resume-Matcher, Apache-2.0)
+
+[Resume-Matcher](https://github.com/srbhr/Resume-Matcher) is the closest existing project to
+Atlas and was reviewed as a reference. It's an AI resume-tailoring tool: upload a master
+resume (PDF/DOCX), paste a job description, get AI improvements + fit score + cover letter +
+interview prep, export PDF. **Web app** (Next.js + FastAPI), `uv`-managed backend, LiteLLM,
+TinyDB/SQLite, Playwright PDF.
+
+**How Atlas differs / where it's a superset**
+
+| | Resume-Matcher | Atlas |
+|---|---|---|
+| Interface | Web app (localhost) | **TUI + CLI** |
+| AI backends | LiteLLM (API only) | **Coding CLIs (default)** + LiteLLM for API |
+| Scope | tailor · cover letter · score · interview prep | that **+ discovery · tracking · calendar · email · background daemon** |
+| Secrets | Fernet-encrypted at rest | OS keyring |
+| Rigor | no ruff/mypy | **ruff + mypy --strict + 100% coverage** |
+
+Their scope ≈ Atlas's Phase 1 core loop. Atlas's defining capability — driving the coding
+CLIs headlessly — is not something Resume-Matcher does (LiteLLM can't drive them).
+
+**Patterns adopted into this design** (with where they landed):
+
+- **LiteLLM** as the API-backend layer, kept behind Atlas's `LLMProvider` interface — §5.1a.
+- **Router-owns-transport-retries; callers own content retries** — §5.1a.
+- **Registry-based model capabilities** (JSON mode / tokens / temp), not hardcoded — §5.1a.
+- **Single `resolve_api_key()`; local providers skip env-key fallback**; keys never via
+  `os.environ` — §5.1a.
+- **`complete_json()`** layered structured-output recovery: brace-balancing extraction →
+  content-quality retry with temperature escalation → JSON-mode→prompt-only fallback — §5.1.
+- **Diff-mode tailoring** (skill-target plan → diffs → apply → verify) with full-output
+  fallback — §5.7.
+- **Deterministic post-LLM safety nets** preserving personal info / dates / skills / custom
+  sections, incl. **month-precision date restore**, and an **AI-phrase scrub** — §5.7, §11.
+- pytest markers with **real-LLM (`eval`) tests excluded by default**, and **`respx`** for
+  HTTP mocking — reflected in §16 and `AGENTS.md`.
+- A rich **`docs/agent/`** documentation layout — Atlas mirrors this (see `docs/agent/`).
+
+**Deliberately not adopted**: web-app architecture (Atlas is TUI-first), TinyDB (Atlas uses
+SQLModel), Fernet-at-rest as the primary secret store (Atlas uses the OS keyring; at-rest
+encryption remains a later option), and plain-Python-constant prompts (Atlas uses Jinja2).
 
 ---
 
