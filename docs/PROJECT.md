@@ -983,55 +983,60 @@ atlas/
 
 The document specs everything; build order is phased. Each phase is independently useful.
 
+> **Live status:** [`docs/STATUS.md`](./STATUS.md) tracks the current phase and the concrete
+> next step. The checkboxes below are the durable per-item ledger; tick them as work lands
+> (part of the [Definition of Done](../AGENTS.md#8-definition-of-done)).
+
 ### Phase 0 — Foundations
-- **Repository hygiene & CI (do this first).** Establish the `.github/` setup and quality
+- [x] **Repository hygiene & CI (do this first).** Establish the `.github/` setup and quality
   gates that every later PR depends on (`AGENTS.md` already assumes these exist):
-  - `.github/workflows/ci.yml` — GitHub Actions running `ruff` (format check + lint),
+  - [x] `.github/workflows/ci.yml` — GitHub Actions running `ruff` (format check + lint),
     `mypy --strict`, and `pytest` with the 100% line/branch coverage gate, on the
     Windows/macOS/Linux matrix, driven by `uv`.
-  - Root `.pre-commit-config.yaml` mirroring those checks for fast local gating.
-  - `.github/pull_request_template.md` mirroring the Definition of Done checklist in
+  - [x] Root `.pre-commit-config.yaml` mirroring those checks for fast local gating.
+  - [x] `.github/pull_request_template.md` mirroring the Definition of Done checklist in
     [`AGENTS.md`](../AGENTS.md), and `.github/ISSUE_TEMPLATE/` (bug + feature + `config.yml`).
-  - `.github/dependabot.yml` (uv/pip + GitHub Actions), `.github/CODEOWNERS`, and `main`
+  - [x] `.github/dependabot.yml` (uv/pip + GitHub Actions), `.github/CODEOWNERS`, and `main`
     branch protection (require green CI + review; merge-commit strategy).
-  - Root `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/); referenced by the
+  - [x] Root `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/); referenced by the
     Definition of Done) and `CONTRIBUTING.md` pointing at `AGENTS.md`.
   - *(A `uv build` → PyPI release workflow is deferred until there's something to ship —
     Phase 1+.)*
-- Project scaffold with **uv** (`uv init`, `pyproject.toml`, committed `uv.lock`, `uv run`
-  task entry points), cross-platform paths (`platformdirs`), config + keyring,
-  **SQLModel** + SQLite (WAL) + Alembic, logging.
-- **AI provider abstraction** with the two chosen Phase 0 backends: **Claude Code** (CLI,
+- [x] Project scaffold with **uv** (`pyproject.toml`, committed `uv.lock`, `uv run` gates),
+  the `src/atlas` package, and the `ruff` / `mypy --strict` / `pytest` + coverage config.
+- [ ] Cross-platform paths (`platformdirs`), config + keyring, **SQLModel** + SQLite (WAL)
+  + Alembic, logging.
+- [ ] **AI provider abstraction** with the two chosen Phase 0 backends: **Claude Code** (CLI,
   default) + **OpenRouter** (API, failover). Capability probing, `--output-format json` +
   `--json-schema` structured path, JSON-repair loop, `atlas doctor`.
-- Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
+- [ ] Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
 
 ### Phase 1 — Core loop (first genuinely useful release)
-- Onboarding Q&A + preferences; **single** profile (schema already multi-profile).
-- Master resume ingest + parse + versioning.
-- **Paste-URL** scrape + parse (static + Playwright fallback).
-- **Fit scoring** for a pasted job.
-- **Resume tailoring** + **cover letter** + **HTML→PDF rendering** with one-page enforce.
-- **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
+- [ ] Onboarding Q&A + preferences; **single** profile (schema already multi-profile).
+- [ ] Master resume ingest + parse + versioning.
+- [ ] **Paste-URL** scrape + parse (static + Playwright fallback).
+- [ ] **Fit scoring** for a pasted job.
+- [ ] **Resume tailoring** + **cover letter** + **HTML→PDF rendering** with one-page enforce.
+- [ ] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
   workspace, Applications, Application detail).
 
 ### Phase 2 — Discovery & background
-- **Daemon** + scheduler + IPC.
-- **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday).
-- **Aggregator** adapters + saved keyword searches.
-- Dedup + scored **Discover** queue in the TUI.
-- **Multiple profiles** fully wired.
+- [ ] **Daemon** + scheduler + IPC.
+- [ ] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday).
+- [ ] **Aggregator** adapters + saved keyword searches.
+- [ ] Dedup + scored **Discover** queue in the TUI.
+- [ ] **Multiple profiles** fully wired.
 
 ### Phase 3 — Scheduling & status intelligence
-- **CalDAV** calendar integration + `.ics` fallback; Calendar screen.
-- **IMAP email scan** + AI classification → proposed status changes & events.
-- **Application-question drafting** + reusable answer library.
+- [ ] **CalDAV** calendar integration + `.ics` fallback; Calendar screen.
+- [ ] **IMAP email scan** + AI classification → proposed status changes & events.
+- [ ] **Application-question drafting** + reusable answer library.
 
 ### Phase 4 — Polish & depth
-- Analytics/funnel views; reminders/nudges.
-- More ATS/aggregator adapters; optional **opt-in scraping** behind a flag.
-- DOCX export; more resume/cover themes; PII redactor; at-rest encryption option.
-- Gmail API adapter; additional API backends; batch scoring optimizations.
+- [ ] Analytics/funnel views; reminders/nudges.
+- [ ] More ATS/aggregator adapters; optional **opt-in scraping** behind a flag.
+- [ ] DOCX export; more resume/cover themes; PII redactor; at-rest encryption option.
+- [ ] Gmail API adapter; additional API backends; batch scoring optimizations.
 
 ---
 

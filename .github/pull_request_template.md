@@ -37,6 +37,7 @@ None.
 - [ ] `uv run ruff format --check .`, `uv run ruff check .`, and `uv run mypy --strict .` pass with zero errors.
 - [ ] Tests are extensive and the suite passes at **100% line + branch coverage** (any pragmas justified).
 - [ ] Public modules/classes/functions have **docstrings and full type hints**.
+- [ ] [`docs/STATUS.md`](../docs/STATUS.md) updated when a roadmap item advances (tick what landed, move the "Next up" pointer).
 - [ ] [`docs/PROJECT.md`](../docs/PROJECT.md) updated when the change affects architecture, the data model, features, or scope.
 - [ ] `CHANGELOG.md` updated under `Unreleased` ([Keep a Changelog](https://keepachangelog.com/)).
 - [ ] README / usage docs updated when user-facing CLI/TUI behavior changes.
