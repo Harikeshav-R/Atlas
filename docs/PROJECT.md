@@ -917,6 +917,20 @@ atlas/
 The document specs everything; build order is phased. Each phase is independently useful.
 
 ### Phase 0 — Foundations
+- **Repository hygiene & CI (do this first).** Establish the `.github/` setup and quality
+  gates that every later PR depends on (`AGENTS.md` already assumes these exist):
+  - `.github/workflows/ci.yml` — GitHub Actions running `ruff` (format check + lint),
+    `mypy --strict`, and `pytest` with the 100% line/branch coverage gate, on the
+    Windows/macOS/Linux matrix, driven by `uv`.
+  - Root `.pre-commit-config.yaml` mirroring those checks for fast local gating.
+  - `.github/pull_request_template.md` mirroring the Definition of Done checklist in
+    [`AGENTS.md`](../AGENTS.md), and `.github/ISSUE_TEMPLATE/` (bug + feature + `config.yml`).
+  - `.github/dependabot.yml` (uv/pip + GitHub Actions), `.github/CODEOWNERS`, and `main`
+    branch protection (require green CI + review; merge-commit strategy).
+  - Root `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/); referenced by the
+    Definition of Done) and `CONTRIBUTING.md` pointing at `AGENTS.md`.
+  - *(A `uv build` → PyPI release workflow is deferred until there's something to ship —
+    Phase 1+.)*
 - Project scaffold with **uv** (`uv init`, `pyproject.toml`, committed `uv.lock`, `uv run`
   task entry points), cross-platform paths (`platformdirs`), config + keyring,
   **SQLModel** + SQLite (WAL) + Alembic, logging.
