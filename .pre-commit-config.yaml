@@ -1,0 +1,41 @@
+# Fast local quality gates mirroring CI (see .github/workflows/ci.yml).
+# Install once per clone with: uv run pre-commit install
+# Do NOT bypass hooks with --no-verify (AGENTS.md §5.1).
+minimum_pre_commit_version: "4.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+      # Enforce AGENTS.md §0: never commit directly to main.
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  # Ruff: formatter + linter. Honors extend-exclude (["docs"]) via --force-exclude.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  # mypy --strict, run through uv so it sees the project's environment/deps.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy --strict
+        entry: uv run mypy --strict
+        language: system
+        types_or: [python, pyi]
+        pass_filenames: false
+        require_serial: true
