@@ -2,6 +2,12 @@
 
 Start here to navigate the Atlas docs.
 
+## Start here
+
+- **[STATUS.md](./STATUS.md)** — the "you are here / do this next" pointer. **Read this
+  first** at the start of any session (agent or human): current phase, what's landed, and
+  the concrete next step. Kept current as part of the Definition of Done.
+
 ## Design
 
 - **[PROJECT.md](./PROJECT.md)** — the full project design document: vision, architecture,

@@ -20,5 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub repository metadata: pull request template (Definition of Done),
   bug/feature issue templates, Dependabot (uv + GitHub Actions), and CODEOWNERS.
 - `CHANGELOG.md` and `CONTRIBUTING.md`.
+- `docs/STATUS.md` session pick-up doc (current phase, what's landed, next step),
+  wired into `AGENTS.md` as the mandatory first read and into the Definition of
+  Done so it stays current.
 
 [Unreleased]: https://github.com/Harikeshav-R/Atlas/commits/main

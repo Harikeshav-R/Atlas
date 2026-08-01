@@ -4,8 +4,12 @@ This file is the contract every coding agent (and human) must follow when changi
 this repository. It is normative: if a rule here conflicts with a default behavior baked
 into your tooling, **this file wins**. Read it fully before your first change.
 
-> Project context lives in [`docs/PROJECT.md`](./docs/PROJECT.md). Read it before writing
-> feature code so your work fits the intended architecture, data model, and roadmap.
+> **Starting a session? Read [`docs/STATUS.md`](./docs/STATUS.md) first** — it is the
+> single "you are here / do this next" pointer and tells you where the project stands and
+> what to pick up. Then read this file for the rules and
+> [`docs/PROJECT.md`](./docs/PROJECT.md) for the design before writing feature code, so your
+> work fits the intended architecture, data model, and roadmap. Keeping `STATUS.md` current
+> is part of the [Definition of Done](#8-definition-of-done).
 
 ---
 
@@ -19,7 +23,7 @@ into your tooling, **this file wins**. Read it fully before your first change.
 6. **All gates green before you commit**: `ruff`, `mypy --strict`, tests, coverage. See [§5](#5-quality-gates).
 7. **Use `uv` for everything** Python — never bare `pip`/`python`. See [§1](#1-environment--tooling).
 8. **Finish = open a PR for human review.** Do not self-merge. See [§7](#7-pull-requests--merging).
-9. **Update docs** (docstrings, `PROJECT.md`, `CHANGELOG.md`, README) as part of done. See [§8](#8-definition-of-done).
+9. **Update docs** (docstrings, `STATUS.md`, `PROJECT.md`, `CHANGELOG.md`, README) as part of done. See [§8](#8-definition-of-done).
 10. **When unsure, ask — do not assume.**
 
 ---
@@ -285,6 +289,8 @@ A change is "done" only when **all** of these are true:
 - [ ] Tests are extensive and the suite passes at **100% line + branch coverage** (pragmas
       justified).
 - [ ] Public modules/classes/functions have **docstrings and full type hints**.
+- [ ] [`docs/STATUS.md`](./docs/STATUS.md) updated when a roadmap item advances (tick what
+      landed, move the "Next up" pointer) so the next session picks up correctly.
 - [ ] [`docs/PROJECT.md`](./docs/PROJECT.md) updated when the change affects architecture,
       the data model, features, or scope.
 - [ ] `CHANGELOG.md` updated with an entry ([Keep a Changelog](https://keepachangelog.com/)
