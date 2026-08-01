@@ -27,3 +27,6 @@ Start here to navigate the Atlas docs.
 - **[../AGENTS.md](../AGENTS.md)** — the working agreement every coding agent and human must
   follow: branching, Conventional Commits, testing/coverage bar, quality gates, and PR flow.
   Read it before making changes.
+- **[agent/](./agent/)** — focused, task-oriented docs for working on Atlas: scope &
+  principles, architecture map, LLM integration, coding standards, testing strategy, and
+  workflow. Start at [agent/README.md](./agent/README.md).
