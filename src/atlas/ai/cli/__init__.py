@@ -6,12 +6,14 @@ boundary and map its JSON envelope onto the shared
 :class:`~atlas.ai.base.LLMResponse`. The subprocess boundary is injectable so the
 default test suite never spawns a real CLI (AGENTS.md §6.2).
 
-This package currently ships the subprocess runner boundary. The ``CliAdapter``
-base class and the concrete Claude Code adapter arrive in subsequent phases.
+This package currently ships the subprocess runner boundary and the
+``CliAdapter`` base class. The concrete Claude Code adapter arrives in a
+subsequent phase.
 """
 
 from __future__ import annotations
 
+from atlas.ai.cli.base import CliAdapter
 from atlas.ai.cli.runner import RunResult, SubprocessRunner, default_subprocess_runner
 
-__all__ = ["RunResult", "SubprocessRunner", "default_subprocess_runner"]
+__all__ = ["CliAdapter", "RunResult", "SubprocessRunner", "default_subprocess_runner"]
