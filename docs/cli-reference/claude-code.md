@@ -301,4 +301,3 @@ Run both commands from the same directory: session ID lookup is scoped to the cu
 * [CLI reference](/docs/en/cli-reference): all CLI flags and options
 * [GitHub Actions](/docs/en/github-actions): use the Agent SDK in GitHub workflows
 * [GitLab CI/CD](/docs/en/gitlab-ci-cd): use the Agent SDK in GitLab pipelines
-
