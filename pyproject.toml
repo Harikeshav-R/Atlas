@@ -21,7 +21,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+]
 
 [project.urls]
 Homepage = "https://github.com/Harikeshav-R/Atlas"
