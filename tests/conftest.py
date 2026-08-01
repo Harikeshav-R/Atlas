@@ -8,12 +8,14 @@ without spawning a real coding CLI or hitting a network (AGENTS.md §6.2).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 import pytest
 
 from atlas.ai.base import LLMRequest, LLMResponse
+from atlas.ai.cli.runner import RunResult
 
 # A per-call scripted response: either a ready :class:`LLMResponse` or a callable
 # that builds one from the request it receives (to assert on prompt/schema).
@@ -109,5 +111,88 @@ def make_fake_provider() -> FakeProviderFactory:
         available: bool = True,
     ) -> FakeLLMProvider:
         return FakeLLMProvider(script, name=name, available=available)
+
+    return factory
+
+
+@dataclass
+class RunnerCall:
+    """A single recorded invocation of :class:`FakeSubprocessRunner`."""
+
+    argv: list[str]
+    cwd: str | None
+    input_text: str | None
+    timeout_s: int
+    env: dict[str, str] | None
+
+
+class FakeSubprocessRunner:
+    """A scripted, offline :class:`~atlas.ai.cli.runner.SubprocessRunner` for tests.
+
+    Returns ``result`` for every call, or raises ``raises`` (e.g. a
+    :class:`subprocess.TimeoutExpired` or :class:`FileNotFoundError`) instead.
+    Every invocation is recorded on :attr:`calls` so tests can assert on the
+    argv, scratch cwd, piped stdin, timeout, and environment the adapter passed.
+    """
+
+    def __init__(
+        self,
+        result: RunResult | None = None,
+        *,
+        raises: BaseException | None = None,
+    ) -> None:
+        """Store the scripted result or exception to replay."""
+        self._result = result
+        self._raises = raises
+        self.calls: list[RunnerCall] = []
+
+    def __call__(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: str | None,
+        input_text: str | None,
+        timeout_s: int,
+        env: Mapping[str, str] | None,
+    ) -> RunResult:
+        """Record the call and return the scripted result, or raise."""
+        self.calls.append(
+            RunnerCall(
+                argv=list(argv),
+                cwd=cwd,
+                input_text=input_text,
+                timeout_s=timeout_s,
+                env=dict(env) if env is not None else None,
+            )
+        )
+        if self._raises is not None:
+            raise self._raises
+        assert self._result is not None, "FakeSubprocessRunner needs a result or a raises"
+        return self._result
+
+
+class FakeRunnerFactory(Protocol):
+    """Callable protocol for the ``make_fake_runner`` fixture."""
+
+    def __call__(
+        self,
+        result: RunResult | None = ...,
+        *,
+        raises: BaseException | None = ...,
+    ) -> FakeSubprocessRunner:
+        """Build a :class:`FakeSubprocessRunner` from a scripted result or error."""
+        ...
+
+
+@pytest.fixture
+def make_fake_runner() -> FakeRunnerFactory:
+    """Return a factory that builds :class:`FakeSubprocessRunner` instances."""
+
+    def factory(
+        result: RunResult | None = None,
+        *,
+        raises: BaseException | None = None,
+    ) -> FakeSubprocessRunner:
+        return FakeSubprocessRunner(result, raises=raises)
 
     return factory

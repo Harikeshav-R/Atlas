@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `atlas.ai.cli` subprocess boundary: a frozen `RunResult`, the runtime-checkable
+  `SubprocessRunner` protocol, and `default_subprocess_runner` (starts the child
+  in its own process group and kills the tree on timeout) —
+  `src/atlas/ai/cli/runner.py`.
+- `CliAdapter` base class (`src/atlas/ai/cli/base.py`): the reusable machinery
+  every coding-CLI backend subclasses — per-call scratch cwd, request-timeout
+  enforcement, `is_available()` version probe, error normalization, and a
+  single-chunk `stream()` fallback; subclasses supply `_build_argv` and
+  `_parse_response`.
+- `LLMTimeoutError` and `LLMBackendError` in the AI error hierarchy
+  (`src/atlas/ai/base.py`).
 - `atlas.ai` core contract: the `LLMProvider` protocol and `LLMRequest`,
   `LLMResponse`, and `Usage` models, plus the `LLMError` / `LLMOutputError`
   hierarchy (`src/atlas/ai/base.py`).

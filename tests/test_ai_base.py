@@ -6,11 +6,13 @@ import pytest
 from pydantic import ValidationError
 
 from atlas.ai import (
+    LLMBackendError,
     LLMError,
     LLMOutputError,
     LLMProvider,
     LLMRequest,
     LLMResponse,
+    LLMTimeoutError,
     Usage,
 )
 from tests.conftest import FakeLLMProvider, FakeProviderFactory, make_response
@@ -67,6 +69,8 @@ def test_llm_response_carries_structured_and_usage() -> None:
 
 def test_error_hierarchy() -> None:
     assert issubclass(LLMOutputError, LLMError)
+    assert issubclass(LLMTimeoutError, LLMError)
+    assert issubclass(LLMBackendError, LLMError)
     assert issubclass(LLMError, Exception)
 
 

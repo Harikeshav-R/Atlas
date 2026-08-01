@@ -23,11 +23,13 @@ from pydantic import BaseModel
 # and should not constrain at this layer (see docs/agent/coding-standards.md).
 
 __all__ = [
+    "LLMBackendError",
     "LLMError",
     "LLMOutputError",
     "LLMProvider",
     "LLMRequest",
     "LLMResponse",
+    "LLMTimeoutError",
     "Usage",
 ]
 
@@ -126,4 +128,21 @@ class LLMOutputError(LLMError):
     :func:`atlas.ai.complete_json.complete_json` raises this after its full
     recovery ladder — native structured field, brace-balanced extraction,
     bounded content retries, and a prompt-only fallback — has been exhausted.
+    """
+
+
+class LLMTimeoutError(LLMError):
+    """Raised when a backend call exceeds its timeout.
+
+    For CLI backends the child process tree is terminated before this is raised
+    (see :mod:`atlas.ai.cli`).
+    """
+
+
+class LLMBackendError(LLMError):
+    """Raised when a backend fails to produce a usable response.
+
+    Covers a non-zero process exit and an unparseable or malformed response
+    envelope. User-facing messages stay generic; details are logged rather than
+    surfaced so paths and diagnostics do not leak.
     """
