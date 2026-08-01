@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `atlas.ai` core contract: the `LLMProvider` protocol and `LLMRequest`,
+  `LLMResponse`, and `Usage` models, plus the `LLMError` / `LLMOutputError`
+  hierarchy (`src/atlas/ai/base.py`).
+- `complete_json()`: the provider-agnostic structured-output recovery ladder
+  (native structured field → balanced-JSON extraction → bounded content retries
+  with temperature escalation → prompt-only fallback → `LLMOutputError`),
+  generic over the target Pydantic model (`src/atlas/ai/complete_json.py`).
+- First runtime dependency: `pydantic`.
 - uv-managed project scaffold: `pyproject.toml` (hatchling build, version sourced
   from `atlas.__version__`), committed `uv.lock`, `src/atlas` package with a
   `py.typed` marker, and smoke tests.
