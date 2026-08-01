@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Project design & roadmap
+    url: https://github.com/Harikeshav-R/Atlas/blob/main/docs/PROJECT.md
+    about: Read the full design document, data model, and phased roadmap before filing.
+  - name: Contributing guide
+    url: https://github.com/Harikeshav-R/Atlas/blob/main/CONTRIBUTING.md
+    about: How to set up the environment and the working agreement for changes.

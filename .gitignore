@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+# NOTE: uv.lock IS committed (see AGENTS.md §1) — do not ignore it.
+.uv/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+
+# Local Atlas data (should never be committed — lives in platform dirs at runtime)
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# OS cruft
+.DS_Store
+Thumbs.db

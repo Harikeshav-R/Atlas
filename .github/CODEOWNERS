@@ -1,0 +1,5 @@
+# Code ownership for Atlas. The owner is requested for review on every PR
+# and, with branch protection, must approve before merge.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @Harikeshav-R

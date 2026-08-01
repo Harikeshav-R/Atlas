@@ -1,0 +1,121 @@
+[project]
+name = "atlas"
+description = "A local-first, terminal-native job-application co-pilot for software engineers."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Harikeshav Rameshkumar" }]
+requires-python = ">=3.11"
+keywords = ["job-search", "resume", "tui", "cli", "ai"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dynamic = ["version"]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Harikeshav-R/Atlas"
+Repository = "https://github.com/Harikeshav-R/Atlas"
+Documentation = "https://github.com/Harikeshav-R/Atlas/blob/main/docs/PROJECT.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/atlas/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/atlas"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.18",
+    "pytest>=8.4",
+    "pytest-cov>=7.0",
+    "ruff==0.16.1",
+]
+
+# --- Ruff (formatter + linter) --------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+# Docs contain illustrative code snippets that must not be reformatted/linted.
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+# A pragmatic, strict-leaning rule set. Expanded as the codebase grows.
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
+    "RUF", # ruff-specific rules
+    "D",   # pydocstyle (docstrings required — see AGENTS.md §8)
+]
+ignore = [
+    "D203", # one-blank-line-before-class (conflicts with D211)
+    "D213", # multi-line-summary-second-line (conflicts with D212)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests don't require module/package/class/function docstrings.
+"tests/**" = ["D100", "D101", "D102", "D103", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+# --- mypy (strict) --------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+show_error_codes = true
+pretty = true
+files = ["src", "tests"]
+
+# --- pytest + coverage ----------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--cov=atlas",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=100",
+]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["atlas"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]

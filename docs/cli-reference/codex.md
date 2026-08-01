@@ -367,4 +367,3 @@ printf "Summarize this error log in 3 bullets:\n\n%s\n" "$(tail -n 200 app.log)"
 
 ```bash
 generate_prompt.sh | codex exec - --json > result.jsonl ```
-

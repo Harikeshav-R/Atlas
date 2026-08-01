@@ -1,0 +1,70 @@
+name: Bug report
+description: Report a defect in Atlas.
+title: "bug: <short description>"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please fill out the sections below so it can
+        be reproduced. Do not include secrets (API keys, passwords) or personal
+        data from your resume/applications in this report.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I run `atlas ...`, I expected ... but got ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps to trigger the bug.
+      placeholder: |
+        1. Run `atlas ...`
+        2. ...
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or output
+      description: Paste any error output or logs. This is rendered as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Atlas version
+      description: Output of `atlas --version` (or the commit SHA you're on).
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - WSL2
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python --version` or `uv run python --version`.
+    validations:
+      required: true
+  - type: input
+    id: ai-backend
+    attributes:
+      label: AI backend
+      description: Which backend was in use (e.g. claude_code, openrouter), if relevant.
+    validations:
+      required: false
