@@ -14,10 +14,12 @@ failover router, capability probing, and caching arrive in later phases.
 from __future__ import annotations
 
 from atlas.ai.base import (
+    LLMAuthError,
     LLMBackendError,
     LLMError,
     LLMOutputError,
     LLMProvider,
+    LLMRateLimitError,
     LLMRequest,
     LLMResponse,
     LLMTimeoutError,
@@ -26,10 +28,12 @@ from atlas.ai.base import (
 from atlas.ai.complete_json import complete_json
 
 __all__ = [
+    "LLMAuthError",
     "LLMBackendError",
     "LLMError",
     "LLMOutputError",
     "LLMProvider",
+    "LLMRateLimitError",
     "LLMRequest",
     "LLMResponse",
     "LLMTimeoutError",
