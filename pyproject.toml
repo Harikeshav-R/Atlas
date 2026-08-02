@@ -22,6 +22,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
+    "alembic>=1.18.5",
     "keyring>=25.7.0",
     "keyrings-alt>=5.0.2",
     "litellm>=1.95.0",
@@ -29,6 +30,7 @@ dependencies = [
     "pycryptodome>=3.23.0",
     "pydantic>=2.13.4",
     "rich>=15.0.0",
+    "sqlmodel>=0.0.39",
     "tomli-w>=1.2.0",
     "typer>=0.27.0",
 ]
@@ -64,8 +66,9 @@ dev = [
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
-# Docs contain illustrative code snippets that must not be reformatted/linted.
-extend-exclude = ["docs"]
+# Docs contain illustrative code snippets that must not be reformatted/linted;
+# Alembic's generated migration environment/scripts follow their own style.
+extend-exclude = ["docs", "src/atlas/db/migrations"]
 
 [tool.ruff.lint]
 # A pragmatic, strict-leaning rule set. Expanded as the codebase grows.
@@ -107,6 +110,9 @@ warn_no_return = true
 show_error_codes = true
 pretty = true
 files = ["src", "tests"]
+# Alembic's generated migration environment/scripts are boilerplate driven by
+# Alembic at runtime (not imported by checked code), so they are not type-checked.
+exclude = ["src/atlas/db/migrations/"]
 
 # --- pytest + coverage ----------------------------------------------------------
 [tool.pytest.ini_options]
@@ -125,6 +131,9 @@ testpaths = ["tests"]
 [tool.coverage.run]
 branch = true
 source = ["atlas"]
+# Migration scripts run under Alembic, not pytest; the upgrade is proven
+# end-to-end by tests/test_db_migrate.py rather than by line coverage.
+omit = ["*/atlas/db/migrations/*"]
 
 [tool.coverage.report]
 show_missing = true

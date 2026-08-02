@@ -1015,7 +1015,7 @@ The document specs everything; build order is phased. Each phase is independentl
 - Cross-platform paths (`platformdirs`), config + keyring, **SQLModel** + SQLite (WAL)
   + Alembic, logging:
   - [x] Cross-platform paths (`platformdirs`) + config + keyring (`atlas.config`).
-  - [ ] **SQLModel** + SQLite (WAL) + Alembic.
+  - [x] **SQLModel** + SQLite (WAL) + Alembic (`atlas.db`).
   - [ ] Logging.
 - **AI provider abstraction** with the two chosen Phase 0 backends: **Claude Code** (CLI,
   default) + **OpenRouter** (API, failover). Capability probing, `--output-format json` +
