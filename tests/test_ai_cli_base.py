@@ -17,7 +17,7 @@ from atlas.ai import (
     LLMTimeoutError,
     Usage,
 )
-from atlas.ai.cli import CliAdapter, RunResult
+from atlas.ai.cli import CliAdapter, RunResult, parse_cli_version
 from tests.conftest import FakeSubprocessRunner
 
 
@@ -161,3 +161,64 @@ def test_classify_error_override_is_honored() -> None:
     adapter = _HookAdapter(command="hook", runner=runner)
     with pytest.raises(LLMAuthError, match="auth failed"):
         adapter.complete(_request())
+
+
+# --- version parsing + floor ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2.1.220 (Claude Code)", (2, 1, 220)),
+        ("v3.0.1", (3, 0, 1)),
+        ("  1.2.3  ", (1, 2, 3)),
+        ("not a version", None),
+        ("1.2", None),
+        ("", None),
+    ],
+)
+def test_parse_cli_version(text: str, expected: tuple[int, int, int] | None) -> None:
+    assert parse_cli_version(text) == expected
+
+
+class _FlooredAdapter(_StubAdapter):
+    """Stub adapter that requires a minimum version."""
+
+    name = "floored"
+
+    def _minimum_version(self) -> tuple[int, int, int]:
+        return (2, 1, 205)
+
+
+def test_check_availability_reason_when_binary_missing() -> None:
+    runner = FakeSubprocessRunner(raises=FileNotFoundError("stub"))
+    result = _FlooredAdapter(command="stub", runner=runner).check_availability()
+    assert result.available is False
+    assert "not found" in result.reason
+
+
+def test_check_availability_reason_on_nonzero_exit() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=1, stdout="", stderr="boom"))
+    result = _FlooredAdapter(command="stub", runner=runner).check_availability()
+    assert result.available is False
+    assert "probe failed" in result.reason
+
+
+def test_is_available_false_below_version_floor() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="2.1.100 (stub)", stderr=""))
+    adapter = _FlooredAdapter(command="stub", runner=runner)
+    result = adapter.check_availability()
+    assert result.available is False
+    assert "too old" in result.reason
+    assert ">= 2.1.205" in result.reason
+
+
+def test_is_available_true_at_or_above_floor() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="2.1.205 (stub)", stderr=""))
+    assert _FlooredAdapter(command="stub", runner=runner).is_available() is True
+
+
+def test_is_available_true_when_version_unparseable() -> None:
+    # An unrecognized --version format on a zero exit is not punished.
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="mystery build", stderr=""))
+    assert _FlooredAdapter(command="stub", runner=runner).is_available() is True

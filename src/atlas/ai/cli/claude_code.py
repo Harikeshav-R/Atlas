@@ -66,6 +66,12 @@ _RATE_LIMIT_MARKERS = ("rate limit", "429", "overloaded", "quota", "billing")
 # Appended to the caller's system prompt to keep Claude in a text/JSON-only mode.
 _NEUTRALIZE_INSTRUCTION = "Respond directly with the answer only; do not use any tools."
 
+# Minimum supported Claude Code version. 2.1.205 is the release that added the
+# stream-json structured ``error`` category / ``system/init`` capabilities array
+# this adapter relies on (docs/cli-reference/claude-code.md); older builds lack
+# the output shapes Atlas depends on, so they are treated as unavailable.
+_CLAUDE_MIN_VERSION = (2, 1, 205)
+
 
 class ClaudeCodeAdapter(CliAdapter):
     """:class:`~atlas.ai.base.LLMProvider` backed by the ``claude`` CLI."""
@@ -103,6 +109,10 @@ class ClaudeCodeAdapter(CliAdapter):
         self._use_bare = use_bare
         self._api_key = api_key
         self._model = model
+
+    def _minimum_version(self) -> tuple[int, int, int]:
+        """Return the minimum supported ``claude`` version (see :data:`_CLAUDE_MIN_VERSION`)."""
+        return _CLAUDE_MIN_VERSION
 
     def _build_argv(self, request: LLMRequest) -> list[str]:
         """Assemble the ``claude`` argv for ``request`` (no ``--allowedTools``).

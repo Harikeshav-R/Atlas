@@ -12,16 +12,49 @@ design").
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import NoReturn
 
 from atlas.ai.base import LLMBackendError, LLMRequest, LLMResponse, LLMTimeoutError
 from atlas.ai.cli.runner import RunResult, SubprocessRunner
 
-__all__ = ["CliAdapter"]
+__all__ = ["CliAdapter", "CliAvailability", "parse_cli_version"]
+
+# Leading ``MAJOR.MINOR.PATCH`` at the start of a ``--version`` line, e.g.
+# ``"2.1.220 (Claude Code)"``. Trailing text after the patch number is ignored.
+_VERSION_RE = re.compile(r"^\s*v?(\d+)\.(\d+)\.(\d+)")
+
+
+def parse_cli_version(text: str) -> tuple[int, int, int] | None:
+    """Parse a leading ``MAJOR.MINOR.PATCH`` from ``--version`` output.
+
+    Returns the version as a comparable ``(major, minor, patch)`` tuple, or
+    ``None`` when no leading semver is present (an unknown/changed format — the
+    caller should not punish an unrecognized version string).
+    """
+    match = _VERSION_RE.match(text)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+@dataclass(frozen=True)
+class CliAvailability:
+    """The outcome of a CLI backend's availability check.
+
+    Attributes:
+        available: Whether the backend is usable right now.
+        reason: A short, generic explanation (never leaks paths/secrets), suitable
+            for surfacing in ``atlas doctor``.
+    """
+
+    available: bool
+    reason: str
 
 
 class CliAdapter(ABC):
@@ -111,12 +144,22 @@ class CliAdapter(ABC):
             except subprocess.TimeoutExpired as exc:
                 raise LLMTimeoutError(f"{self.name} timed out after {timeout_s}s.") from exc
 
-    def is_available(self) -> bool:
-        """Return whether the CLI binary is present and runnable.
+    def _minimum_version(self) -> tuple[int, int, int] | None:
+        """Return the minimum required CLI version, or ``None`` for no floor.
 
-        Runs the version command through the runner; ``True`` iff it exits ``0``.
-        A missing binary (:class:`FileNotFoundError` / :class:`OSError`) yields
-        ``False`` rather than raising.
+        Overridable; the default imposes no minimum. A subclass returns a
+        ``(major, minor, patch)`` tuple to hard-fail an older CLI as unavailable
+        (Atlas relies on flags/output shapes that drift across versions).
+        """
+        return None
+
+    def check_availability(self) -> CliAvailability:
+        """Probe the CLI and return a :class:`CliAvailability` with a reason.
+
+        Runs the version command once: a missing binary or non-zero exit is
+        unavailable; a parsed version below :meth:`_minimum_version` is
+        unavailable (hard fail); an unparseable version on a zero exit is treated
+        as available (an unknown ``--version`` format is not punished).
         """
         try:
             result = self._run(
@@ -125,8 +168,24 @@ class CliAdapter(ABC):
                 timeout_s=30,
             )
         except OSError:
-            return False
-        return result.returncode == 0
+            return CliAvailability(available=False, reason="binary not found on PATH")
+        if result.returncode != 0:
+            return CliAvailability(available=False, reason="version probe failed")
+        minimum = self._minimum_version()
+        if minimum is not None:
+            version = parse_cli_version(result.stdout)
+            if version is not None and version < minimum:
+                floor = ".".join(str(part) for part in minimum)
+                return CliAvailability(available=False, reason=f"CLI too old; needs >= {floor}")
+        return CliAvailability(available=True, reason="available")
+
+    def is_available(self) -> bool:
+        """Return whether the CLI binary is present, runnable, and new enough.
+
+        Thin boolean wrapper over :meth:`check_availability` (which also carries
+        a human-readable reason for ``atlas doctor``).
+        """
+        return self.check_availability().available
 
     def complete(self, request: LLMRequest) -> LLMResponse:
         """Run ``request`` through the CLI and return the parsed response.
