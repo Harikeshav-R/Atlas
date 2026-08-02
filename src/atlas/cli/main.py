@@ -46,12 +46,26 @@ def doctor(
         "--json",
         help="Emit the report as JSON for scripting instead of text.",
     ),
+    probe: bool = typer.Option(
+        False,
+        "--probe",
+        help="Run a live capability probe (makes a billable call per backend); "
+        "reuses cached results where available.",
+    ),
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        help="With --probe, re-probe every backend, ignoring cached results.",
+    ),
 ) -> None:
     """Validate configuration and report each AI backend's availability.
 
-    Exit code is ``0`` when at least one backend is usable and ``1`` when none
-    is (or configuration/secret storage could not be loaded), so scripts can
-    gate on ``atlas doctor``.
+    By default this makes no model calls and shows cached capabilities when
+    present. Pass ``--probe`` to run a live "reply OK as JSON" round-trip against
+    each backend (billable) and cache the results; ``--refresh`` forces a
+    re-probe. Exit code is ``0`` when at least one backend is usable and ``1``
+    when none is (or configuration/secret storage could not be loaded), so
+    scripts can gate on ``atlas doctor``.
     """
     try:
         config = load_config()
@@ -61,7 +75,7 @@ def doctor(
         error_console.print(f"[error]atlas doctor:[/error] {exc}")
         raise typer.Exit(code=1) from exc
 
-    report = run_doctor(config.ai, store)
+    report = run_doctor(config.ai, store, probe=probe or refresh, refresh=refresh)
     if as_json:
         print_json_line(report.model_dump_json(indent=2))
     else:

@@ -54,7 +54,9 @@ def test_doctor_text_healthy_exit_zero(
     stub_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(app_module, "run_doctor", lambda config, store: _report(healthy=True))
+    monkeypatch.setattr(
+        app_module, "run_doctor", lambda config, store, **kwargs: _report(healthy=True)
+    )
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
     assert "AI backends" in result.output
@@ -66,7 +68,9 @@ def test_doctor_unhealthy_exits_one(
     stub_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(app_module, "run_doctor", lambda config, store: _report(healthy=False))
+    monkeypatch.setattr(
+        app_module, "run_doctor", lambda config, store, **kwargs: _report(healthy=False)
+    )
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
     assert "No usable backend configured" in result.output
@@ -76,7 +80,9 @@ def test_doctor_json_output(
     stub_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(app_module, "run_doctor", lambda config, store: _report(healthy=True))
+    monkeypatch.setattr(
+        app_module, "run_doctor", lambda config, store, **kwargs: _report(healthy=True)
+    )
     result = runner.invoke(app, ["doctor", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
@@ -93,3 +99,41 @@ def test_doctor_reports_config_error_and_exits_one(monkeypatch: pytest.MonkeyPat
     assert result.exit_code == 1
     assert "atlas doctor:" in result.output
     assert "no secure keychain" in result.output
+
+
+def _capture_kwargs(monkeypatch: pytest.MonkeyPatch, captured: dict[str, object]) -> None:
+    def _run(config: object, store: object, **kwargs: object) -> DoctorReport:
+        captured.update(kwargs)
+        return _report(healthy=True)
+
+    monkeypatch.setattr(app_module, "run_doctor", _run)
+
+
+def test_doctor_default_does_not_probe(
+    stub_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    _capture_kwargs(monkeypatch, captured)
+    runner.invoke(app, ["doctor"])
+    assert captured == {"probe": False, "refresh": False}
+
+
+def test_doctor_probe_flag_enables_probe(
+    stub_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    _capture_kwargs(monkeypatch, captured)
+    runner.invoke(app, ["doctor", "--probe"])
+    assert captured == {"probe": True, "refresh": False}
+
+
+def test_doctor_refresh_implies_probe(
+    stub_env: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    _capture_kwargs(monkeypatch, captured)
+    runner.invoke(app, ["doctor", "--refresh"])
+    assert captured == {"probe": True, "refresh": True}

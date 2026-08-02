@@ -2,20 +2,22 @@
 
 ``atlas doctor`` validates configuration and backend availability (PROJECT.md §9,
 §5.15). This module holds the **pure, I/O-light logic** — building each configured
-backend and checking whether it reports itself available — separated from the
-Typer command wiring in :mod:`atlas.cli.app` so it is fully testable with fake
-providers (AGENTS.md §6.2).
+backend, checking whether it reports itself available, and (opt-in) attaching
+capability-probe results — separated from the Typer command wiring in
+:mod:`atlas.cli.main` so it is fully testable with fake providers (AGENTS.md §6.2).
 
-This is the v1 report: it constructs each backend named in the config chain
-(``default_backend`` + ``failover``) and records its availability
-(:meth:`~atlas.ai.base.LLMProvider.is_available`) plus any construction error. It
-does **not** yet run the live "reply OK as JSON" capability round-trip — that
-probe (and where its results cache) arrives in a later phase.
+It constructs each backend named in the config chain (``default_backend`` +
+``failover``) and records its availability
+(:meth:`~atlas.ai.base.LLMProvider.is_available`) plus any construction error.
+When ``probe`` is requested it also runs the live capability probe
+(:func:`atlas.ai.probe.probe_backend`) — reusing cached results
+(:mod:`atlas.ai.probe_cache`) unless refreshed — since that makes billable calls;
+by default it only surfaces cached capabilities.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel
 from rich.console import Group
@@ -24,15 +26,41 @@ from rich.text import Text
 
 from atlas.ai.base import LLMError
 from atlas.ai.cli.runner import SubprocessRunner, default_subprocess_runner
+from atlas.ai.probe import BackendCapabilities, ProbeResult, probe_backend
+from atlas.ai.probe_cache import load_probe_cache, save_probe_cache
 from atlas.ai.router import build_named_provider
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from rich.console import RenderableType
 
+    from atlas.ai.base import LLMProvider
     from atlas.config.schema import AiConfig
     from atlas.config.secrets import SecretStore
 
 __all__ = ["BackendStatus", "DoctorReport", "render_report", "run_doctor"]
+
+
+class _ProbeFn(Protocol):
+    """Callable that probes a provider — the seam tests inject a fake through."""
+
+    def __call__(self, provider: LLMProvider, /) -> ProbeResult:
+        """Return the probe result for ``provider``."""
+
+
+class _CacheLoadFn(Protocol):
+    """Callable that loads the probe cache (injected in tests)."""
+
+    def __call__(self) -> dict[str, ProbeResult]:
+        """Return cached results keyed by backend name."""
+
+
+class _CacheSaveFn(Protocol):
+    """Callable that saves the probe cache (injected in tests)."""
+
+    def __call__(self, results: Mapping[str, ProbeResult], /) -> None:
+        """Persist ``results`` keyed by backend name."""
 
 
 class BackendStatus(BaseModel):
@@ -47,12 +75,18 @@ class BackendStatus(BaseModel):
             ``False``.
         detail: A short human-readable status line (never leaks secrets, paths,
             or vendor diagnostics).
+        capabilities: The probed capabilities when known (from a live probe or
+            the cache), else ``None``.
+        capabilities_cached: Whether :attr:`capabilities` came from the cache
+            (``True``) rather than a live probe this run (``False``).
     """
 
     name: str
     role: str
     available: bool
     detail: str
+    capabilities: BackendCapabilities | None = None
+    capabilities_cached: bool = False
 
 
 class DoctorReport(BaseModel):
@@ -81,6 +115,11 @@ def run_doctor(
     store: SecretStore,
     *,
     runner: SubprocessRunner = default_subprocess_runner,
+    probe: bool = False,
+    refresh: bool = False,
+    probe_fn: _ProbeFn = probe_backend,
+    cache_load: _CacheLoadFn = load_probe_cache,
+    cache_save: _CacheSaveFn = save_probe_cache,
 ) -> DoctorReport:
     """Build and inspect every configured backend, returning a :class:`DoctorReport`.
 
@@ -89,18 +128,48 @@ def run_doctor(
     with a generic reason rather than aborting the whole report, so ``doctor``
     can show the user the full picture.
 
+    Capability reporting is opt-in because a live probe makes billable calls:
+
+    - ``probe=False`` (default): no live calls; attach cached capabilities when a
+      cache entry exists for the backend.
+    - ``probe=True``: run the live probe for backends missing from the cache (or
+      for all backends when ``refresh=True``), reuse cached results otherwise,
+      and persist the merged cache.
+
     Args:
         config: The ``[ai]`` configuration (backend selection + settings).
         store: The secret store passed to each backend factory.
         runner: The subprocess boundary for CLI backends; defaults to the real
             runner and is replaced by a fake in tests.
+        probe: Whether to run/attach the live capability probe.
+        refresh: When probing, re-probe every backend instead of reusing cached
+            results.
+        probe_fn: The probe callable (injected in tests to avoid live calls).
+        cache_load: Loads the probe cache (injected in tests).
+        cache_save: Saves the probe cache (injected in tests).
 
     Returns:
         The report over all configured backends.
     """
+    cache = cache_load()
+    updated: dict[str, ProbeResult] = dict(cache)
     statuses: list[BackendStatus] = []
     for name, role in _ordered_backends(config):
-        statuses.append(_probe_backend(name, role, config, store, runner=runner))
+        status = _probe_backend(
+            name,
+            role,
+            config,
+            store,
+            runner=runner,
+            probe=probe,
+            refresh=refresh,
+            probe_fn=probe_fn,
+            cache=cache,
+            updated=updated,
+        )
+        statuses.append(status)
+    if probe:
+        cache_save(updated)
     healthy = any(status.available for status in statuses)
     return DoctorReport(backends=statuses, healthy=healthy)
 
@@ -112,41 +181,122 @@ def _probe_backend(
     store: SecretStore,
     *,
     runner: SubprocessRunner,
+    probe: bool,
+    refresh: bool,
+    probe_fn: _ProbeFn,
+    cache: Mapping[str, ProbeResult],
+    updated: dict[str, ProbeResult],
 ) -> BackendStatus:
     """Build one backend and return its :class:`BackendStatus`.
 
     Catches :class:`~atlas.ai.base.LLMError` from construction (e.g. an unknown
     backend name or a missing bare-mode key) so one misconfigured backend does
     not sink the whole report. Messages stay generic — no secrets or paths.
+
+    When ``probe`` is set, runs the live probe (unless a fresh cached result
+    exists and ``refresh`` is not set) and records the result in ``updated`` so
+    the caller can persist the merged cache.
     """
     try:
         provider = build_named_provider(name, config, store, runner=runner)
     except LLMError as exc:
         return BackendStatus(name=name, role=role, available=False, detail=f"not configured: {exc}")
-    if provider.is_available():
-        return BackendStatus(name=name, role=role, available=True, detail="available")
+
+    available = provider.is_available()
+    detail = "available" if available else "unavailable (binary missing, or no API key / login)"
+
+    capabilities, cached = _capabilities_for(
+        name,
+        provider,
+        probe=probe,
+        refresh=refresh,
+        probe_fn=probe_fn,
+        cache=cache,
+        updated=updated,
+    )
     return BackendStatus(
         name=name,
         role=role,
-        available=False,
-        detail="unavailable (binary missing, or no API key / login)",
+        available=available,
+        detail=detail,
+        capabilities=capabilities,
+        capabilities_cached=cached,
     )
+
+
+def _capabilities_for(
+    name: str,
+    provider: LLMProvider,
+    *,
+    probe: bool,
+    refresh: bool,
+    probe_fn: _ProbeFn,
+    cache: Mapping[str, ProbeResult],
+    updated: dict[str, ProbeResult],
+) -> tuple[BackendCapabilities | None, bool]:
+    """Return ``(capabilities, from_cache)`` for one backend.
+
+    Without ``probe`` this only surfaces a cached result (if any). With ``probe``
+    it reuses a cached result unless ``refresh`` is set, otherwise runs the live
+    probe and stores it in ``updated`` for persistence.
+    """
+    cached_result = cache.get(name)
+    if not probe:
+        if cached_result is not None:
+            return cached_result.capabilities, True
+        return None, False
+    if cached_result is not None and not refresh:
+        return cached_result.capabilities, True
+    result = probe_fn(provider)
+    updated[name] = result
+    return result.capabilities, False
+
+
+# Column order for the compact capability line, with short labels.
+_CAPABILITY_LABELS = (
+    ("json_output", "json"),
+    ("json_schema", "schema"),
+    ("streaming", "stream"),
+    ("system_prompt", "sys"),
+    ("model_override", "model"),
+)
+
+
+def _render_capabilities(status: BackendStatus) -> Text:
+    """Render one backend's capabilities as a compact, themed glyph line.
+
+    ``✓``/``✗`` per capability when known; a muted hint otherwise. A cached
+    result is tagged so the user knows it was not probed live this run.
+    """
+    if status.capabilities is None:
+        return Text("not probed", style="muted")
+    line = Text()
+    for index, (field, label) in enumerate(_CAPABILITY_LABELS):
+        if index:
+            line.append("  ")
+        supported = getattr(status.capabilities, field)
+        line.append("✓" if supported else "✗", style="ok" if supported else "bad")
+        line.append(f" {label}", style="muted")
+    if status.capabilities_cached:
+        line.append("  (cached)", style="muted")
+    return line
 
 
 def render_report(report: DoctorReport) -> RenderableType:
     """Render ``report`` as a styled Rich renderable for the terminal.
 
-    Produces a table of backends (status mark, name, role, detail) followed by an
-    overall summary line, using the shared semantic theme styles (so it matches
-    the rest of the CLI). The command layer prints the returned renderable
-    through the shared console. JSON output for scripting is produced separately
-    via :meth:`DoctorReport.model_dump_json`.
+    Produces a table of backends (status mark, name, role, detail, capabilities)
+    followed by an overall summary line, using the shared semantic theme styles
+    (so it matches the rest of the CLI). The command layer prints the returned
+    renderable through the shared console. JSON output for scripting is produced
+    separately via :meth:`DoctorReport.model_dump_json`.
     """
     table = Table(title="AI backends", title_style="heading", title_justify="left")
     table.add_column("", no_wrap=True)  # status glyph
     table.add_column("Backend", style="accent", no_wrap=True)
     table.add_column("Role", no_wrap=True)
     table.add_column("Status")
+    table.add_column("Capabilities")
     for status in report.backends:
         glyph = Text("●", style="ok") if status.available else Text("●", style="bad")
         detail_style = "success" if status.available else "error"
@@ -155,6 +305,7 @@ def render_report(report: DoctorReport) -> RenderableType:
             status.name,
             Text(status.role, style="muted"),
             Text(status.detail, style=detail_style),
+            _render_capabilities(status),
         )
     if report.healthy:
         summary = Text("✓ At least one backend is usable.", style="success")
