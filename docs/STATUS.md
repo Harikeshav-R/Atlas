@@ -9,8 +9,9 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-02 (logging landed; **Phase 0 complete** — Phase 1 is next)
-- **Current phase:** Phase 0 — Foundations ✅ **complete**; **Phase 1 — Core loop** starting
+- **Last updated:** 2026-08-02 (onboarding + profiles landed — **Phase 1 item #1 done**;
+  master-resume ingest is next)
+- **Current phase:** Phase 1 — Core loop 🚧 (onboarding Q&A + preferences ✅ **done**)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -19,23 +20,20 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 is complete** — the AI provider abstraction, config + keyring, the data layer
-(SQLModel + SQLite (WAL) + Alembic), and now **logging** have all landed (see "What has
-landed"). **Begin Phase 1 — the core loop** ([PROJECT.md §15](./PROJECT.md#15-phased-roadmap)),
-the first genuinely useful release. The items are independent enough to sequence, but the
-natural first step is **onboarding Q&A + preferences for a single profile** (§5.2) — it
-populates the `profile`/`user` tables the data layer already defines and unblocks everything
-downstream (master-resume ingest, scoring, tailoring). Suggested order:
+**Phase 1 item #1 (onboarding Q&A + preferences) has landed** — see "What has landed". The
+`atlas.profiles` package (typed preferences, repository, injectable-prompter wizard), the
+`atlas init` / `atlas profile list|add|edit|use` commands, and the `initialize_database`
+bootstrap are in. **Do #2 next: master resume ingest + parse + versioning** (§5.3) — it
+feeds the fit-scoring and tailoring steps that follow. Remaining Phase 1 order:
 
-1. **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
-2. **Master resume ingest + parse + versioning** — `atlas.resume`.
+1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
+2. **Master resume ingest + parse + versioning** — `atlas.resume`. ← **do this next**
 3. **Paste-URL scrape + parse** (static + Playwright fallback) — `atlas.scrape`.
 4. **Fit scoring** for a pasted job — `atlas.matching`.
 5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement.
 6. **Application tracking** + the core TUI screens.
 
-Pick #1 next unless there's reason to reorder. The Phase-0 AI-provider checklist below is
-retained as historical reference.
+The Phase-0 AI-provider checklist below is retained as historical reference.
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
@@ -71,14 +69,41 @@ retained as historical reference.
 > caching, TUI cost accounting, PII redaction — are out of Phase 0 scope by design.)
 >
 > **Phase 0 is complete:** config/keyring, the AI provider abstraction, the data layer, and
-> logging have all landed — see [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). Next work is
-> **Phase 1 (core loop)**.
+> logging have all landed — see [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). **Phase 1 is
+> now in progress** (onboarding + profiles landed; see "Next up" for what's next).
 
 ---
 
 ## ✅ What has landed
 
-Phase 0 · Logging — `atlas.logging` (this branch):
+Phase 1 · Onboarding & profiles — `atlas.profiles` + CLI (this branch):
+
+- `ProfilePreferences` (`atlas.profiles.preferences`): typed, structured per-profile
+  preferences covering PROJECT.md §5.2 — target roles/variants, seniority, specializations,
+  location/remote posture, compensation, work authorization, company preferences,
+  deal-breakers. `StrEnum`s for closed domains; `extra="ignore"` for forward compatibility.
+  Serializes into the existing `profile.preferences` JSON column, so **no schema change / no
+  migration**. Tailoring emphasis maps to the separate `profile.tailoring_emphasis` column.
+- `atlas.profiles.repository`: pure functions over an open `Session` (the caller wraps them in
+  `session_scope`) — `get_user`/`upsert_user`, `create_profile`, `list_profiles`, `get_profile`,
+  `get_active_profile`, `set_active_profile`, `update_profile`. Enforces the single-user and
+  single-active-profile invariants in code (not DB constraints).
+- Onboarding wizard (`atlas.profiles.onboarding` + `prompt`): `run_onboarding`/`ask_user`/
+  `ask_profile` are pure over an injectable `Prompter` (a two-method free-text/yes-no boundary);
+  `RichPrompter` is the real console impl (its interactive I/O the only pragma'd lines). All
+  parsing (lists, optional ints, enum tokens) with re-prompting lives in the wizard; `existing`
+  answers pre-fill defaults so the same flow drives first-run and edits. A scripted `FakePrompter`
+  joins the shared conftest fakes.
+- `atlas.db.initialize_database`: migrates to head and returns a ready engine (engine built first
+  so a fresh install's data dir exists before Alembic runs; disposed on failure). First production
+  caller of `upgrade_to_head`.
+- CLI (`atlas.cli.profile` + `main`): `atlas init` (user + first active profile) and
+  `atlas profile list|add|edit|use`. Pure report/render split like `doctor` (Rich table +
+  `--json` on `list`); missing ids → clean error + exit 1. 100% line+branch; `mypy --strict` incl.
+  win32. Verified end-to-end: `atlas init` writes the DB and `profile list`/`--json`/`add`/`use`
+  behave.
+
+Phase 0 · Logging — `atlas.logging`:
 
 - `setup_logging` configures the `"atlas"` package logger (`propagate=False`) with a
   `rich.logging.RichHandler` on the shared **stderr** console (records never contaminate
@@ -295,7 +320,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 next — starting with onboarding Q&A + preferences |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding Q&A + preferences ✅; master-resume ingest next |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

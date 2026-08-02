@@ -1047,7 +1047,9 @@ The document specs everything; build order is phased. Each phase is independentl
   Codex/Antigravity adapters and their live verification remain for a later phase).
 
 ### Phase 1 — Core loop (first genuinely useful release)
-- [ ] Onboarding Q&A + preferences; **single** profile (schema already multi-profile).
+- [x] Onboarding Q&A + preferences; **single** profile (schema already multi-profile).
+  (`atlas.profiles` + `atlas init` / `atlas profile list|add|edit|use`; typed
+  `ProfilePreferences`, repository, injectable-prompter wizard, DB bootstrap.)
 - [ ] Master resume ingest + parse + versioning.
 - [ ] **Paste-URL** scrape + parse (static + Playwright fallback).
 - [ ] **Fit scoring** for a pasted job.

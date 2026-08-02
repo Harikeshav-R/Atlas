@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
 from atlas.cli.console import console as _shared_console
@@ -59,13 +60,18 @@ class RichPrompter:
     def ask_text(  # pragma: no cover - reads from the interactive console (AGENTS.md §6.2)
         self, message: str, *, default: str = ""
     ) -> str:
-        """Prompt for free text on the shared console."""
+        """Prompt for free text on the shared console.
+
+        The message is plain text by contract, so any ``[...]`` in it (e.g. an
+        enum hint like ``[remote/hybrid]``) is escaped rather than parsed as Rich
+        console markup.
+        """
         return Prompt.ask(
-            message, console=self._console, default=default, show_default=bool(default)
+            escape(message), console=self._console, default=default, show_default=bool(default)
         )
 
     def ask_bool(  # pragma: no cover - reads from the interactive console (AGENTS.md §6.2)
         self, message: str, *, default: bool
     ) -> bool:
-        """Prompt for a yes/no answer on the shared console."""
-        return Confirm.ask(message, console=self._console, default=default)
+        """Prompt for a yes/no answer on the shared console (message escaped)."""
+        return Confirm.ask(escape(message), console=self._console, default=default)

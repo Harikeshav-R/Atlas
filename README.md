@@ -12,13 +12,24 @@ on your machine (Claude Code, OpenAI Codex, Google Antigravity) or through a hos
 > [`docs/PROJECT.md`](./docs/PROJECT.md); current progress is tracked in
 > [`docs/STATUS.md`](./docs/STATUS.md).
 
-The first command is live — check your AI backend setup with:
+The first commands are live. Check your AI backend setup with:
 
 ```bash
 atlas doctor          # report each configured backend's availability
 atlas doctor --probe  # also run a live capability round-trip (makes a billable call)
 atlas doctor --json   # machine-readable, for scripting
 atlas -v doctor       # -v/-vv (or --log-level DEBUG) raises log verbosity
+```
+
+Onboard and manage your search profiles:
+
+```bash
+atlas init                 # first-run Q&A: your details + first search profile
+atlas profile list         # list profiles (● marks the active one)
+atlas profile list --json  # machine-readable, for scripting
+atlas profile add          # create another profile (becomes active)
+atlas profile edit <id>    # edit a profile (current values offered as defaults)
+atlas profile use <id>     # make a profile the active one
 ```
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
