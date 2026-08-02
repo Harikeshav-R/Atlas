@@ -27,6 +27,16 @@ from atlas.profiles.preferences import (
     Seniority,
     WorkAuthorization,
 )
+from atlas.profiles.repository import (
+    create_profile,
+    get_active_profile,
+    get_profile,
+    get_user,
+    list_profiles,
+    set_active_profile,
+    update_profile,
+    upsert_user,
+)
 
 __all__ = [
     "CompanyPreferences",
@@ -39,4 +49,12 @@ __all__ = [
     "RemoteType",
     "Seniority",
     "WorkAuthorization",
+    "create_profile",
+    "get_active_profile",
+    "get_profile",
+    "get_user",
+    "list_profiles",
+    "set_active_profile",
+    "update_profile",
+    "upsert_user",
 ]
