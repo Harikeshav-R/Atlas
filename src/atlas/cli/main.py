@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import typer
 
+from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.doctor import render_report, run_doctor
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
@@ -57,10 +58,13 @@ def doctor(
         store = default_secret_store()
     except ConfigError as exc:
         # Configuration or keyring is unusable — report generically and fail.
-        typer.echo(f"atlas doctor: {exc}", err=True)
+        error_console.print(f"[error]atlas doctor:[/error] {exc}")
         raise typer.Exit(code=1) from exc
 
     report = run_doctor(config.ai, store)
-    typer.echo(report.model_dump_json(indent=2) if as_json else render_report(report))
+    if as_json:
+        print_json_line(report.model_dump_json(indent=2))
+    else:
+        console.print(render_report(report))
     if not report.healthy:
         raise typer.Exit(code=1)

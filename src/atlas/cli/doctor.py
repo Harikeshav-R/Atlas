@@ -18,12 +18,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+from rich.console import Group
+from rich.table import Table
+from rich.text import Text
 
 from atlas.ai.base import LLMError
 from atlas.ai.cli.runner import SubprocessRunner, default_subprocess_runner
 from atlas.ai.router import build_named_provider
 
 if TYPE_CHECKING:
+    from rich.console import RenderableType
+
     from atlas.config.schema import AiConfig
     from atlas.config.secrets import SecretStore
 
@@ -128,16 +133,31 @@ def _probe_backend(
     )
 
 
-def render_report(report: DoctorReport) -> str:
-    """Render ``report`` as a plain-text summary for the terminal.
+def render_report(report: DoctorReport) -> RenderableType:
+    """Render ``report`` as a styled Rich renderable for the terminal.
 
-    JSON output for scripting is produced by the command layer via
-    :meth:`DoctorReport.model_dump_json`; this is the human-readable form.
+    Produces a table of backends (status mark, name, role, detail) followed by an
+    overall summary line, using the shared semantic theme styles (so it matches
+    the rest of the CLI). The command layer prints the returned renderable
+    through the shared console. JSON output for scripting is produced separately
+    via :meth:`DoctorReport.model_dump_json`.
     """
-    lines = ["AI backends:"]
+    table = Table(title="AI backends", title_style="heading", title_justify="left")
+    table.add_column("", no_wrap=True)  # status glyph
+    table.add_column("Backend", style="accent", no_wrap=True)
+    table.add_column("Role", no_wrap=True)
+    table.add_column("Status")
     for status in report.backends:
-        mark = "OK " if status.available else "XX "
-        lines.append(f"  {mark} {status.name} ({status.role}) — {status.detail}")
-    summary = "healthy" if report.healthy else "no usable backend"
-    lines.append(f"Overall: {summary}.")
-    return "\n".join(lines)
+        glyph = Text("●", style="ok") if status.available else Text("●", style="bad")
+        detail_style = "success" if status.available else "error"
+        table.add_row(
+            glyph,
+            status.name,
+            Text(status.role, style="muted"),
+            Text(status.detail, style=detail_style),
+        )
+    if report.healthy:
+        summary = Text("✓ At least one backend is usable.", style="success")
+    else:
+        summary = Text("✗ No usable backend configured.", style="error")
+    return Group(table, Text(), summary)

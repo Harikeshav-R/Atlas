@@ -57,8 +57,9 @@ def test_doctor_text_healthy_exit_zero(
     monkeypatch.setattr(app_module, "run_doctor", lambda config, store: _report(healthy=True))
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 0
-    assert "AI backends:" in result.output
-    assert "Overall: healthy." in result.output
+    assert "AI backends" in result.output
+    assert "claude_code" in result.output
+    assert "At least one backend is usable" in result.output
 
 
 def test_doctor_unhealthy_exits_one(
@@ -68,7 +69,7 @@ def test_doctor_unhealthy_exits_one(
     monkeypatch.setattr(app_module, "run_doctor", lambda config, store: _report(healthy=False))
     result = runner.invoke(app, ["doctor"])
     assert result.exit_code == 1
-    assert "no usable backend" in result.output
+    assert "No usable backend configured" in result.output
 
 
 def test_doctor_json_output(

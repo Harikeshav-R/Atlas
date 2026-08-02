@@ -86,7 +86,17 @@ def test_run_doctor_all_unavailable_is_unhealthy(fake_keyring: FakeKeyring) -> N
     assert report.healthy is False
 
 
-def test_render_report_text_marks_and_summary() -> None:
+def _rendered(report: DoctorReport) -> str:
+    # render_report returns a Rich renderable that uses the shared Atlas theme's
+    # semantic styles; capture it through that same console so those styles resolve.
+    from atlas.cli.console import console
+
+    with console.capture() as capture:
+        console.print(render_report(report))
+    return capture.get()
+
+
+def test_render_report_shows_backends_and_healthy_summary() -> None:
     report = DoctorReport(
         backends=[
             BackendStatus(name="claude_code", role="default", available=True, detail="available"),
@@ -94,15 +104,17 @@ def test_render_report_text_marks_and_summary() -> None:
         ],
         healthy=True,
     )
-    text = render_report(report)
-    assert "OK  claude_code (default) — available" in text
-    assert "XX  openrouter (failover) — no key" in text
-    assert "Overall: healthy." in text
+    text = _rendered(report)
+    assert "AI backends" in text
+    assert "claude_code" in text
+    assert "openrouter" in text
+    assert "no key" in text
+    assert "At least one backend is usable" in text
 
 
 def test_render_report_unhealthy_summary() -> None:
     report = DoctorReport(backends=[], healthy=False)
-    assert "Overall: no usable backend." in render_report(report)
+    assert "No usable backend configured" in _rendered(report)
 
 
 def test_report_json_round_trips() -> None:
