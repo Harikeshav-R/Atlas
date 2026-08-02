@@ -198,6 +198,144 @@ def make_fake_runner() -> FakeRunnerFactory:
     return factory
 
 
+@dataclass
+class FakeMessage:
+    """The ``choices[i].message`` shape the API provider reads via ``getattr``."""
+
+    content: str | None
+
+
+@dataclass
+class FakeChoice:
+    """One entry of a fake LiteLLM ``ModelResponse.choices`` list."""
+
+    message: FakeMessage
+
+
+@dataclass
+class FakeUsage:
+    """The ``usage`` shape the API provider reads via ``getattr``."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+class FakeModelResponse:
+    """A minimal stand-in for LiteLLM's ``ModelResponse``.
+
+    The :class:`~atlas.ai.api.provider.LiteLLMProvider` reads responses through
+    defensive ``getattr``/``dict`` access (never importing LiteLLM's types), so a
+    plain object exposing ``choices``, ``usage``, ``model``, ``_hidden_params``,
+    and ``model_dump`` is a faithful, offline double (AGENTS.md §6.2).
+    """
+
+    def __init__(
+        self,
+        *,
+        content: str | None = "the answer",
+        model: str | None = "openrouter/anthropic/claude-sonnet",
+        usage: FakeUsage | None = None,
+        response_cost: float | None = None,
+        choices: list[FakeChoice] | None = None,
+        dumpable: bool = True,
+    ) -> None:
+        """Build a fake response; ``choices`` defaults to one message of ``content``."""
+        self.choices = choices if choices is not None else [FakeChoice(FakeMessage(content))]
+        self.usage = usage
+        self.model = model
+        self._hidden_params = {"response_cost": response_cost}
+        if not dumpable:
+            # Drop ``model_dump`` so the provider's raw-dict fallback is exercised.
+            self.model_dump = None  # type: ignore[assignment]
+
+    def model_dump(self) -> dict[str, object]:
+        """Return a debug dict, mirroring ``ModelResponse.model_dump()``."""
+        return {"model": self.model, "content": self.choices[0].message.content}
+
+
+@dataclass
+class CompleterCall:
+    """A single recorded invocation of :class:`FakeChatCompleter`."""
+
+    model: str
+    messages: list[dict[str, str]]
+    api_key: str | None
+    api_base: str | None
+    timeout_s: int
+    temperature: float | None
+    max_tokens: int | None
+    response_format: dict[str, object] | None
+    num_retries: int
+
+
+class FakeChatCompleter:
+    """A scripted, offline :class:`~atlas.ai.api.client.CompletionFn` for tests.
+
+    Returns ``result`` for every call, or raises ``raises`` (e.g. a fake
+    LiteLLM error) instead. Every invocation is recorded on :attr:`calls` so
+    tests can assert on the model id, messages, injected key, adaptive timeout,
+    ``response_format``, and transport-retry count the provider passed — without
+    importing or invoking ``litellm``.
+    """
+
+    def __init__(
+        self,
+        result: object = None,
+        *,
+        raises: BaseException | None = None,
+    ) -> None:
+        """Store the scripted result or exception to replay."""
+        self._result = result
+        self._raises = raises
+        self.calls: list[CompleterCall] = []
+
+    def __call__(
+        self,
+        *,
+        model: str,
+        messages: Sequence[dict[str, str]],
+        api_key: str | None,
+        api_base: str | None,
+        timeout_s: int,
+        temperature: float | None,
+        max_tokens: int | None,
+        response_format: dict[str, object] | None,
+        num_retries: int,
+    ) -> object:
+        """Record the call and return the scripted result, or raise."""
+        self.calls.append(
+            CompleterCall(
+                model=model,
+                messages=[dict(m) for m in messages],
+                api_key=api_key,
+                api_base=api_base,
+                timeout_s=timeout_s,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                num_retries=num_retries,
+            )
+        )
+        if self._raises is not None:
+            raise self._raises
+        return self._result
+
+
+class FakeLiteLLMError(Exception):
+    """A stand-in for a LiteLLM/OpenAI error carrying an HTTP ``status_code``.
+
+    The provider classifies failures by ``status_code`` (and message) via
+    ``getattr``, so this reproduces that surface without importing ``litellm``.
+    ``status_code=None`` models the status-less transport errors (e.g. timeouts).
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        """Store the message and optional HTTP status code."""
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class FakeKeyring:
     """An in-memory keyring backend for tests (no real keychain, no credentials).
 
