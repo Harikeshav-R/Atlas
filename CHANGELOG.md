@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `atlas.ai.router`: the AI backend **failover chain**. `FailoverProvider` wraps
+  an ordered list of `LLMProvider` backends and is itself an `LLMProvider`, so
+  callers stay agnostic; `complete()`/`stream()` try each backend in order and
+  fail over on availability-signal errors (`LLMBackendError` — covering
+  `LLMAuthError`/`LLMRateLimitError` — and `LLMTimeoutError`), re-raising the
+  last error when all fail. `LLMOutputError` is deliberately not a trigger: it is
+  a content/schema failure surfaced after `complete_json()`'s recovery ladder, so
+  it propagates and stops the walk. `build_provider_chain(config, store)`
+  assembles the chain from `AiConfig` (`default_backend` then each `failover`
+  name — `claude_code` → `openrouter`), raising a clear error for an unknown
+  backend name.
+- `build_claude_code_provider`: a config-driven factory for the Claude Code CLI
+  backend (mirroring `build_openrouter_provider`), resolving the `--bare`-mode
+  `ANTHROPIC_API_KEY` via `resolve_api_key` (keyring first, env fallback) only
+  when `use_bare` is set and passing it directly, never via `os.environ`.
+- `ClaudeCodeBackend.api_key_handle` (default `"anthropic"`): the keyring handle
+  for the bare-mode key, mirroring `OpenRouterBackend.api_key_handle`.
 - `atlas.ai.api` package: a single `LiteLLMProvider` implementing `LLMProvider`
   for every hosted-model backend (OpenRouter, Bedrock, Anthropic, Gemini, …), so
   adding a vendor is configuration rather than code, plus

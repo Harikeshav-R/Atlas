@@ -19,11 +19,12 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · AI provider abstraction — capability probing, failover chain & `atlas doctor`.**
-The core contract, the `CliAdapter` base, the **Claude Code adapter**, **config + keyring**,
-and now the **OpenRouter/LiteLLM API backend** have all landed (see "What has landed"). Both
-Phase 0 backends exist behind `LLMProvider`; what remains is to tie them together and prove
-they work end-to-end, per [PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
+**Phase 0 · AI provider abstraction — capability probing & `atlas doctor`.** The core
+contract, the `CliAdapter` base, the **Claude Code adapter**, **config + keyring**, the
+**OpenRouter/LiteLLM API backend**, and now the **failover chain** have all landed (see "What
+has landed"). Both Phase 0 backends exist behind `LLMProvider` and can be composed into an
+ordered chain; what remains is per-backend probing and the `doctor` command, per
+[PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
@@ -35,13 +36,20 @@ they work end-to-end, per [PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provide
 4. ✅ **OpenRouter** adapter (default API failover backend) via LiteLLM behind `LLMProvider`
    (`src/atlas/ai/api/`) — consumes `resolve_api_key()` (handle `"openrouter"`) from
    `atlas.config`; two injectable seams keep `litellm` out of the hermetic suite.
-5. **Failover chain + capability probing + `atlas doctor`.** A router that walks the
-   configured backend chain (`claude_code` → `openrouter`) on hard error/auth/quota; a
-   round-trip capability probe (JSON/schema/streaming/model-override) cached per backend; and
-   the Typer `atlas doctor` command that reports each backend's availability. (This step also
-   refines the Claude adapter's stderr auth/rate-limit heuristic using stream-json's real
-   `error` category.) Builds on the `atlas.config` load/save/validate primitives now landed.
-6. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
+5. ✅ **Failover chain** (`src/atlas/ai/router.py`) — `FailoverProvider` walks the configured
+   backend chain (`claude_code` → `openrouter`) on `LLMBackendError`/`LLMTimeoutError` (not
+   `LLMOutputError`); `build_provider_chain()` assembles it from `AiConfig`. A config-driven
+   `build_claude_code_provider` (+ `ClaudeCodeBackend.api_key_handle`) now matches
+   `build_openrouter_provider`.
+6. **Capability probing + `atlas doctor`.** A round-trip capability probe
+   (JSON/schema/streaming/model-override) cached per backend, and the Typer `atlas doctor`
+   command that reports each backend's availability. (This step also refines the Claude
+   adapter's stderr auth/rate-limit heuristic using stream-json's real `error` category.)
+   **Note:** `atlas doctor` requires first standing up the Typer CLI + `__main__.py` (neither
+   exists yet; `typer` is not yet a dependency) and deciding where probe results are cached
+   (the design leaves this open — likely the cache dir or in-memory). Consider splitting the
+   CLI scaffold, the probe, and `doctor` into separate PRs.
+7. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
 > Also still open in Phase 0 (separate PRs): **SQLModel + SQLite (WAL) + Alembic** and
 > **logging** — see the Phase 0 checklist in
@@ -51,7 +59,25 @@ they work end-to-end, per [PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provide
 
 ## ✅ What has landed
 
-Phase 0 · AI provider abstraction — OpenRouter/LiteLLM API backend (this branch):
+Phase 0 · AI provider abstraction — failover chain (this branch):
+
+- `atlas.ai.router`: `FailoverProvider` wraps an ordered list of `LLMProvider` backends and
+  is itself an `LLMProvider`, so callers stay agnostic. `complete()`/`stream()` try each
+  backend in order and fail over on availability-signal errors — `LLMBackendError` (covering
+  `LLMAuthError`/`LLMRateLimitError`) and `LLMTimeoutError` — re-raising the last error when
+  all fail. `LLMOutputError` is deliberately **not** a trigger: it is a content/schema failure
+  surfaced after `complete_json()`'s recovery ladder, so it propagates and stops the walk
+  (PROJECT.md §5.1: failover is the last resort after content recovery). An empty chain is
+  rejected at construction.
+- `build_provider_chain(config, store)` assembles the chain from `AiConfig` (`default_backend`
+  then each `failover` name), mapping each to its factory and raising a clear `LLMError` for an
+  unknown backend name.
+- `build_claude_code_provider` — a config-driven factory for the CLI backend matching
+  `build_openrouter_provider`; resolves the `--bare` key via `resolve_api_key` only when
+  `use_bare` is set. New schema field `ClaudeCodeBackend.api_key_handle` (default `"anthropic"`).
+- No new runtime dep. 100% line+branch coverage via the offline `FakeLLMProvider`.
+
+Phase 0 · AI provider abstraction — OpenRouter/LiteLLM API backend (PR #10):
 
 - `atlas.ai.api`: a single `LiteLLMProvider` implementing `LLMProvider` for every hosted
   backend (OpenRouter, Bedrock, Anthropic, Gemini, …), plus `build_openrouter_provider` — the
@@ -165,7 +191,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring + OpenRouter/LiteLLM backend done; failover chain + capability probing + `atlas doctor`, and DB/logging remain |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring + OpenRouter/LiteLLM backend + failover chain done; capability probing + `atlas doctor`, and DB/logging remain |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
