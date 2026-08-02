@@ -16,7 +16,13 @@ def test_db_path_lives_under_data_dir(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_sqlite_url_formats_a_file_url() -> None:
-    assert sqlite_url(Path("/fake/data/atlas.db")) == "sqlite:////fake/data/atlas.db"
+    # The URL is the SQLite prefix plus the path rendered for the current OS
+    # (backslashes on Windows), so compare against the platform path, not a
+    # hardcoded POSIX form.
+    path = Path("/fake/data/atlas.db")
+    url = sqlite_url(path)
+    assert url.startswith("sqlite:///")
+    assert url.removeprefix("sqlite:///") == str(path)
 
 
 def test_default_url_uses_db_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
