@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from atlas.config import AiConfig, ClaudeCodeBackend, Config
+from atlas.config import AiConfig, ClaudeCodeBackend, Config, LoggingConfig
 
 
 def test_config_defaults() -> None:
@@ -30,6 +30,27 @@ def test_backend_defaults() -> None:
 def test_claude_code_api_key_handle_override() -> None:
     backend = ClaudeCodeBackend.model_validate({"api_key_handle": "my-anthropic"})
     assert backend.api_key_handle == "my-anthropic"
+
+
+def test_logging_defaults() -> None:
+    config = Config()
+    assert config.logging == LoggingConfig(
+        level="WARNING",
+        file_enabled=True,
+        max_bytes=1_000_000,
+        backup_count=3,
+    )
+
+
+def test_logging_values_override() -> None:
+    config = Config.model_validate(
+        {"logging": {"level": "DEBUG", "file_enabled": False, "backup_count": 5}}
+    )
+    assert config.logging.level == "DEBUG"
+    assert config.logging.file_enabled is False
+    assert config.logging.backup_count == 5
+    # Unset fields keep their defaults.
+    assert config.logging.max_bytes == 1_000_000
 
 
 def test_failover_default_is_independent_per_instance() -> None:

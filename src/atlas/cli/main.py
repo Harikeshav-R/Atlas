@@ -20,6 +20,7 @@ from atlas.cli.doctor import render_report, run_doctor
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
+from atlas.logging import setup_logging
 
 __all__ = ["app"]
 
@@ -32,11 +33,44 @@ app = typer.Typer(
 
 
 @app.callback()
-def main() -> None:
+def main(
+    verbose: int = typer.Option(
+        0,
+        "--verbose",
+        "-v",
+        count=True,
+        help="Increase log verbosity (-v for INFO, -vv for DEBUG).",
+    ),
+    log_level: str | None = typer.Option(
+        None,
+        "--log-level",
+        help="Explicit console log level (e.g. DEBUG, INFO); overrides -v.",
+    ),
+) -> None:
     """Atlas command-line interface.
 
-    Present so the app stays a multi-command group (subcommands route by name).
+    Runs before every subcommand: it initializes logging (console + rotating log
+    file under the state dir) so the level is set no matter which command runs.
+    The console level follows ``--log-level`` > ``-v``/``-vv`` >
+    ``ATLAS_LOG_LEVEL`` > the ``[logging]`` config > the default; a config that
+    fails to load here is tolerated (logging falls back to defaults) so the
+    subcommand can surface the real configuration error.
     """
+    try:
+        logging_config = load_config().logging
+    except ConfigError:
+        # Don't let a bad config file break logging setup; the invoked command
+        # (e.g. `doctor`) reloads config and reports the error properly.
+        setup_logging(log_level=log_level, verbose=verbose)
+    else:
+        setup_logging(
+            log_level=log_level,
+            verbose=verbose,
+            config_level=logging_config.level,
+            file_enabled=logging_config.file_enabled,
+            max_bytes=logging_config.max_bytes,
+            backup_count=logging_config.backup_count,
+        )
 
 
 @app.command()

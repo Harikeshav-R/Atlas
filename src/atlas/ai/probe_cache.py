@@ -16,6 +16,7 @@ simply re-runs — so a stale or hand-mangled cache file can never crash the CLI
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 __all__ = ["load_probe_cache", "probe_cache_file", "save_probe_cache"]
+
+logger = logging.getLogger(__name__)
 
 #: Name of the probe-cache file within the cache dir.
 _CACHE_FILENAME = "capabilities.json"
@@ -60,6 +63,9 @@ def load_probe_cache(path: Path | None = None) -> dict[str, ProbeResult]:
         return {name: ProbeResult.model_validate(value) for name, value in raw.items()}
     except (OSError, ValueError, ValidationError, AttributeError):
         # Corrupt/mangled cache — treat as empty so the CLI never crashes on it.
+        # Logged (without the contents) so a persistently unreadable cache is
+        # diagnosable rather than silently ignored.
+        logger.warning("Ignoring unreadable probe cache; re-probing.")
         return {}
 
 

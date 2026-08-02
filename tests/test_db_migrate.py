@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -31,7 +32,17 @@ def test_upgrade_to_head_creates_the_schema(tmp_path: Path) -> None:
     assert {"user", "profile", "alembic_version"} <= tables
 
 
-def test_upgrade_to_head_wraps_failures_in_migration_error() -> None:
+def test_upgrade_to_head_wraps_failures_in_migration_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     # An unknown dialect can't be loaded, so Alembic raises during the run.
-    with pytest.raises(MigrationError, match="migration to head failed"):
+    with (
+        caplog.at_level(logging.ERROR, logger="atlas.db.migrate"),
+        pytest.raises(MigrationError, match="migration to head failed"),
+    ):
         upgrade_to_head("bogus://nope")
+    # The failure is logged daemon-/CLI-side (without the URL) before re-raising.
+    assert any(
+        record.levelno == logging.ERROR and "migration to head failed" in record.message.lower()
+        for record in caplog.records
+    )

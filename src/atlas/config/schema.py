@@ -21,6 +21,7 @@ __all__ = [
     "AiConfig",
     "ClaudeCodeBackend",
     "Config",
+    "LoggingConfig",
     "OpenRouterBackend",
 ]
 
@@ -70,7 +71,29 @@ class AiConfig(_Base):
     backends: AiBackends = Field(default_factory=AiBackends)
 
 
+class LoggingConfig(_Base):
+    """The ``[logging]`` section: console level and rotating-file settings.
+
+    ``level`` sets the **console** verbosity; the file handler always captures
+    ``DEBUG`` and up when enabled. The CLI's ``--log-level``/``-v`` options and
+    the ``ATLAS_LOG_LEVEL`` environment variable override ``level`` at runtime
+    (see :func:`atlas.logging.resolve_level`).
+
+    Attributes:
+        level: Console log level name (e.g. ``"WARNING"``, ``"INFO"``).
+        file_enabled: Whether to write the rotating log file under the state dir.
+        max_bytes: Rotate the log file once it reaches this size in bytes.
+        backup_count: Number of rotated log files to keep.
+    """
+
+    level: str = "WARNING"
+    file_enabled: bool = True
+    max_bytes: int = 1_000_000
+    backup_count: int = 3
+
+
 class Config(_Base):
     """The top-level Atlas configuration."""
 
     ai: AiConfig = Field(default_factory=AiConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)

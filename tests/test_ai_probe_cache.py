@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+
+import pytest
 
 from atlas.ai.probe import BackendCapabilities, ProbeResult
 from atlas.ai.probe_cache import load_probe_cache, probe_cache_file, save_probe_cache
@@ -60,3 +63,14 @@ def test_load_non_object_json_returns_empty(tmp_path: Path) -> None:
     target = tmp_path / "capabilities.json"
     target.write_text("[1, 2, 3]", encoding="utf-8")
     assert load_probe_cache(target) == {}
+
+
+def test_load_corrupt_cache_logs_warning(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    target = tmp_path / "capabilities.json"
+    target.write_text("{ not valid json", encoding="utf-8")
+    with caplog.at_level(logging.WARNING, logger="atlas.ai.probe_cache"):
+        assert load_probe_cache(target) == {}
+    assert any(
+        record.levelno == logging.WARNING and "unreadable probe cache" in record.message
+        for record in caplog.records
+    )

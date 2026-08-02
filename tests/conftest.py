@@ -8,8 +8,10 @@ without spawning a real coding CLI or hitting a network (AGENTS.md §6.2).
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 import pytest
@@ -399,3 +401,77 @@ def db_engine() -> Iterator[Engine]:
         yield engine
     finally:
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def reset_atlas_logging() -> Iterator[None]:
+    """Snapshot and restore the ``"atlas"`` logger so tests don't leak handlers.
+
+    ``setup_logging`` mutates global logging state; this autouse fixture saves the
+    logger's handlers/level/propagate before each test and restores them after,
+    closing any handler the test installed. Closing file handlers also releases
+    the log file so Windows ``tmp_path`` cleanup never fails on an open lock (the
+    same teardown contract the db-engine fixture follows).
+    """
+    atlas_logger = logging.getLogger("atlas")
+    saved_handlers = list(atlas_logger.handlers)
+    saved_level = atlas_logger.level
+    saved_propagate = atlas_logger.propagate
+    try:
+        yield
+    finally:
+        for handler in list(atlas_logger.handlers):
+            if handler not in saved_handlers:
+                atlas_logger.removeHandler(handler)
+                handler.close()
+        atlas_logger.handlers = saved_handlers
+        atlas_logger.setLevel(saved_level)
+        atlas_logger.propagate = saved_propagate
+
+
+@dataclass
+class HandlerFactoryCall:
+    """A single recorded invocation of :class:`FakeHandlerFactory`."""
+
+    console_level: int
+    log_path: Path
+    max_bytes: int
+    backup_count: int
+
+
+class FakeHandlerFactory:
+    """A scripted, offline ``HandlerFactory`` for logging tests.
+
+    Returns handlers that touch nothing external — a bare
+    :class:`logging.NullHandler` for the console and, unless ``with_file`` is
+    ``False``, a :class:`logging.FileHandler` opened on the injected ``log_path``
+    (a ``tmp_path`` in tests, never the real state dir). Records each call on
+    :attr:`calls` so tests assert on the console level, log path, and rotation
+    settings the setup passed.
+    """
+
+    def __init__(self, *, with_file: bool = True) -> None:
+        """Store whether to include a file handler in the built list."""
+        self._with_file = with_file
+        self.calls: list[HandlerFactoryCall] = []
+
+    def __call__(
+        self, *, console_level: int, log_path: Path, max_bytes: int, backup_count: int
+    ) -> Sequence[logging.Handler]:
+        """Record the call and return offline handlers for it."""
+        self.calls.append(
+            HandlerFactoryCall(
+                console_level=console_level,
+                log_path=log_path,
+                max_bytes=max_bytes,
+                backup_count=backup_count,
+            )
+        )
+        console = logging.NullHandler()
+        console.setLevel(console_level)
+        handlers: list[logging.Handler] = [console]
+        if self._with_file:
+            file_handler = logging.FileHandler(log_path, encoding="utf-8")
+            file_handler.setLevel(logging.DEBUG)
+            handlers.append(file_handler)
+        return handlers

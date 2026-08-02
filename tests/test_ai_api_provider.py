@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from atlas.ai import (
@@ -239,6 +241,23 @@ def test_classify_generic_backend_error() -> None:
     with pytest.raises(LLMBackendError, match="call failed") as excinfo:
         provider.complete(_request())
     assert type(excinfo.value) is LLMBackendError
+
+
+def test_classify_logs_without_leaking_vendor_message(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    err = FakeLiteLLMError("secret at /home/x", status_code=500)
+    provider = _provider(FakeChatCompleter(raises=err))
+    with (
+        caplog.at_level(logging.WARNING, logger="atlas.ai.api.provider"),
+        pytest.raises(LLMBackendError),
+    ):
+        provider.complete(_request())
+    records = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert records, "expected a warning log for the failed API call"
+    # The log carries the exception type, never the vendor string or path.
+    assert "FakeLiteLLMError" in records[0].message
+    assert "/home/x" not in records[0].message
 
 
 # --- streaming ------------------------------------------------------------------

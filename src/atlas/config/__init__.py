@@ -26,6 +26,7 @@ from atlas.config.schema import (
     AiConfig,
     ClaudeCodeBackend,
     Config,
+    LoggingConfig,
     OpenRouterBackend,
 )
 from atlas.config.secrets import (
@@ -45,6 +46,7 @@ __all__ = [
     "ConfigError",
     "ConfigValidationError",
     "KeyringUnavailableError",
+    "LoggingConfig",
     "OpenRouterBackend",
     "SecretStore",
     "cache_dir",
