@@ -196,3 +196,47 @@ def make_fake_runner() -> FakeRunnerFactory:
         return FakeSubprocessRunner(result, raises=raises)
 
     return factory
+
+
+class FakeKeyring:
+    """An in-memory keyring backend for tests (no real keychain, no credentials).
+
+    Implements the :class:`atlas.config.secrets.KeyringBackend` protocol against a
+    plain dict keyed by ``(service, username)``. Its class name is not in Atlas's
+    insecure-backend denylist, so it is treated as a secure backend.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty fake keyring."""
+        self._store: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        """Return the stored secret or ``None``."""
+        return self._store.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        """Store ``password`` under ``(service, username)``."""
+        self._store[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        """Delete the secret for ``(service, username)``."""
+        del self._store[(service, username)]
+
+
+def named_keyring(fqn: str) -> FakeKeyring:
+    """Return a :class:`FakeKeyring` whose type reports the fully-qualified ``fqn``.
+
+    Backend selection reads ``type(backend).__module__`` and ``__qualname__``, so
+    this builds a distinct subclass with those set — letting a test pose a fake
+    as, e.g., ``keyrings.alt.file.PlaintextKeyring`` without shared-state hacks.
+    """
+    module, _, qualname = fqn.rpartition(".")
+    named_type = type(qualname, (FakeKeyring,), {"__module__": module, "__qualname__": qualname})
+    instance: FakeKeyring = named_type()
+    return instance
+
+
+@pytest.fixture
+def fake_keyring() -> FakeKeyring:
+    """Return a fresh in-memory :class:`FakeKeyring`."""
+    return FakeKeyring()

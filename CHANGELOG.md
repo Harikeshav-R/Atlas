@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `atlas.config` package: cross-platform paths via `platformdirs`
+  (`config_dir`/`data_dir`/`cache_dir`/`state_dir`/`config_file`); a lean,
+  forward-compatible TOML config schema (`Config`/`AiConfig`/backends, unknown
+  keys ignored) with `load_config`/`save_config` (stdlib `tomllib` read,
+  `tomli_w` write); and keyring-backed secrets — `SecretStore` + a single
+  `resolve_api_key()` path (keyring first, optional env-var fallback that local
+  providers can disable, keys never written to `os.environ`). Backend selection
+  refuses insecure plaintext storage: a real OS keychain is preferred and a
+  headless box uses the `keyrings.alt` encrypted-file backend only when
+  `ATLAS_KEYRING_PASSWORD` is set, else raises `KeyringUnavailableError`.
 - `ClaudeCodeAdapter` (`src/atlas/ai/cli/claude_code.py`): Atlas's default
   coding-CLI backend. Drives `claude -p … --output-format json --json-schema …`
   (neutralized: `--append-system-prompt` "do not use tools", no `--allowedTools`,

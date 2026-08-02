@@ -20,8 +20,8 @@
 ## ▶ Next up (do this next)
 
 **Phase 0 · AI provider abstraction — OpenRouter API backend.** The core contract, the
-`CliAdapter` base, and the concrete **Claude Code adapter** have landed (steps 1–3 — see
-"What has landed"). Next is the API failover backend, per
+`CliAdapter` base, the **Claude Code adapter**, and **config + keyring** have landed (see
+"What has landed"). config + keyring unblocks the API failover backend, per
 [PROJECT.md §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
@@ -32,20 +32,36 @@
    `--bare`/`ANTHROPIC_API_KEY` opt-in (key injected, never logged), envelope→`LLMResponse`
    mapping, heuristic auth/rate-limit detection (`LLMAuthError`/`LLMRateLimitError`).
 4. **OpenRouter** adapter (default API failover backend) via LiteLLM behind `LLMProvider`.
-   **Depends on config + keyring landing first** (needs `resolve_api_key()` from the keyring).
+   Now unblocked — consumes `resolve_api_key()` (handle `"openrouter"`) from `atlas.config`.
 5. Capability probing, failover chain, and `atlas doctor` (also refines the Claude adapter's
    stderr-based auth/rate-limit heuristic using stream-json's real `error` category).
 6. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
-> Also still open in Phase 0 (can be done before or alongside the above, as separate PRs):
-> **config + keyring**, **SQLModel + SQLite (WAL) + Alembic**, and **logging** — see the
-> Phase 0 checklist in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). The OpenRouter
-> adapter (step 4) depends on config + keyring landing first, so **config + keyring is the
-> natural next PR**.
+> Also still open in Phase 0 (separate PRs): **SQLModel + SQLite (WAL) + Alembic** and
+> **logging** — see the Phase 0 checklist in
+> [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). The Typer CLI (`atlas config get|set`,
+> `atlas doctor`) will build on the `atlas.config` load/save/validate primitives now landed.
 
 ---
 
 ## ✅ What has landed
+
+Phase 0 · Configuration + secrets — `atlas.config` (PR #9):
+
+- Cross-platform paths via `platformdirs` (`config_dir`/`data_dir`/`cache_dir`/`state_dir`/
+  `config_file`); no hardcoded `~/.config`.
+- Lean, forward-compatible TOML schema (`Config`/`AiConfig`/backends; `extra="ignore"` so a
+  fuller user config's not-yet-built sections load) with `load_config`/`save_config`
+  (stdlib `tomllib` read, `tomli_w` write; missing file → defaults; bad TOML/values →
+  `ConfigValidationError`).
+- Keyring-backed secrets: `SecretStore` (handles namespaced under the `atlas` service) +
+  a single `resolve_api_key()` (keyring first, optional env fallback local providers can
+  disable, keys never written to `os.environ`). Backend selection refuses insecure plaintext
+  storage — real OS keychain preferred; headless boxes use the `keyrings.alt` encrypted-file
+  backend only when `ATLAS_KEYRING_PASSWORD` is set, else `KeyringUnavailableError`.
+- New deps: `keyring`, `platformdirs`, `tomli-w`, `keyrings.alt`, `pycryptodome`. Reusable
+  `FakeKeyring` test double in `tests/conftest.py`. 100% coverage; two justified pragmas on
+  the real-backend constructors.
 
 Phase 0 · AI provider abstraction — Claude Code adapter (PR #8):
 
@@ -125,7 +141,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter done; config/DB/logging + OpenRouter adapter remain |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring done; DB/logging + OpenRouter adapter remain |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
