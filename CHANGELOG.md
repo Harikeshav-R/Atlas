@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Onboarding & profiles** (`atlas.profiles`): the first Phase 1 feature
+  (PROJECT.md §5.2). A typed `ProfilePreferences` model captures per-profile
+  job-search preferences — target roles/variants, seniority, specializations,
+  location/remote posture, compensation, work authorization, company
+  preferences, and deal-breakers — with `StrEnum`s for the closed domains,
+  serialized into the existing `profile.preferences` JSON column (no schema
+  change). A repository layer (pure functions over an open `Session`) persists
+  the single user and search profiles, enforcing the single-user and
+  single-active-profile invariants in code. An onboarding wizard drives the Q&A
+  through an injectable `Prompter` boundary (a scripted fake replaces it in the
+  hermetic suite), parsing lists/integers/enum tokens with re-prompting and
+  pre-filling defaults from existing answers so the same flow powers first-run
+  and edits.
+- **`atlas init` + `atlas profile list|add|edit|use` commands**: `init` runs
+  first-time onboarding (user + first active profile); `profile` manages
+  additional profiles and switches the active one. Human-readable Rich output
+  through the shared console; `--json` on `profile list` for scripting. Missing
+  profile ids fail with a clear message and exit code 1.
+- **Database bootstrap** (`atlas.db.initialize_database`): migrates the database
+  to head and returns a ready engine (building the engine first so a fresh
+  install's data dir is created before Alembic runs, disposing it on migration
+  failure). The first production caller of `upgrade_to_head`, used by the
+  first-run commands so a fresh install migrates on demand.
 - **Logging** (`atlas.logging`): the last Phase 0 foundation — Phase 0 is now
   complete. `setup_logging` configures the `"atlas"` package logger with a Rich
   console handler on the shared **stderr** console (so records never contaminate
