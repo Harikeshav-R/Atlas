@@ -9,7 +9,7 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-02
+- **Last updated:** 2026-08-02 (data layer landed; logging is the last Phase 0 item)
 - **Current phase:** Phase 0 — Foundations (in progress)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
@@ -19,13 +19,15 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · Data layer & logging.** The **AI provider abstraction is complete** for Phase 0:
-the core contract, the `CliAdapter` base, the Claude Code adapter, config + keyring, the
-OpenRouter/LiteLLM API backend, the failover chain, the CLI scaffold + `atlas doctor`, and now
-the **live capability probe** have all landed (see "What has landed"). What remains of Phase 0
-is the **data layer (SQLModel + SQLite (WAL) + Alembic)** and **logging** — pick either next;
-both are independent of the AI work and unblock Phase 1. The AI-provider checklist below is
-kept for reference:
+**Phase 0 · Logging.** The AI provider abstraction, config + keyring, and now the **data layer
+(SQLModel + SQLite (WAL) + Alembic)** have all landed (see "What has landed"). **Logging is the
+last open Phase 0 item.** Build it next: structured logging to the platformdirs **state dir**
+(`atlas.config.state_dir()`), with the setup as an injectable boundary so the hermetic suite
+asserts on it without writing real log files (AGENTS.md §6.2), routing details daemon-/CLI-side
+while user-facing output stays generic (`docs/agent/coding-standards.md` "Errors & logging").
+Once logging lands, Phase 0 is complete and Phase 1 (core loop) begins.
+
+The AI-provider checklist below is kept for reference:
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
@@ -60,14 +62,35 @@ kept for reference:
 > (Codex/Antigravity adapters and Phase 1+ cross-cutting features — prompt library, response
 > caching, TUI cost accounting, PII redaction — are out of Phase 0 scope by design.)
 >
-> **Still open in Phase 0:** **SQLModel + SQLite (WAL) + Alembic** and **logging** — see the
-> Phase 0 checklist in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap).
+> **Still open in Phase 0:** **logging** — the last remaining item — see the Phase 0 checklist
+> in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). (Config/keyring, the AI provider
+> abstraction, and the data layer are all done.)
 
 ---
 
 ## ✅ What has landed
 
-Phase 0 · AI provider — structured error classification + CLI version floor (this branch):
+Phase 0 · Data layer — SQLModel + SQLite (WAL) + Alembic (this branch):
+
+- `atlas.db.engine`: `create_db_engine(url=None)` builds a SQLite engine and applies
+  `PRAGMA journal_mode=WAL` + `foreign_keys=ON` on every connection via a `connect` listener
+  (WAL enables the daemon-writer / TUI-reader concurrency model, PROJECT.md §4.1). The URL is an
+  injectable boundary defaulting to `db_path()` under the platformdirs data dir; file URLs
+  create their parent dir, in-memory URLs use a `StaticPool`. Callers own and dispose the engine
+  (Windows-safe teardown of the `.db` + `-wal`/`-shm` sidecars).
+- `atlas.db.session`: `session_scope(engine)` — a transactional context manager (commit on clean
+  exit, roll back + re-raise on error, always close).
+- `atlas.db.models`: the foundational table slice — `User` and `Profile` — as SQLModel tables
+  with JSON-shaped columns. The remaining PROJECT.md §6 tables grow per-feature in Phase 1.
+- `atlas.db.migrate` + `atlas.db.migrations`: an in-process Alembic driver (`alembic_config` /
+  `upgrade_to_head`, failures → `MigrationError`) plus the migration environment (targets
+  `SQLModel.metadata`) and the initial-schema migration creating `user` + `profile`. Proven
+  end-to-end by a test running `upgrade head` against a temp DB; `alembic.ini` is the dev CLI.
+- Hermetic tests (in-memory SQLite via a new `db_engine` conftest fixture; migrations run against
+  a `tmp_path` DB). New deps `sqlmodel` + `alembic`. `migrations/` excluded from mypy/ruff and
+  omitted from coverage; the rest holds 100% line+branch. `mypy --strict` clean (incl. win32).
+
+Phase 0 · AI provider — structured error classification + CLI version floor (PR #14):
 
 - Claude Code adapter switched to `--output-format stream-json --verbose`. Verified against
   the real CLI that the terminal `result` event still carries
@@ -246,7 +269,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — **AI provider abstraction complete** (core contract · CLI + API backends · failover · CLI scaffold · `atlas doctor` · capability probe); config/keyring done; **DB (SQLModel/SQLite/Alembic) + logging remain** |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — **AI provider abstraction complete** (core contract · CLI + API backends · failover · CLI scaffold · `atlas doctor` · capability probe); config/keyring done; **data layer (SQLModel/SQLite WAL/Alembic) done**; **only logging remains** |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |

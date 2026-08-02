@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Data layer** (`atlas.db`): the Phase 0 SQLite foundation the Phase 1 core
+  loop builds on (PROJECT.md §6, §4.1). `create_db_engine` builds a SQLite engine
+  and applies `PRAGMA journal_mode=WAL` + `foreign_keys=ON` on every connection
+  (WAL supports the daemon-writer / TUI-reader concurrency model); the database
+  URL is an injectable boundary defaulting to `db_path()` under the platformdirs
+  data dir, so the hermetic suite uses in-memory SQLite and never touches a real
+  data dir (AGENTS.md §6.2). `session_scope(engine)` is a transactional context
+  manager (commit on clean exit, roll back and re-raise on error, always close).
+  The foundational table slice — `User` and `Profile` — ships as SQLModel tables
+  with JSON-shaped columns; the remaining PROJECT.md §6 tables land per-feature in
+  Phase 1, each with its own migration.
+- **Alembic migrations**: an in-process driver (`atlas.db.migrate` —
+  `alembic_config(url)` / `upgrade_to_head(url)`, failures normalized to
+  `MigrationError`) so Atlas migrates on launch without shelling out, plus the
+  migration environment (targets `SQLModel.metadata`) and the initial-schema
+  migration creating `user` and `profile`. The migration is proven end-to-end by
+  a test that runs `upgrade head` against a temporary database; `alembic.ini` is
+  the developer-CLI entry. `DatabaseError` base + `MigrationError` error types.
+- New runtime dependencies: `sqlmodel` (Pydantic + SQLAlchemy table models) and
+  `alembic` (schema migrations).
 - **Minimum Claude Code CLI version enforcement**: `CliAdapter` gained a
   `parse_cli_version` helper, an overridable `_minimum_version()` hook, and a
   `check_availability()` returning a `CliAvailability(available, reason)`. The
