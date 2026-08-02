@@ -771,6 +771,14 @@ atlas config get|set
 
 `--json` on read commands for scripting; consistent exit codes.
 
+**Output styling.** All human-facing CLI output is rendered with **Rich** (tables, panels,
+themed color, progress) for a polished, *visually consistent* experience across every
+command — never bare unstyled prints. A single shared console + named theme
+(`atlas/cli/console.py`) centralizes the palette via semantic style names (`success`,
+`error`, `heading`, …), so all commands match; errors go to a stderr console. `--json` (and
+other machine-readable) output is the deliberate exception — emitted unstyled so it stays
+pipe/parse-safe. See [`AGENTS.md` §10](../AGENTS.md#10-code-style--conventions).
+
 ---
 
 ## 10. Configuration Example
@@ -912,7 +920,7 @@ abstractions:
 | Language | Python 3.11+ |
 | Project & dependency management | **uv** (lockfile, venv, `uv run`/`uv sync`/`uv add`, `uv build`) |
 | TUI | **Textual** (+ **Rich**) |
-| CLI | **Typer** |
+| CLI | **Typer** (+ **Rich** for styled, consistent output — shared console/theme) |
 | Models, DB & migrations | **SQLModel** (Pydantic + SQLAlchemy in one) over **SQLite** (WAL) + **Alembic** |
 | Scheduler (daemon) | **APScheduler** |
 | HTTP | **httpx** |
@@ -1020,8 +1028,10 @@ The document specs everything; build order is phased. Each phase is independentl
   - [x] Failover chain across the backend order (`atlas.ai.router` — `FailoverProvider` +
     `build_provider_chain`; fails over on `LLMBackendError`/`LLMTimeoutError`, not
     `LLMOutputError`).
-  - [ ] Per-backend capability probing (cached) and the `atlas doctor` command (needs the
-    Typer CLI scaffold first).
+  - [x] CLI scaffold (`atlas.cli`, Typer) + **`atlas doctor` v1** reporting each backend's
+    availability (`atlas.cli.doctor`).
+  - [ ] Per-backend capability probing (cached; round-trip JSON probe) surfaced through
+    `atlas doctor`.
 - [ ] Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
 
 ### Phase 1 — Core loop (first genuinely useful release)

@@ -8,8 +8,16 @@ through to offer — all driven by AI that runs either through a coding CLI alre
 on your machine (Claude Code, OpenAI Codex, Google Antigravity) or through a hosted API
 (OpenRouter, Amazon Bedrock, Anthropic, …).
 
-> **Status:** Design / pre-implementation. The full design is in
-> [`docs/PROJECT.md`](./docs/PROJECT.md).
+> **Status:** Early implementation (Phase 0 foundations). The full design is in
+> [`docs/PROJECT.md`](./docs/PROJECT.md); current progress is tracked in
+> [`docs/STATUS.md`](./docs/STATUS.md).
+
+The first command is live — check your AI backend setup with:
+
+```bash
+atlas doctor          # report each configured backend's availability
+atlas doctor --json   # machine-readable, for scripting
+```
 
 ## Highlights
 

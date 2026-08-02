@@ -332,6 +332,16 @@ A change is "done" only when **all** of these are true:
   paths and shell-specific assumptions; isolate OS-specific calls behind the platform layer.
 - Prefer small, composable functions; fail loudly with clear errors; log at appropriate
   levels.
+- **Pretty, consistent CLI output — always.** Every user-facing CLI command renders through
+  [**Rich**](https://rich.readthedocs.io/) (tables, panels, themed color, progress), never
+  bare `print`/`typer.echo` of unstyled strings. Output must be **visually consistent across
+  the whole app**: go through the single shared console and named theme in
+  [`atlas/cli/console.py`](./src/atlas/cli/console.py) and reference **semantic** style names
+  (`success`, `error`, `heading`, `accent`, …) rather than hard-coding colors, so the palette
+  lives in one place and every command matches. The **only** exception is machine-readable
+  output (e.g. `--json`), which stays unstyled so it can be piped/parsed — emit it via
+  `print_json_line`. Send errors/diagnostics to the stderr console. (The TUI is Textual;
+  this rule governs the Typer CLI.)
 
 ---
 

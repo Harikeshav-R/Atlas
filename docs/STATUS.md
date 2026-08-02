@@ -19,11 +19,11 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · AI provider abstraction — capability probing & `atlas doctor`.** The core
-contract, the `CliAdapter` base, the **Claude Code adapter**, **config + keyring**, the
-**OpenRouter/LiteLLM API backend**, and now the **failover chain** have all landed (see "What
-has landed"). Both Phase 0 backends exist behind `LLMProvider` and can be composed into an
-ordered chain; what remains is per-backend probing and the `doctor` command, per
+**Phase 0 · AI provider abstraction — capability probing.** The core contract, the
+`CliAdapter` base, the **Claude Code adapter**, **config + keyring**, the **OpenRouter/LiteLLM
+API backend**, the **failover chain**, and now the **CLI scaffold + `atlas doctor` v1** have
+all landed (see "What has landed"). What remains of the AI-provider item is the live
+capability probe, per
 [PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
@@ -41,15 +41,16 @@ ordered chain; what remains is per-backend probing and the `doctor` command, per
    `LLMOutputError`); `build_provider_chain()` assembles it from `AiConfig`. A config-driven
    `build_claude_code_provider` (+ `ClaudeCodeBackend.api_key_handle`) now matches
    `build_openrouter_provider`.
-6. **Capability probing + `atlas doctor`.** A round-trip capability probe
-   (JSON/schema/streaming/model-override) cached per backend, and the Typer `atlas doctor`
-   command that reports each backend's availability. (This step also refines the Claude
-   adapter's stderr auth/rate-limit heuristic using stream-json's real `error` category.)
-   **Note:** `atlas doctor` requires first standing up the Typer CLI + `__main__.py` (neither
-   exists yet; `typer` is not yet a dependency) and deciding where probe results are cached
-   (the design leaves this open — likely the cache dir or in-memory). Consider splitting the
-   CLI scaffold, the probe, and `doctor` into separate PRs.
-7. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
+6. ✅ **CLI scaffold + `atlas doctor` v1** (`src/atlas/cli/`) — a Typer command group
+   (`atlas` console script + `python -m atlas`) whose `doctor` command reports each configured
+   backend's availability (text or `--json`; exit 0/1). Pure report logic in `atlas.cli.doctor`.
+7. **Capability probe.** The remaining piece: a round-trip "reply OK as JSON against this
+   schema" probe recording per-backend support (JSON output / schema / streaming /
+   model-override), surfaced through the existing `atlas doctor` command. **Open decision:**
+   where probe results cache (the design leaves this unspecified — likely the cache dir or
+   in-memory for now). (This is also where the Claude adapter's stderr auth/rate-limit
+   heuristic is refined using stream-json's real `error` category.)
+8. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
 > Also still open in Phase 0 (separate PRs): **SQLModel + SQLite (WAL) + Alembic** and
 > **logging** — see the Phase 0 checklist in
@@ -59,7 +60,21 @@ ordered chain; what remains is per-backend probing and the `doctor` command, per
 
 ## ✅ What has landed
 
-Phase 0 · AI provider abstraction — failover chain (this branch):
+Phase 0 · CLI scaffold + `atlas doctor` v1 (this branch):
+
+- `atlas.cli`: Atlas's Typer command group, exposed via the `atlas` console script
+  (`[project.scripts]`) and `python -m atlas`. A top-level callback keeps it multi-command so
+  future subcommands (`config`, `init`, the TUI launcher, …) route by name.
+- **`atlas doctor`** validates config and reports each configured backend's availability in
+  chain order (default + failover): human-readable text or `--json`; exit `0` if any backend
+  is usable, `1` if none is (or config/keyring won't load). Pure logic in `atlas.cli.doctor`
+  (`run_doctor`/`render_report`) builds each backend via `build_named_provider` and records
+  `is_available()`, catching per-backend construction errors so one bad backend doesn't sink
+  the report. No live model calls yet — the capability round-trip is deferred.
+- `build_named_provider` promoted to public in `atlas.ai.router`. New runtime dep: `typer`.
+  100% line+branch coverage (fake runner/keyring for logic; Typer `CliRunner` for the command).
+
+Phase 0 · AI provider abstraction — failover chain (PR #11):
 
 - `atlas.ai.router`: `FailoverProvider` wraps an ordered list of `LLMProvider` backends and
   is itself an `LLMProvider`, so callers stay agnostic. `complete()`/`stream()` try each
@@ -191,7 +206,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring + OpenRouter/LiteLLM backend + failover chain done; capability probing + `atlas doctor`, and DB/logging remain |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring + OpenRouter/LiteLLM backend + failover chain + CLI scaffold & `atlas doctor` v1 done; capability probe, and DB/logging remain |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
