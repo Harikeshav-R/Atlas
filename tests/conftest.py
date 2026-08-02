@@ -10,12 +10,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
+from sqlmodel import SQLModel
 
 from atlas.ai.base import LLMRequest, LLMResponse
 from atlas.ai.cli.runner import RunResult
+from atlas.db.engine import create_db_engine
+
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
 
 # A per-call scripted response: either a ready :class:`LLMResponse` or a callable
 # that builds one from the request it receives (to assert on prompt/schema).
@@ -378,3 +383,19 @@ def named_keyring(fqn: str) -> FakeKeyring:
 def fake_keyring() -> FakeKeyring:
     """Return a fresh in-memory :class:`FakeKeyring`."""
     return FakeKeyring()
+
+
+@pytest.fixture
+def db_engine() -> Iterator[Engine]:
+    """Yield an in-memory SQLite engine with Atlas's schema created.
+
+    Hermetic and offline (AGENTS.md §6.2): no real data dir is touched. The
+    engine is disposed on teardown so no connection outlives the test — the same
+    contract file-backed tests rely on for Windows-safe ``tmp_path`` cleanup.
+    """
+    engine = create_db_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
