@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from atlas.db.engine import create_db_engine, db_path, sqlite_url
 from atlas.db.errors import DatabaseError, MigrationError
+from atlas.db.migrate import alembic_config, upgrade_to_head
 from atlas.db.models import Profile, User
 from atlas.db.session import session_scope
 
@@ -21,8 +22,10 @@ __all__ = [
     "MigrationError",
     "Profile",
     "User",
+    "alembic_config",
     "create_db_engine",
     "db_path",
     "session_scope",
     "sqlite_url",
+    "upgrade_to_head",
 ]
