@@ -16,10 +16,20 @@ def test_config_defaults() -> None:
 def test_backend_defaults() -> None:
     ai = AiConfig()
     assert ai.backends.claude_code == ClaudeCodeBackend(
-        type="cli", command="claude", output_format="json", use_bare=False
+        type="cli",
+        command="claude",
+        output_format="json",
+        use_bare=False,
+        api_key_handle="anthropic",
     )
+    assert ai.backends.claude_code.api_key_handle == "anthropic"
     assert ai.backends.openrouter.api_key_handle == "openrouter"
     assert ai.backends.openrouter.model == "anthropic/claude-sonnet"
+
+
+def test_claude_code_api_key_handle_override() -> None:
+    backend = ClaudeCodeBackend.model_validate({"api_key_handle": "my-anthropic"})
+    assert backend.api_key_handle == "my-anthropic"
 
 
 def test_failover_default_is_independent_per_instance() -> None:
