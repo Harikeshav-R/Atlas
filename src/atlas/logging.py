@@ -70,10 +70,18 @@ _ATLAS_HANDLER_FLAG = "_atlas_managed"
 logger = logging.getLogger(__name__)
 
 
+#: Default rotating-file size threshold and retained-backup count, used when no
+#: ``[logging]`` config overrides them.
+_DEFAULT_MAX_BYTES = 1_000_000
+_DEFAULT_BACKUP_COUNT = 3
+
+
 class HandlerFactory(Protocol):
     """Builds the handlers :func:`setup_logging` installs (an injectable seam)."""
 
-    def __call__(self, *, console_level: int, log_path: Path) -> Sequence[logging.Handler]:
+    def __call__(
+        self, *, console_level: int, log_path: Path, max_bytes: int, backup_count: int
+    ) -> Sequence[logging.Handler]:
         """Return the handlers to attach to the ``"atlas"`` logger."""
 
 
@@ -149,7 +157,7 @@ def resolve_level(
 
 
 def _default_handler_factory(  # pragma: no cover - opens the real console/log file (AGENTS.md §6.2)
-    *, console_level: int, log_path: Path
+    *, console_level: int, log_path: Path, max_bytes: int, backup_count: int
 ) -> Sequence[logging.Handler]:
     """Build the real console + rotating-file handlers.
 
@@ -165,8 +173,8 @@ def _default_handler_factory(  # pragma: no cover - opens the real console/log f
     )
     file_handler = RotatingFileHandler(
         log_path,
-        maxBytes=1_000_000,
-        backupCount=3,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
         encoding="utf-8",
     )
     file_handler.setLevel(logging.DEBUG)
@@ -180,6 +188,8 @@ def setup_logging(
     verbose: int = 0,
     config_level: str | None = None,
     file_enabled: bool = True,
+    max_bytes: int = _DEFAULT_MAX_BYTES,
+    backup_count: int = _DEFAULT_BACKUP_COUNT,
     handler_factory: HandlerFactory = _default_handler_factory,
     log_path: Path | None = None,
 ) -> int:
@@ -196,6 +206,8 @@ def setup_logging(
         verbose: Count of ``-v`` flags.
         config_level: Console level from the ``[logging]`` config section.
         file_enabled: Whether to install the rotating file handler.
+        max_bytes: Rotate the log file once it reaches this size in bytes.
+        backup_count: Number of rotated log files to keep.
         handler_factory: Builds the handlers to install; injected in tests.
         log_path: Log-file path; defaults to :func:`log_file`. Its parent
             directory is created if absent.
@@ -220,7 +232,12 @@ def setup_logging(
             atlas_logger.removeHandler(existing)
             existing.close()
 
-    handlers = handler_factory(console_level=console_level, log_path=target)
+    handlers = handler_factory(
+        console_level=console_level,
+        log_path=target,
+        max_bytes=max_bytes,
+        backup_count=backup_count,
+    )
     file_installed = False
     for handler in handlers:
         if isinstance(handler, logging.FileHandler):

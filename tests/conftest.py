@@ -435,6 +435,8 @@ class HandlerFactoryCall:
 
     console_level: int
     log_path: Path
+    max_bytes: int
+    backup_count: int
 
 
 class FakeHandlerFactory:
@@ -444,7 +446,8 @@ class FakeHandlerFactory:
     :class:`logging.NullHandler` for the console and, unless ``with_file`` is
     ``False``, a :class:`logging.FileHandler` opened on the injected ``log_path``
     (a ``tmp_path`` in tests, never the real state dir). Records each call on
-    :attr:`calls` so tests assert on the resolved console level and log path.
+    :attr:`calls` so tests assert on the console level, log path, and rotation
+    settings the setup passed.
     """
 
     def __init__(self, *, with_file: bool = True) -> None:
@@ -452,9 +455,18 @@ class FakeHandlerFactory:
         self._with_file = with_file
         self.calls: list[HandlerFactoryCall] = []
 
-    def __call__(self, *, console_level: int, log_path: Path) -> Sequence[logging.Handler]:
+    def __call__(
+        self, *, console_level: int, log_path: Path, max_bytes: int, backup_count: int
+    ) -> Sequence[logging.Handler]:
         """Record the call and return offline handlers for it."""
-        self.calls.append(HandlerFactoryCall(console_level=console_level, log_path=log_path))
+        self.calls.append(
+            HandlerFactoryCall(
+                console_level=console_level,
+                log_path=log_path,
+                max_bytes=max_bytes,
+                backup_count=backup_count,
+            )
+        )
         console = logging.NullHandler()
         console.setLevel(console_level)
         handlers: list[logging.Handler] = [console]

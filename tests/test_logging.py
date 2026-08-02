@@ -86,12 +86,29 @@ def test_setup_installs_console_and_file_handlers(tmp_path: Path) -> None:
     atlas_logger = logging.getLogger("atlas")
     assert resolved == logging.DEBUG
     assert factory.calls == [
-        HandlerFactoryCall(console_level=logging.DEBUG, log_path=tmp_path / "atlas.log")
+        HandlerFactoryCall(
+            console_level=logging.DEBUG,
+            log_path=tmp_path / "atlas.log",
+            max_bytes=1_000_000,
+            backup_count=3,
+        )
     ]
     assert len(atlas_logger.handlers) == 2
     assert atlas_logger.propagate is False
     # The logger admits DEBUG because the file handler wants it.
     assert atlas_logger.level == logging.DEBUG
+
+
+def test_setup_forwards_rotation_settings(tmp_path: Path) -> None:
+    factory = FakeHandlerFactory()
+    setup_logging(
+        max_bytes=2048,
+        backup_count=7,
+        handler_factory=factory,
+        log_path=tmp_path / "atlas.log",
+    )
+    assert factory.calls[0].max_bytes == 2048
+    assert factory.calls[0].backup_count == 7
 
 
 def test_setup_creates_missing_log_directory(tmp_path: Path) -> None:

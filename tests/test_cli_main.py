@@ -30,6 +30,23 @@ def _report(*, healthy: bool) -> DoctorReport:
     )
 
 
+@pytest.fixture(autouse=True)
+def stub_setup_logging(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Stub the callback's logging setup so no test writes a real log file.
+
+    Records each call's kwargs so tests can assert the resolved options; returns
+    the recording list.
+    """
+    calls: list[dict[str, object]] = []
+
+    def _fake(**kwargs: object) -> int:
+        calls.append(kwargs)
+        return 0
+
+    monkeypatch.setattr(app_module, "setup_logging", _fake)
+    return calls
+
+
 @pytest.fixture
 def stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub config + secret store so the command touches no real config/keyring."""
@@ -137,3 +154,54 @@ def test_doctor_refresh_implies_probe(
     _capture_kwargs(monkeypatch, captured)
     runner.invoke(app, ["doctor", "--refresh"])
     assert captured == {"probe": True, "refresh": True}
+
+
+def test_callback_initializes_logging_from_config(
+    stub_env: None,
+    stub_setup_logging: list[dict[str, object]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A default config drives setup_logging with the [logging] section values.
+    monkeypatch.setattr(
+        app_module, "run_doctor", lambda config, store, **kwargs: _report(healthy=True)
+    )
+    runner.invoke(app, ["doctor"])
+    assert stub_setup_logging == [
+        {
+            "log_level": None,
+            "verbose": 0,
+            "config_level": "WARNING",
+            "file_enabled": True,
+            "max_bytes": 1_000_000,
+            "backup_count": 3,
+        }
+    ]
+
+
+def test_callback_passes_verbose_and_log_level(
+    stub_env: None,
+    stub_setup_logging: list[dict[str, object]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        app_module, "run_doctor", lambda config, store, **kwargs: _report(healthy=True)
+    )
+    runner.invoke(app, ["-v", "--log-level", "DEBUG", "doctor"])
+    assert stub_setup_logging[0]["verbose"] == 1
+    assert stub_setup_logging[0]["log_level"] == "DEBUG"
+
+
+def test_callback_tolerates_bad_config(
+    stub_setup_logging: list[dict[str, object]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A config that fails to load must not break logging setup; the callback
+    # falls back to CLI-only options and the command still reports the error.
+    def _boom() -> Config:
+        raise KeyringUnavailableError("no secure keychain")
+
+    monkeypatch.setattr(app_module, "load_config", _boom)
+    result = runner.invoke(app, ["-v", "doctor"])
+    assert result.exit_code == 1
+    # setup_logging was called with the CLI options only (no config_level).
+    assert stub_setup_logging == [{"log_level": None, "verbose": 1}]
