@@ -38,6 +38,10 @@ class ClaudeCodeBackend(_Base):
     command: str = "claude"
     output_format: str = "json"
     use_bare: bool = False
+    #: Keyring handle for the ``ANTHROPIC_API_KEY`` used only in ``--bare`` mode;
+    #: never the key itself. Ignored when ``use_bare`` is ``False`` (Claude Code
+    #: then uses the user's existing login).
+    api_key_handle: str = "anthropic"
 
 
 class OpenRouterBackend(_Base):

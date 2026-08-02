@@ -1017,8 +1017,11 @@ The document specs everything; build order is phased. Each phase is independentl
   - [x] **Claude Code** CLI adapter (structured path, neutralized tools, `--bare` opt-in).
   - [x] **OpenRouter** API adapter via LiteLLM behind `LLMProvider` (`atlas.ai.api`), with
     per-model capability lookup and the transport/content retry split.
-  - [ ] Failover chain across the backend order, per-backend capability probing (cached), and
-    the `atlas doctor` command.
+  - [x] Failover chain across the backend order (`atlas.ai.router` — `FailoverProvider` +
+    `build_provider_chain`; fails over on `LLMBackendError`/`LLMTimeoutError`, not
+    `LLMOutputError`).
+  - [ ] Per-backend capability probing (cached) and the `atlas doctor` command (needs the
+    Typer CLI scaffold first).
 - [ ] Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
 
 ### Phase 1 — Core loop (first genuinely useful release)
