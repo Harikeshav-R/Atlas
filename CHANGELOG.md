@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Styled, consistent CLI output** via Rich: a shared console + named theme
+  (`atlas.cli.console`, `ATLAS_THEME`) that every command renders through, using
+  semantic style names (`success`/`error`/`heading`/`accent`/…) so the palette is
+  centralized and all commands match. Errors route to a stderr console;
+  machine-readable `--json` output stays unstyled and pipe-safe via
+  `print_json_line`. `atlas doctor` now renders a Rich table of backends with a
+  status summary. The convention (all CLI output is Rich-styled and consistent)
+  is documented in `AGENTS.md` §10, `docs/agent/coding-standards.md`, and
+  PROJECT.md §9/§13. Rich promoted to a direct dependency.
 - Atlas **command-line interface** (`atlas.cli`, built on Typer): a command group
   exposed via the `atlas` console script and `python -m atlas`, with a top-level
   callback keeping it in multi-command mode for future subcommands.

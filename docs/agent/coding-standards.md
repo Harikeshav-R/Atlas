@@ -26,6 +26,23 @@ sits above them.
   leak internals, paths, or secrets into user-facing output.
 - Use appropriate log levels; no stray `print`.
 
+## CLI output (pretty & consistent — always)
+
+- **Every CLI command renders through [Rich](https://rich.readthedocs.io/)** — tables,
+  panels, themed color, progress bars — never bare `print`/`typer.echo` of unstyled text.
+  Aim for the polish of `atlas --help`.
+- **One console, one theme.** Render through the shared `console` and `ATLAS_THEME` in
+  [`atlas/cli/console.py`](../../src/atlas/cli/console.py) so output is consistent across the
+  whole app. Use **semantic** style names (`success`, `error`, `heading`, `accent`, `muted`,
+  `ok`, `bad`) — never hard-code colors in a command. Add a new semantic style to the theme
+  rather than inlining a color, so the palette stays centralized.
+- **Errors/diagnostics → the stderr console**; keep stdout clean for the primary result.
+- **Machine-readable output stays plain.** `--json` (and similar) must be unstyled and
+  pipe-safe — emit via `print_json_line`, not the styled path. Keep the pure
+  data/report-building logic separate from rendering so it's testable without a terminal
+  (render Rich objects through the shared console's `capture()` in tests).
+- The **TUI** is Textual; this convention governs the **Typer CLI**.
+
 ## Secrets & privacy
 
 - **Secrets never in code, config files, logs, or tests.** Use the keyring abstraction.
