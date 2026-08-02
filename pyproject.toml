@@ -22,6 +22,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
+    "alembic>=1.18.5",
     "keyring>=25.7.0",
     "keyrings-alt>=5.0.2",
     "litellm>=1.95.0",
@@ -29,6 +30,7 @@ dependencies = [
     "pycryptodome>=3.23.0",
     "pydantic>=2.13.4",
     "rich>=15.0.0",
+    "sqlmodel>=0.0.39",
     "tomli-w>=1.2.0",
     "typer>=0.27.0",
 ]
