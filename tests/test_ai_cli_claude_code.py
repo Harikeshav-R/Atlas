@@ -27,8 +27,17 @@ def _adapter(runner: FakeSubprocessRunner, **kwargs: object) -> ClaudeCodeAdapte
     return ClaudeCodeAdapter(command="claude", runner=runner, **kwargs)  # type: ignore[arg-type]
 
 
-def _ok_envelope(**extra: object) -> str:
-    envelope: dict[str, object] = {
+def _stream(*events: dict[str, object]) -> str:
+    """Join event objects into a stream-json (NDJSON) stdout blob."""
+    return "\n".join(json.dumps(event) for event in events)
+
+
+def _terminal(**extra: object) -> dict[str, object]:
+    """Build a terminal ``result/success`` event with test-friendly defaults."""
+    event: dict[str, object] = {
+        "type": "result",
+        "subtype": "success",
+        "is_error": False,
         "result": "the answer",
         "structured_output": {"functions": ["main"]},
         "session_id": "sess-1",
@@ -36,8 +45,17 @@ def _ok_envelope(**extra: object) -> str:
         "total_cost_usd": 0.004,
         "model": "claude-sonnet",
     }
-    envelope.update(extra)
-    return json.dumps(envelope)
+    event.update(extra)
+    return event
+
+
+def _ok_envelope(**extra: object) -> str:
+    """Return a full stream-json stdout with a preceding event + terminal result.
+
+    Mirrors the real CLI: a leading ``system/init`` event then the terminal
+    ``result`` event that :meth:`_parse_response` reads.
+    """
+    return _stream({"type": "system", "subtype": "init"}, _terminal(**extra))
 
 
 def _request(**kwargs: object) -> LLMRequest:
@@ -54,7 +72,7 @@ def test_build_argv_includes_output_format_and_no_allowed_tools() -> None:
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_ok_envelope(), stderr=""))
     _adapter(runner).complete(_request())
     argv = runner.calls[0].argv
-    assert argv[:5] == ["claude", "-p", "hi", "--output-format", "json"]
+    assert argv[:6] == ["claude", "-p", "hi", "--output-format", "stream-json", "--verbose"]
     assert "--allowedTools" not in argv
     assert "--bare" not in argv
 
@@ -141,7 +159,7 @@ def test_complete_maps_envelope_fields() -> None:
 
 
 def test_complete_structured_none_when_absent() -> None:
-    stdout = json.dumps({"result": "text only"})
+    stdout = _stream(_terminal(result="text only", structured_output=None))
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
     response = _adapter(runner).complete(_request())
     assert response.structured is None
@@ -149,7 +167,7 @@ def test_complete_structured_none_when_absent() -> None:
 
 
 def test_complete_missing_usage_yields_all_none_tokens() -> None:
-    stdout = json.dumps({"result": "x"})
+    stdout = _stream({"type": "result", "result": "x", "usage": None, "total_cost_usd": None})
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
     response = _adapter(runner).complete(_request())
     assert response.usage is not None
@@ -158,38 +176,116 @@ def test_complete_missing_usage_yields_all_none_tokens() -> None:
 
 
 def test_complete_model_falls_back_to_configured_then_name() -> None:
-    stdout = json.dumps({"result": "x"})
+    stdout = _stream({"type": "result", "result": "x", "model": None})
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
-    # No model in envelope, configured model present -> configured wins.
+    # No model in the terminal event, configured model present -> configured wins.
     response = _adapter(runner, model="claude-opus").complete(_request())
     assert response.model == "claude-opus"
 
 
 def test_complete_model_falls_back_to_backend_name() -> None:
-    stdout = json.dumps({"result": "x"})
+    stdout = _stream({"type": "result", "result": "x", "model": None})
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
-    # No model in envelope, no configured model -> backend name.
+    # No model in the terminal event, no configured model -> backend name.
     response = _adapter(runner).complete(_request())
     assert response.model == "claude_code"
 
 
-def test_complete_raises_backend_error_on_unparseable_stdout() -> None:
-    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="not json", stderr=""))
+def test_complete_skips_non_json_lines_and_reads_terminal() -> None:
+    # The CLI can interleave blank / non-event lines; the parser skips them.
+    stdout = "\n".join(
+        [
+            "",
+            "not json",
+            json.dumps({"type": "system", "subtype": "init"}),
+            json.dumps(_terminal(result="ok")),
+        ]
+    )
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
+    assert _adapter(runner).complete(_request()).text == "ok"
+
+
+def test_complete_raises_backend_error_when_no_terminal_event() -> None:
+    # Events present but none is a terminal ``result`` event.
+    stdout = _stream({"type": "system", "subtype": "init"}, {"type": "stream_event"})
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
     with pytest.raises(LLMBackendError, match="unparseable output"):
         _adapter(runner).complete(_request())
 
 
-def test_classify_auth_failure() -> None:
+def test_complete_raises_backend_error_on_unparseable_stdout() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="not json at all", stderr=""))
+    with pytest.raises(LLMBackendError, match="unparseable output"):
+        _adapter(runner).complete(_request())
+
+
+def test_complete_skips_non_object_json_lines() -> None:
+    # A line that is valid JSON but not an object (a bare array) is skipped.
+    stdout = "\n".join([json.dumps([1, 2, 3]), json.dumps(_terminal(result="ok"))])
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
+    assert _adapter(runner).complete(_request()).text == "ok"
+
+
+def test_classify_scans_past_null_error_to_real_category() -> None:
+    # A leading event with error=null must not short-circuit the scan; the real
+    # category on a later event is found.
+    stdout = _stream(
+        {"type": "result", "is_error": True, "error": None},
+        {"type": "system", "subtype": "api_retry", "error": "rate_limit"},
+    )
+    runner = FakeSubprocessRunner(RunResult(returncode=1, stdout=stdout, stderr=""))
+    with pytest.raises(LLMRateLimitError, match="rate-limited or over quota"):
+        _adapter(runner).complete(_request())
+
+
+def test_complete_in_band_error_event_is_classified() -> None:
+    # A zero-exit run whose terminal event reports is_error, with the structured
+    # category on a preceding event -> classified from the category.
+    stdout = _stream(
+        {"type": "assistant", "error": "model_not_found"},
+        {"type": "result", "is_error": True, "result": ""},
+    )
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=stdout, stderr=""))
+    with pytest.raises(LLMBackendError, match="exited with code 0"):
+        _adapter(runner).complete(_request())
+
+
+@pytest.mark.parametrize("category", ["authentication_failed", "oauth_org_not_allowed"])
+def test_classify_auth_from_structured_category(category: str) -> None:
+    stdout = _stream({"type": "assistant", "error": category}, {"type": "result", "is_error": True})
+    runner = FakeSubprocessRunner(RunResult(returncode=1, stdout=stdout, stderr=""))
+    with pytest.raises(LLMAuthError, match="authentication failed"):
+        _adapter(runner).complete(_request())
+
+
+@pytest.mark.parametrize("category", ["rate_limit", "overloaded", "billing_error"])
+def test_classify_rate_limit_from_structured_category(category: str) -> None:
+    stdout = _stream({"type": "system", "subtype": "api_retry", "error": category})
+    runner = FakeSubprocessRunner(RunResult(returncode=1, stdout=stdout, stderr=""))
+    with pytest.raises(LLMRateLimitError, match="rate-limited or over quota"):
+        _adapter(runner).complete(_request())
+
+
+def test_classify_unknown_category_is_generic_backend_error() -> None:
+    stdout = _stream({"type": "assistant", "error": "model_not_found"})
+    runner = FakeSubprocessRunner(RunResult(returncode=1, stdout=stdout, stderr="diag /home/x"))
+    with pytest.raises(LLMBackendError, match="exited with code 1") as excinfo:
+        _adapter(runner).complete(_request())
+    assert type(excinfo.value) is LLMBackendError
+    assert "/home/x" not in str(excinfo.value)
+
+
+def test_classify_auth_falls_back_to_stderr_when_no_category() -> None:
+    # No structured category (empty stdout) -> stderr heuristic still classifies.
     runner = FakeSubprocessRunner(
         RunResult(returncode=1, stdout="", stderr="Error: Unauthorized (401) — check /home/x")
     )
     with pytest.raises(LLMAuthError, match="authentication failed") as excinfo:
         _adapter(runner).complete(_request())
-    # Diagnostics (incl. the path) must not leak into the user-facing message.
     assert "/home/x" not in str(excinfo.value)
 
 
-def test_classify_rate_limit_failure() -> None:
+def test_classify_rate_limit_falls_back_to_stderr_when_no_category() -> None:
     runner = FakeSubprocessRunner(
         RunResult(returncode=1, stdout="", stderr="Error: rate limit exceeded (429)")
     )

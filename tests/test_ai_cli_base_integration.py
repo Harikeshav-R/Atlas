@@ -24,15 +24,23 @@ class Extraction(BaseModel):
 
 
 def _envelope_stdout() -> str:
-    return json.dumps(
-        {
-            "result": "Here are the functions.",
-            "structured_output": {"functions": ["main", "parse"]},
-            "session_id": "abc-123",
-            "usage": {"input_tokens": 10, "output_tokens": 4},
-            "total_cost_usd": 0.0021,
-            "model": "claude-sonnet",
-        }
+    # stream-json stdout: a leading system event then the terminal ``result`` event.
+    return "\n".join(
+        json.dumps(event)
+        for event in (
+            {"type": "system", "subtype": "init"},
+            {
+                "type": "result",
+                "subtype": "success",
+                "is_error": False,
+                "result": "Here are the functions.",
+                "structured_output": {"functions": ["main", "parse"]},
+                "session_id": "abc-123",
+                "usage": {"input_tokens": 10, "output_tokens": 4},
+                "total_cost_usd": 0.0021,
+                "model": "claude-sonnet",
+            },
+        )
     )
 
 
