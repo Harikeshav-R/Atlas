@@ -1032,8 +1032,10 @@ The document specs everything; build order is phased. Each phase is independentl
     availability (`atlas.cli.doctor`).
   - [x] Per-backend capability probing (`atlas.ai.probe` + `atlas.ai.probe_cache`; cached
     round-trip JSON probe, all five capabilities) surfaced through `atlas doctor --probe`.
-  - Deferred riders (separate PRs): stream-json `error`-category heuristic refinement for the
-    Claude adapter, and CLI **version-minimum** detection (§18.2).
+  - [x] Structured error classification (Claude failures mapped from the stream-json `error`
+    category, stderr heuristic fallback) and CLI **version-minimum** enforcement
+    (`CliAdapter._minimum_version` / `check_availability`; Claude Code ≥ 2.1.205) — resolves
+    §18.2.
 - [x] Verified against the real installed `claude` CLI (the `atlas doctor --probe` round-trip;
   Codex/Antigravity adapters and their live verification remain for a later phase).
 
@@ -1122,8 +1124,11 @@ The document specs everything; build order is phased. Each phase is independentl
 
 ### 18.2 Remaining open questions (revisit during build)
 
-- Exact CLI **version minimums** to require and how to detect them (flags/output shapes
-  drift across versions — `atlas doctor` pins this per install).
+- ~~Exact CLI **version minimums** to require and how to detect them.~~ **Resolved:**
+  `CliAdapter` parses the `--version` output and enforces an overridable per-adapter minimum
+  (`_minimum_version` / `check_availability`); Claude Code is pinned to ≥ 2.1.205 (the release
+  exposing the stream-json structured `error` category), hard-failed as unavailable when older
+  and surfaced with a reason in `atlas doctor`.
 - Whether the daemon autostart should be **opt-in during onboarding** or a separate
   explicit `atlas daemon install` step per OS.
 - Default **fit-score threshold** for notifications (starting at 80 in the config example —
@@ -1199,6 +1204,12 @@ uniformly onto every backend.
   tracking.
 - **Streaming**: `--output-format stream-json --verbose --include-partial-messages`
   (NDJSON; final line is a `result` message).
+  > **Atlas implementation note:** the adapter runs
+  > `--output-format stream-json --verbose --json-schema` (not plain `json`). Verified against
+  > the real CLI: the terminal `result` event still carries `structured_output`, `result`,
+  > `usage`, and `total_cost_usd` — so the structured-output contract is preserved — and
+  > stream mode additionally exposes the structured `error` category used for failure
+  > classification (below), which plain `json` mode does not.
 - **Neutralize tools**: pass **no** `--allowedTools` (nothing auto-approved); run in a
   scratch cwd. `--append-system-prompt` / `--append-system-prompt-file` to inject Atlas's
   system instructions; `--system-prompt` to fully replace.
@@ -1208,8 +1219,10 @@ uniformly onto every backend.
   for API-key users.
 - **Continue**: `--continue` (most recent) or `--resume <session_id>` (scoped to cwd).
 - **Auth**: existing Claude Code login/OAuth by default.
-- **Errors**: invalid `--json-schema` exits with a diagnostic; `system/api_retry` events in
-  stream mode expose retry/backoff state.
+- **Errors**: invalid `--json-schema` exits with a diagnostic; `system/api_retry` events (and
+  a failing `assistant` event) in stream mode carry a structured `error` category
+  (`authentication_failed`, `rate_limit`, …). Atlas maps this to
+  `LLMAuthError`/`LLMRateLimitError`/`LLMBackendError` (stderr-substring heuristic fallback).
 
 Example:
 ```bash
