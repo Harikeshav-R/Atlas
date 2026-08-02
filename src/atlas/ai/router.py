@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from atlas.config.schema import AiConfig
     from atlas.config.secrets import SecretStore
 
-__all__ = ["FailoverProvider", "build_provider_chain"]
+__all__ = ["FailoverProvider", "build_named_provider", "build_provider_chain"]
 
 # Errors that mean "this backend is unavailable, try the next one". A tuple so it
 # can be used directly in ``except``. ``LLMBackendError`` covers ``LLMAuthError``
@@ -128,17 +128,28 @@ def _prepend(first: str, rest: Iterator[str]) -> Iterator[str]:
     yield from rest
 
 
-# Backend names understood by the chain builder, mapped to how each is built from
-# its slice of ``AiConfig``. Kept as small closures so an unknown name is a clear
-# error rather than an ``AttributeError`` on the config.
-def _build_named(
+def build_named_provider(
     name: str,
     config: AiConfig,
     store: SecretStore,
     *,
-    runner: SubprocessRunner,
+    runner: SubprocessRunner = default_subprocess_runner,
 ) -> LLMProvider:
     """Build the single provider identified by ``name`` from ``config``.
+
+    Maps each known backend name to its concrete factory. Used both by
+    :func:`build_provider_chain` and by ``atlas doctor`` to construct and inspect
+    one backend at a time.
+
+    Args:
+        name: The backend name (e.g. ``"claude_code"`` or ``"openrouter"``).
+        config: The ``[ai]`` configuration holding per-backend settings.
+        store: The secret store passed to the provider factory.
+        runner: The subprocess boundary for CLI backends; defaults to the real
+            runner and is replaced by a fake in tests.
+
+    Returns:
+        The constructed provider.
 
     Raises:
         LLMError: If ``name`` is not a known backend.
@@ -177,5 +188,5 @@ def build_provider_chain(
         LLMError: If a configured backend name is not recognized.
     """
     names = [config.default_backend, *config.failover]
-    providers = [_build_named(name, config, store, runner=runner) for name in names]
+    providers = [build_named_provider(name, config, store, runner=runner) for name in names]
     return FailoverProvider(providers)
