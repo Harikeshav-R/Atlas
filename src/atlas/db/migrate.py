@@ -11,6 +11,7 @@ runs the upgrade, normalizing any failure to :class:`~atlas.db.errors.MigrationE
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from alembic import command
@@ -19,6 +20,8 @@ from alembic.config import Config
 from atlas.db.errors import MigrationError
 
 __all__ = ["alembic_config", "upgrade_to_head"]
+
+logger = logging.getLogger(__name__)
 
 #: The migration environment bundled in this package (shipped in the wheel).
 _MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
@@ -56,6 +59,8 @@ def upgrade_to_head(url: str) -> None:
     try:
         command.upgrade(alembic_config(url), "head")
     except Exception as exc:
-        # Normalize every Alembic/SQLAlchemy failure to one Atlas type; the
-        # original is chained for daemon-side logging.
+        # Log the full traceback daemon-/CLI-side (no URL — it may embed a path),
+        # then normalize every Alembic/SQLAlchemy failure to one Atlas type with
+        # the original chained.
+        logger.exception("Database migration to head failed.")
         raise MigrationError(f"Database migration to head failed for {url!r}.") from exc

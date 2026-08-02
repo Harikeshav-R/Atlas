@@ -17,6 +17,7 @@ the separate concern of :func:`atlas.ai.complete_json.complete_json`.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, NoReturn
 
 from atlas.ai.api.capabilities import (
@@ -38,6 +39,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 __all__ = ["LiteLLMProvider"]
+
+logger = logging.getLogger(__name__)
 
 # HTTP status codes used to classify a failed call without importing LiteLLM's
 # exception types. LiteLLM re-exports OpenAI-style errors that carry a
@@ -186,6 +189,10 @@ class LiteLLMProvider:
         diagnostics, URLs, and secrets never surface to the user; the original
         exception is chained for daemon-side logging.
         """
+        # Log the backend and exception type only — never str(exc), which may
+        # carry vendor diagnostics, URLs, or a key (coding-standards: no secrets
+        # in logs). The chained original is available at DEBUG for deep dives.
+        logger.warning("%s API call failed (%s).", self.name, type(exc).__name__)
         status = getattr(exc, "status_code", None)
         if status in _AUTH_STATUS:
             raise LLMAuthError(f"{self.name} authentication failed.") from exc
