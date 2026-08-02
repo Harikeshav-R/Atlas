@@ -1307,6 +1307,23 @@ Every adapter: separate stdout/stderr capture, parse the structured field first 
 delimiter-fenced-JSON + repair fallback, map `usage`/cost into the `ai_call` table, enforce
 a timeout with process-tree kill, and normalize errors for the failover chain.
 
+> **Applying the Claude-adapter riders to Codex/Antigravity (when those adapters land).**
+> Two mechanisms built for the Claude Code adapter carry over — but only one is a drop-in:
+>
+> - **CLI version floor — reusable as-is.** `parse_cli_version` + `CliAdapter._minimum_version()`
+>   + `check_availability()` live in the **base** class, so a Codex/Antigravity adapter only
+>   overrides `_minimum_version()` (and `_version_argv()` if its `--version` format differs).
+> - **Structured error classification — same idea, per-adapter mechanics.** The principle
+>   (classify from a structured signal, keep the stderr heuristic as a fallback) holds, but the
+>   signal differs and neither mirrors Claude's stream-json rewrite: **Antigravity** already
+>   exposes a `status` field in its plain `--output-format json` envelope (no stream-json switch
+>   needed; but its statuses are coarse — `ERROR`/`CANCELED`/… — not fine-grained auth-vs-rate-
+>   limit); **Codex** surfaces errors via a `--json` JSONL `error` event with file-based
+>   structured output (`-o out.json`). Event names/shapes differ across all three
+>   (`system`/`assistant`/`result` vs `init`/`step_update`/`result` vs `thread.*`/`item.*`/
+>   `error`), so field extraction stays per-adapter; a shared "scan NDJSON events" helper could
+>   be lifted later. Tracked in [issue #15](https://github.com/Harikeshav-R/Atlas/issues/15).
+
 ---
 
 *End of document.*
