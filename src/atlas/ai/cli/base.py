@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
+from typing import NoReturn
 
 from atlas.ai.base import LLMBackendError, LLMRequest, LLMResponse, LLMTimeoutError
 from atlas.ai.cli.runner import RunResult, SubprocessRunner
@@ -61,6 +62,26 @@ class CliAdapter(ABC):
         piped instead.
         """
         return None
+
+    def _env_for(self, request: LLMRequest) -> Mapping[str, str] | None:
+        """Return the environment for the child process, or ``None`` to inherit.
+
+        Defaults to ``None`` (the child inherits the parent environment);
+        subclasses override to inject secrets such as an API key. A returned
+        mapping *replaces* the child's whole environment, so an override that
+        only adds a variable should merge it onto a copy of the inherited env.
+        """
+        return None
+
+    def _classify_error(self, result: RunResult) -> NoReturn:
+        """Raise the appropriate error for a non-zero-exit ``result``.
+
+        Called by :meth:`complete` when the CLI exits non-zero. The default
+        raises a generic :class:`~atlas.ai.base.LLMBackendError`; subclasses
+        override to distinguish auth/rate-limit failures. Messages stay generic
+        so stderr, paths, and secrets are never surfaced to the user.
+        """
+        raise LLMBackendError(f"{self.name} exited with code {result.returncode}.")
 
     def _run(
         self,
@@ -111,7 +132,8 @@ class CliAdapter(ABC):
         """Run ``request`` through the CLI and return the parsed response.
 
         Raises:
-            LLMBackendError: If the CLI exits non-zero.
+            LLMBackendError: If the CLI exits non-zero (subclasses may raise a
+                more specific subclass via :meth:`_classify_error`).
             LLMTimeoutError: If the call exceeds ``request.timeout_s``.
         """
         argv = self._build_argv(request)
@@ -119,9 +141,10 @@ class CliAdapter(ABC):
             argv,
             stdin=self._stdin_for(request),
             timeout_s=request.timeout_s,
+            env=self._env_for(request),
         )
         if result.returncode != 0:
-            raise LLMBackendError(f"{self.name} exited with code {result.returncode}.")
+            self._classify_error(result)
         return self._parse_response(result, request)
 
     def stream(self, request: LLMRequest) -> Iterator[str]:

@@ -23,10 +23,12 @@ from pydantic import BaseModel
 # and should not constrain at this layer (see docs/agent/coding-standards.md).
 
 __all__ = [
+    "LLMAuthError",
     "LLMBackendError",
     "LLMError",
     "LLMOutputError",
     "LLMProvider",
+    "LLMRateLimitError",
     "LLMRequest",
     "LLMResponse",
     "LLMTimeoutError",
@@ -145,4 +147,22 @@ class LLMBackendError(LLMError):
     Covers a non-zero process exit and an unparseable or malformed response
     envelope. User-facing messages stay generic; details are logged rather than
     surfaced so paths and diagnostics do not leak.
+    """
+
+
+class LLMAuthError(LLMBackendError):
+    """Raised when a backend rejects the call for authentication reasons.
+
+    A subclass of :class:`LLMBackendError` so existing handlers and the failover
+    chain still catch it while callers that care can distinguish an auth failure
+    (e.g. to prompt the user to re-authenticate) from a generic backend error.
+    """
+
+
+class LLMRateLimitError(LLMBackendError):
+    """Raised when a backend rejects the call for rate-limit or quota reasons.
+
+    A subclass of :class:`LLMBackendError` so it participates in generic backend
+    handling and failover while letting callers recognize a rate-limit/quota hit
+    (e.g. to back off or fail over) distinctly.
     """

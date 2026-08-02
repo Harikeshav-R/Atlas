@@ -1,9 +1,9 @@
-"""End-to-end seam test: a CLI adapter feeding :func:`complete_json`.
+"""End-to-end seam test: the Claude Code adapter feeding :func:`complete_json`.
 
-Proves that a Claude-shaped JSON envelope flows through a ``CliAdapter`` and then
-through the structured-output recovery ladder to a validated Pydantic model,
-without spawning any real subprocess. This de-risks the concrete Claude Code
-adapter that follows.
+Proves that a Claude-shaped JSON envelope flows through the shipping
+:class:`~atlas.ai.cli.claude_code.ClaudeCodeAdapter` and then through the
+structured-output recovery ladder to a validated Pydantic model, without
+spawning any real subprocess.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ import json
 
 from pydantic import BaseModel
 
-from atlas.ai import LLMRequest, LLMResponse, Usage, complete_json
-from atlas.ai.cli import CliAdapter, RunResult
+from atlas.ai import LLMRequest, complete_json
+from atlas.ai.cli import ClaudeCodeAdapter, RunResult
 from tests.conftest import FakeSubprocessRunner
 
 
@@ -21,35 +21,6 @@ class Extraction(BaseModel):
     """The structured result the caller wants back."""
 
     functions: list[str]
-
-
-class _EnvelopeAdapter(CliAdapter):
-    """Adapter that parses a Claude-Code-shaped stdout envelope.
-
-    Mirrors the mapping the real Claude adapter will use: ``structured_output``
-    to :attr:`~atlas.ai.base.LLMResponse.structured`, ``result`` to ``text``,
-    the whole envelope to ``raw``, and ``total_cost_usd`` to ``Usage.cost_usd``.
-    """
-
-    name = "claude_like"
-
-    def _build_argv(self, request: LLMRequest) -> list[str]:
-        argv = [self._command, "-p", request.prompt, "--output-format", "json"]
-        if request.response_schema is not None:
-            argv += ["--json-schema", json.dumps(request.response_schema)]
-        return argv
-
-    def _parse_response(self, result: RunResult, request: LLMRequest) -> LLMResponse:
-        envelope = json.loads(result.stdout)
-        usage = Usage(cost_usd=envelope.get("total_cost_usd"))
-        return LLMResponse(
-            text=envelope.get("result", ""),
-            structured=envelope.get("structured_output"),
-            raw=envelope,
-            usage=usage,
-            model=envelope.get("model", "unknown"),
-            backend=self.name,
-        )
 
 
 def _envelope_stdout() -> str:
@@ -67,7 +38,7 @@ def _envelope_stdout() -> str:
 
 def test_envelope_flows_through_complete_json_to_model() -> None:
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_envelope_stdout(), stderr=""))
-    adapter = _EnvelopeAdapter(command="claude", runner=runner)
+    adapter = ClaudeCodeAdapter(command="claude", runner=runner)
 
     result = complete_json(adapter, LLMRequest(system=None, prompt="list funcs"), Extraction)
 
@@ -78,7 +49,7 @@ def test_envelope_flows_through_complete_json_to_model() -> None:
 
 def test_adapter_maps_cost_and_keeps_raw_envelope() -> None:
     runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_envelope_stdout(), stderr=""))
-    adapter = _EnvelopeAdapter(command="claude", runner=runner)
+    adapter = ClaudeCodeAdapter(command="claude", runner=runner)
 
     response = adapter.complete(LLMRequest(system=None, prompt="list funcs"))
 

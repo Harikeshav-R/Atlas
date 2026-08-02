@@ -6,10 +6,12 @@ import pytest
 from pydantic import ValidationError
 
 from atlas.ai import (
+    LLMAuthError,
     LLMBackendError,
     LLMError,
     LLMOutputError,
     LLMProvider,
+    LLMRateLimitError,
     LLMRequest,
     LLMResponse,
     LLMTimeoutError,
@@ -72,6 +74,13 @@ def test_error_hierarchy() -> None:
     assert issubclass(LLMTimeoutError, LLMError)
     assert issubclass(LLMBackendError, LLMError)
     assert issubclass(LLMError, Exception)
+
+
+def test_auth_and_rate_limit_errors_are_backend_errors() -> None:
+    # Subclassing LLMBackendError keeps generic handlers and failover working
+    # while letting callers distinguish the specific failure.
+    assert issubclass(LLMAuthError, LLMBackendError)
+    assert issubclass(LLMRateLimitError, LLMBackendError)
 
 
 def test_fake_provider_conforms_to_protocol() -> None:

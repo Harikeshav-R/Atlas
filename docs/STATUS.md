@@ -19,33 +19,46 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · AI provider abstraction — Claude Code adapter.** The core contract and the
-reusable `CliAdapter` base have landed (steps 1–2 — see "What has landed"). Next is the
-concrete Claude Code backend that subclasses `CliAdapter`, per
-[PROJECT.md §5.1](./PROJECT.md#51-ai-provider-abstraction-atlasai) and
-[Appendix A.1](./PROJECT.md#appendix-a--coding-cli-adapter-reference):
+**Phase 0 · AI provider abstraction — OpenRouter API backend.** The core contract, the
+`CliAdapter` base, and the concrete **Claude Code adapter** have landed (steps 1–3 — see
+"What has landed"). Next is the API failover backend, per
+[PROJECT.md §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
-2. ✅ **`CliAdapter` base class** + injected `SubprocessRunner` boundary (argv build,
-   scratch-cwd isolation, timeout + process-tree kill, separate stdout/stderr, error
-   normalize) — `src/atlas/ai/cli/`.
-3. **Claude Code** adapter (default CLI backend) — subclass `CliAdapter`: `-p`
-   `--output-format json --json-schema`, `--append-system-prompt`, arg-vs-stdin (10 MB),
+2. ✅ **`CliAdapter` base class** + injected `SubprocessRunner` boundary — `src/atlas/ai/cli/`.
+3. ✅ **Claude Code** adapter (`src/atlas/ai/cli/claude_code.py`) — `-p`
+   `--output-format json --json-schema`, `--append-system-prompt` + no `--allowedTools`,
    `--bare`/`ANTHROPIC_API_KEY` opt-in (key injected, never logged), envelope→`LLMResponse`
-   mapping, auth/rate-limit detection (`LLMAuthError`/`LLMRateLimitError`).
-4. **OpenRouter** adapter (default API failover backend).
-5. Capability probing, failover chain, and `atlas doctor`.
+   mapping, heuristic auth/rate-limit detection (`LLMAuthError`/`LLMRateLimitError`).
+4. **OpenRouter** adapter (default API failover backend) via LiteLLM behind `LLMProvider`.
+   **Depends on config + keyring landing first** (needs `resolve_api_key()` from the keyring).
+5. Capability probing, failover chain, and `atlas doctor` (also refines the Claude adapter's
+   stderr-based auth/rate-limit heuristic using stream-json's real `error` category).
 6. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
 > Also still open in Phase 0 (can be done before or alongside the above, as separate PRs):
 > **config + keyring**, **SQLModel + SQLite (WAL) + Alembic**, and **logging** — see the
 > Phase 0 checklist in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). The OpenRouter
-> adapter (step 4) depends on config + keyring landing first.
+> adapter (step 4) depends on config + keyring landing first, so **config + keyring is the
+> natural next PR**.
 
 ---
 
 ## ✅ What has landed
+
+Phase 0 · AI provider abstraction — Claude Code adapter (PR #8):
+
+- `ClaudeCodeAdapter` (`src/atlas/ai/cli/claude_code.py`), Atlas's default CLI backend:
+  builds `claude -p … --output-format json --json-schema …`, appends a neutralize
+  instruction via `--append-system-prompt` and passes no `--allowedTools`, maps the JSON
+  envelope onto `LLMResponse` (`structured_output`→`structured`, `result`→`text`, whole
+  envelope→`raw`, `usage`+`total_cost_usd`→`Usage`), supports `--bare` + injected
+  `ANTHROPIC_API_KEY` (merged env, never logged), and classifies failures as
+  `LLMAuthError`/`LLMRateLimitError`/`LLMBackendError` (stderr heuristic).
+- `CliAdapter` gained `_env_for` / `_classify_error` hooks; `LLMAuthError` /
+  `LLMRateLimitError` added to the error hierarchy. The seam test now runs the real adapter
+  through `complete_json`. No new runtime dep (stdlib). 100% coverage.
 
 Phase 0 · AI provider abstraction — `CliAdapter` base (PR #7):
 
@@ -112,7 +125,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base done; config/DB/logging + Claude Code/OpenRouter adapters remain |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter done; config/DB/logging + OpenRouter adapter remain |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |

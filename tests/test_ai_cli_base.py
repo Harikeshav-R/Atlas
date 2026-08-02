@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Mapping
+from typing import NoReturn
 
 import pytest
 
 from atlas.ai import (
+    LLMAuthError,
     LLMBackendError,
     LLMProvider,
     LLMRequest,
@@ -38,6 +41,18 @@ class _StubAdapter(CliAdapter):
             model="stub-model",
             backend=self.name,
         )
+
+
+class _HookAdapter(_StubAdapter):
+    """Stub that overrides the env and error-classification hooks."""
+
+    name = "hook"
+
+    def _env_for(self, request: LLMRequest) -> Mapping[str, str] | None:
+        return {"INJECTED": "1"}
+
+    def _classify_error(self, result: RunResult) -> NoReturn:
+        raise LLMAuthError(f"{self.name} auth failed.")
 
 
 def _request() -> LLMRequest:
@@ -125,3 +140,24 @@ def test_complete_forwards_request_timeout() -> None:
     adapter = _StubAdapter(command="stub", runner=runner)
     adapter.complete(LLMRequest(system=None, prompt="p", timeout_s=7))
     assert runner.calls[0].timeout_s == 7
+
+
+def test_env_hook_defaults_to_none() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="ok", stderr=""))
+    adapter = _StubAdapter(command="stub", runner=runner)
+    adapter.complete(_request())
+    assert runner.calls[0].env is None
+
+
+def test_env_hook_override_is_threaded_to_runner() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="ok", stderr=""))
+    adapter = _HookAdapter(command="hook", runner=runner)
+    adapter.complete(_request())
+    assert runner.calls[0].env == {"INJECTED": "1"}
+
+
+def test_classify_error_override_is_honored() -> None:
+    runner = FakeSubprocessRunner(RunResult(returncode=1, stdout="", stderr="nope"))
+    adapter = _HookAdapter(command="hook", runner=runner)
+    with pytest.raises(LLMAuthError, match="auth failed"):
+        adapter.complete(_request())

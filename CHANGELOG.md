@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ClaudeCodeAdapter` (`src/atlas/ai/cli/claude_code.py`): Atlas's default
+  coding-CLI backend. Drives `claude -p … --output-format json --json-schema …`
+  (neutralized: `--append-system-prompt` "do not use tools", no `--allowedTools`,
+  scratch cwd), maps the envelope onto `LLMResponse`, supports `--bare` +
+  injected `ANTHROPIC_API_KEY`, and classifies failures as
+  `LLMAuthError`/`LLMRateLimitError`/`LLMBackendError`.
+- `LLMAuthError` and `LLMRateLimitError` (subclasses of `LLMBackendError`) in the
+  AI error hierarchy (`src/atlas/ai/base.py`).
+- `CliAdapter` env and error-classification hooks (`_env_for`, `_classify_error`)
+  so subclasses can inject secrets and distinguish failures.
 - `atlas.ai.cli` subprocess boundary: a frozen `RunResult`, the runtime-checkable
   `SubprocessRunner` protocol, and `default_subprocess_runner` (starts the child
   in its own process group and kills the tree on timeout) —
