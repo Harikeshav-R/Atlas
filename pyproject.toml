@@ -37,6 +37,9 @@ Homepage = "https://github.com/Harikeshav-R/Atlas"
 Repository = "https://github.com/Harikeshav-R/Atlas"
 Documentation = "https://github.com/Harikeshav-R/Atlas/blob/main/docs/PROJECT.md"
 
+[project.scripts]
+atlas = "atlas.__main__:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
