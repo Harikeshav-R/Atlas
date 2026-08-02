@@ -9,8 +9,8 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-02 (data layer landed; logging is the last Phase 0 item)
-- **Current phase:** Phase 0 — Foundations (in progress)
+- **Last updated:** 2026-08-02 (logging landed; **Phase 0 complete** — Phase 1 is next)
+- **Current phase:** Phase 0 — Foundations ✅ **complete**; **Phase 1 — Core loop** starting
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -19,15 +19,23 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · Logging.** The AI provider abstraction, config + keyring, and now the **data layer
-(SQLModel + SQLite (WAL) + Alembic)** have all landed (see "What has landed"). **Logging is the
-last open Phase 0 item.** Build it next: structured logging to the platformdirs **state dir**
-(`atlas.config.state_dir()`), with the setup as an injectable boundary so the hermetic suite
-asserts on it without writing real log files (AGENTS.md §6.2), routing details daemon-/CLI-side
-while user-facing output stays generic (`docs/agent/coding-standards.md` "Errors & logging").
-Once logging lands, Phase 0 is complete and Phase 1 (core loop) begins.
+**Phase 0 is complete** — the AI provider abstraction, config + keyring, the data layer
+(SQLModel + SQLite (WAL) + Alembic), and now **logging** have all landed (see "What has
+landed"). **Begin Phase 1 — the core loop** ([PROJECT.md §15](./PROJECT.md#15-phased-roadmap)),
+the first genuinely useful release. The items are independent enough to sequence, but the
+natural first step is **onboarding Q&A + preferences for a single profile** (§5.2) — it
+populates the `profile`/`user` tables the data layer already defines and unblocks everything
+downstream (master-resume ingest, scoring, tailoring). Suggested order:
 
-The AI-provider checklist below is kept for reference:
+1. **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
+2. **Master resume ingest + parse + versioning** — `atlas.resume`.
+3. **Paste-URL scrape + parse** (static + Playwright fallback) — `atlas.scrape`.
+4. **Fit scoring** for a pasted job — `atlas.matching`.
+5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement.
+6. **Application tracking** + the core TUI screens.
+
+Pick #1 next unless there's reason to reorder. The Phase-0 AI-provider checklist below is
+retained as historical reference.
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
@@ -62,15 +70,32 @@ The AI-provider checklist below is kept for reference:
 > (Codex/Antigravity adapters and Phase 1+ cross-cutting features — prompt library, response
 > caching, TUI cost accounting, PII redaction — are out of Phase 0 scope by design.)
 >
-> **Still open in Phase 0:** **logging** — the last remaining item — see the Phase 0 checklist
-> in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). (Config/keyring, the AI provider
-> abstraction, and the data layer are all done.)
+> **Phase 0 is complete:** config/keyring, the AI provider abstraction, the data layer, and
+> logging have all landed — see [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). Next work is
+> **Phase 1 (core loop)**.
 
 ---
 
 ## ✅ What has landed
 
-Phase 0 · Data layer — SQLModel + SQLite (WAL) + Alembic (this branch):
+Phase 0 · Logging — `atlas.logging` (this branch):
+
+- `setup_logging` configures the `"atlas"` package logger (`propagate=False`) with a
+  `rich.logging.RichHandler` on the shared **stderr** console (records never contaminate
+  stdout / `--json`) and a `RotatingFileHandler` under the platformdirs state dir capturing
+  `DEBUG`+. Idempotent (replaces only its own handlers); the real handler construction is an
+  injectable factory, so the hermetic suite installs a fake and writes no real log file.
+- `resolve_level` is a pure resolver with precedence `--log-level` > `-v`/`-vv` >
+  `ATLAS_LOG_LEVEL` > `[logging]` config > `WARNING`, skipping malformed values.
+- `[logging]` config section (`LoggingConfig`: level, file_enabled, max_bytes, backup_count).
+- The Typer top-level callback gained `--verbose`/`-v` + `--log-level` and initializes logging
+  before every subcommand (tolerating a bad config so the command still reports the real error).
+- First log sites wired: the corrupt probe-cache handler, the migration-failure path, and the
+  API error classifier (type-only, no vendor/secret leakage). First use of pytest `caplog`.
+  100% line+branch; `mypy --strict` incl. win32. Verified `atlas -v doctor` writes the state-dir
+  log while stdout stays clean.
+
+Phase 0 · Data layer — SQLModel + SQLite (WAL) + Alembic (PR #17):
 
 - `atlas.db.engine`: `create_db_engine(url=None)` builds a SQLite engine and applies
   `PRAGMA journal_mode=WAL` + `foreign_keys=ON` on every connection via a `connect` listener
@@ -269,8 +294,8 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — **AI provider abstraction complete** (core contract · CLI + API backends · failover · CLI scaffold · `atlas doctor` · capability probe); config/keyring done; **data layer (SQLModel/SQLite WAL/Alembic) done**; **only logging remains** |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 next — starting with onboarding Q&A + preferences |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

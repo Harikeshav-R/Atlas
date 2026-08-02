@@ -805,6 +805,12 @@ model = "anthropic/claude-sonnet"
 # Other CLI backends (codex, antigravity) and API backends (bedrock, anthropic,
 # openai-compatible) are configured the same way; see Appendix A.
 
+[logging]
+level = "WARNING"                    # console level; --log-level / -v / ATLAS_LOG_LEVEL override
+file_enabled = true                  # rotating log file under the state dir (always DEBUG+)
+max_bytes = 1000000                  # rotate the log file at ~1 MB
+backup_count = 3                     # rotated files to keep
+
 [render]
 engine = "weasyprint"                # or "chromium"
 resume_theme = "clean-one-page"
@@ -1016,7 +1022,8 @@ The document specs everything; build order is phased. Each phase is independentl
   + Alembic, logging:
   - [x] Cross-platform paths (`platformdirs`) + config + keyring (`atlas.config`).
   - [x] **SQLModel** + SQLite (WAL) + Alembic (`atlas.db`).
-  - [ ] Logging.
+  - [x] Logging (`atlas.logging`) — Rich console + rotating file to the state dir,
+    `[logging]` config, `--verbose`/`--log-level`.
 - **AI provider abstraction** with the two chosen Phase 0 backends: **Claude Code** (CLI,
   default) + **OpenRouter** (API, failover). Capability probing, `--output-format json` +
   `--json-schema` structured path, JSON-repair loop, `atlas doctor`:

@@ -18,7 +18,12 @@ The first command is live — check your AI backend setup with:
 atlas doctor          # report each configured backend's availability
 atlas doctor --probe  # also run a live capability round-trip (makes a billable call)
 atlas doctor --json   # machine-readable, for scripting
+atlas -v doctor       # -v/-vv (or --log-level DEBUG) raises log verbosity
 ```
+
+Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
+under your platform's state directory; verbosity follows `--log-level` / `-v` /
+the `ATLAS_LOG_LEVEL` env var / the `[logging]` config.
 
 ## Highlights
 

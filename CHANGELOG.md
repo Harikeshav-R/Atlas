@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Logging** (`atlas.logging`): the last Phase 0 foundation — Phase 0 is now
+  complete. `setup_logging` configures the `"atlas"` package logger with a Rich
+  console handler on the shared **stderr** console (so records never contaminate
+  stdout / `--json`) and a rotating file handler under the platformdirs state
+  dir capturing `DEBUG`+. A pure `resolve_level` sets the console level by
+  precedence — `--log-level` > `-v`/`-vv` > `ATLAS_LOG_LEVEL` > `[logging]`
+  config > `WARNING` — skipping malformed values rather than crashing; setup is
+  idempotent and its real-handler construction is an injectable seam kept out of
+  the hermetic suite (AGENTS.md §6.2).
+- **`[logging]` config section** (`LoggingConfig`): `level`, `file_enabled`,
+  `max_bytes`, `backup_count`, defaulted and forward-compatible like `[ai]`.
+- **Global `--verbose`/`-v` and `--log-level` CLI options**: the Typer top-level
+  callback now initializes logging before every subcommand (a bad config file is
+  tolerated so the command still reports the real error).
+- **First log sites**: the previously-silent corrupt probe-cache handler
+  (`ai/probe_cache`), the migration-failure path (`db/migrate`), and the API
+  error classifier (`ai/api/provider`) now log — the last logging only the
+  backend and exception type, never vendor diagnostics/paths/keys.
 - **Data layer** (`atlas.db`): the Phase 0 SQLite foundation the Phase 1 core
   loop builds on (PROJECT.md §6, §4.1). `create_db_engine` builds a SQLite engine
   and applies `PRAGMA journal_mode=WAL` + `foreign_keys=ON` on every connection
