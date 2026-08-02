@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Mapping
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from atlas.ai.base import (
     LLMAuthError,
@@ -28,9 +28,17 @@ from atlas.ai.base import (
     Usage,
 )
 from atlas.ai.cli.base import CliAdapter
-from atlas.ai.cli.runner import RunResult, SubprocessRunner
+from atlas.ai.cli.runner import RunResult, SubprocessRunner, default_subprocess_runner
+from atlas.config.secrets import resolve_api_key
 
-__all__ = ["ClaudeCodeAdapter"]
+if TYPE_CHECKING:
+    from atlas.config.schema import ClaudeCodeBackend
+    from atlas.config.secrets import SecretStore
+
+__all__ = ["ANTHROPIC_API_KEY_ENV", "ClaudeCodeAdapter", "build_claude_code_provider"]
+
+#: Environment variable consulted as a fallback when the keyring has no bare-mode key.
+ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
 
 # Case-insensitive stderr substrings used to classify a failed invocation. Claude
 # Code only exposes structured error categories in stream-json mode, so plain
@@ -150,3 +158,50 @@ class ClaudeCodeAdapter(CliAdapter):
             model=envelope.get("model") or self._model or self.name,
             backend=self.name,
         )
+
+
+def build_claude_code_provider(
+    config: ClaudeCodeBackend,
+    store: SecretStore,
+    *,
+    runner: SubprocessRunner = default_subprocess_runner,
+) -> ClaudeCodeAdapter:
+    """Build a :class:`ClaudeCodeAdapter` from config + keyring.
+
+    In ``--bare`` mode the adapter needs an ``ANTHROPIC_API_KEY``; this resolves
+    it from ``store`` under the configured handle (falling back to the
+    ``ANTHROPIC_API_KEY`` environment variable) and passes it to the adapter
+    directly, never via :data:`os.environ`. In non-bare mode no key is resolved
+    or passed — Claude Code uses the user's existing login.
+
+    Args:
+        config: The ``[ai.backends.claude_code]`` settings (command, bare flag,
+            key handle).
+        store: The secret store to resolve the bare-mode key from.
+        runner: The injected subprocess boundary; defaults to the real
+            process-spawning runner and is replaced by a fake in tests.
+
+    Returns:
+        A configured adapter ready to
+        :meth:`~atlas.ai.cli.base.CliAdapter.complete`.
+
+    Raises:
+        LLMAuthError: If ``use_bare`` is set but no key can be resolved (raised
+            by :class:`ClaudeCodeAdapter`).
+    """
+    api_key = (
+        resolve_api_key(
+            store,
+            config.api_key_handle,
+            env_var=ANTHROPIC_API_KEY_ENV,
+            allow_env_fallback=True,
+        )
+        if config.use_bare
+        else None
+    )
+    return ClaudeCodeAdapter(
+        command=config.command,
+        runner=runner,
+        use_bare=config.use_bare,
+        api_key=api_key,
+    )

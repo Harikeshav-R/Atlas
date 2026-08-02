@@ -13,8 +13,14 @@ from atlas.ai import (
     LLMRateLimitError,
     LLMRequest,
 )
-from atlas.ai.cli import ClaudeCodeAdapter, RunResult
-from tests.conftest import FakeSubprocessRunner
+from atlas.ai.cli import (
+    ANTHROPIC_API_KEY_ENV,
+    ClaudeCodeAdapter,
+    RunResult,
+    build_claude_code_provider,
+)
+from atlas.config import ClaudeCodeBackend, SecretStore
+from tests.conftest import FakeKeyring, FakeSubprocessRunner
 
 
 def _adapter(runner: FakeSubprocessRunner, **kwargs: object) -> ClaudeCodeAdapter:
@@ -196,3 +202,92 @@ def test_classify_generic_backend_failure() -> None:
     with pytest.raises(LLMBackendError, match="exited with code 3") as excinfo:
         _adapter(runner).complete(_request())
     assert type(excinfo.value) is LLMBackendError
+
+
+# --- build_claude_code_provider -------------------------------------------------
+
+
+def _store(fake_keyring: FakeKeyring) -> SecretStore:
+    return SecretStore(fake_keyring)
+
+
+def test_factory_non_bare_builds_adapter_without_key(fake_keyring: FakeKeyring) -> None:
+    # Even with a key present in the store, non-bare mode must not resolve it.
+    store = _store(fake_keyring)
+    store.set("anthropic", "should-not-be-used")
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_ok_envelope(), stderr=""))
+
+    provider = build_claude_code_provider(
+        ClaudeCodeBackend(command="claude", use_bare=False),
+        store,
+        runner=runner,
+    )
+
+    assert isinstance(provider, ClaudeCodeAdapter)
+    provider.complete(_request())
+    # Non-bare inherits the environment; no --bare and no injected key.
+    assert runner.calls[0].env is None
+    assert "--bare" not in runner.calls[0].argv
+
+
+def test_factory_bare_resolves_key_from_keyring(fake_keyring: FakeKeyring) -> None:
+    store = _store(fake_keyring)
+    store.set("anthropic", "kr-secret")
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_ok_envelope(), stderr=""))
+
+    provider = build_claude_code_provider(
+        ClaudeCodeBackend(use_bare=True),
+        store,
+        runner=runner,
+    )
+    provider.complete(_request())
+
+    env = runner.calls[0].env
+    assert "--bare" in runner.calls[0].argv
+    assert env is not None
+    assert env["ANTHROPIC_API_KEY"] == "kr-secret"
+
+
+def test_factory_bare_custom_handle(fake_keyring: FakeKeyring) -> None:
+    store = _store(fake_keyring)
+    store.set("my-anthropic", "handle-secret")
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_ok_envelope(), stderr=""))
+
+    provider = build_claude_code_provider(
+        ClaudeCodeBackend(use_bare=True, api_key_handle="my-anthropic"),
+        store,
+        runner=runner,
+    )
+    provider.complete(_request())
+
+    env = runner.calls[0].env
+    assert env is not None
+    assert env["ANTHROPIC_API_KEY"] == "handle-secret"
+
+
+def test_factory_bare_falls_back_to_env_var(
+    fake_keyring: FakeKeyring,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ANTHROPIC_API_KEY_ENV, "env-secret")
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout=_ok_envelope(), stderr=""))
+
+    provider = build_claude_code_provider(
+        ClaudeCodeBackend(use_bare=True),
+        _store(fake_keyring),
+        runner=runner,
+    )
+    provider.complete(_request())
+
+    env = runner.calls[0].env
+    assert env is not None
+    assert env["ANTHROPIC_API_KEY"] == "env-secret"
+
+
+def test_factory_bare_without_key_raises_auth_error(
+    fake_keyring: FakeKeyring,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(ANTHROPIC_API_KEY_ENV, raising=False)
+    with pytest.raises(LLMAuthError, match="requires an API key"):
+        build_claude_code_provider(ClaudeCodeBackend(use_bare=True), _store(fake_keyring))
