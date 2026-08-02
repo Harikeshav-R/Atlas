@@ -13,12 +13,20 @@ from atlas.config.errors import (
     ConfigValidationError,
     KeyringUnavailableError,
 )
+from atlas.config.loader import load_config, save_config
 from atlas.config.paths import (
     cache_dir,
     config_dir,
     config_file,
     data_dir,
     state_dir,
+)
+from atlas.config.schema import (
+    AiBackends,
+    AiConfig,
+    ClaudeCodeBackend,
+    Config,
+    OpenRouterBackend,
 )
 from atlas.config.secrets import (
     KEYRING_PASSPHRASE_ENV,
@@ -30,16 +38,23 @@ from atlas.config.secrets import (
 
 __all__ = [
     "KEYRING_PASSPHRASE_ENV",
+    "AiBackends",
+    "AiConfig",
+    "ClaudeCodeBackend",
+    "Config",
     "ConfigError",
     "ConfigValidationError",
     "KeyringUnavailableError",
+    "OpenRouterBackend",
     "SecretStore",
     "cache_dir",
     "config_dir",
     "config_file",
     "data_dir",
     "default_secret_store",
+    "load_config",
     "resolve_api_key",
+    "save_config",
     "select_backend",
     "state_dir",
 ]
