@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `atlas.ai.api` package: a single `LiteLLMProvider` implementing `LLMProvider`
+  for every hosted-model backend (OpenRouter, Bedrock, Anthropic, Gemini, …), so
+  adding a vendor is configuration rather than code, plus
+  `build_openrouter_provider` — Atlas's default API failover backend. LiteLLM
+  sits behind two injectable seams so its heavy import never happens in the
+  hermetic test suite and the API path stays swappable: `CompletionFn`
+  (`client.py`), the `litellm.completion` call boundary owning the transport
+  retry layer (`num_retries`) with `drop_params`; and `CapabilityFn`
+  (`capabilities.py`), a per-model schema-support lookup from LiteLLM's registry
+  (not hardcoded), so `response_format` is requested only where supported and
+  `complete_json()` recovers structure from text elsewhere. The provider applies
+  a per-provider adaptive timeout, maps `ModelResponse` onto
+  `LLMResponse`/`Usage` (tokens + cost) via defensive access without importing
+  LiteLLM's types, and classifies failures by HTTP status/message into
+  `LLMAuthError`/`LLMRateLimitError`/`LLMTimeoutError`/`LLMBackendError`. The
+  OpenRouter factory resolves the key via `resolve_api_key` (keyring first,
+  `OPENROUTER_API_KEY` fallback) and passes it to LiteLLM directly, never via
+  `os.environ`. Reusable offline `FakeChatCompleter`/`FakeModelResponse` test
+  doubles added to `tests/conftest.py`.
+- New runtime dependency: `litellm` (the API-backend layer, kept behind Atlas's
+  `LLMProvider` interface).
 - `atlas.config` package: cross-platform paths via `platformdirs`
   (`config_dir`/`data_dir`/`cache_dir`/`state_dir`/`config_file`); a lean,
   forward-compatible TOML config schema (`Config`/`AiConfig`/backends, unknown

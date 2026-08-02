@@ -1004,11 +1004,21 @@ The document specs everything; build order is phased. Each phase is independentl
     Phase 1+.)*
 - [x] Project scaffold with **uv** (`pyproject.toml`, committed `uv.lock`, `uv run` gates),
   the `src/atlas` package, and the `ruff` / `mypy --strict` / `pytest` + coverage config.
-- [ ] Cross-platform paths (`platformdirs`), config + keyring, **SQLModel** + SQLite (WAL)
-  + Alembic, logging.
-- [ ] **AI provider abstraction** with the two chosen Phase 0 backends: **Claude Code** (CLI,
+- Cross-platform paths (`platformdirs`), config + keyring, **SQLModel** + SQLite (WAL)
+  + Alembic, logging:
+  - [x] Cross-platform paths (`platformdirs`) + config + keyring (`atlas.config`).
+  - [ ] **SQLModel** + SQLite (WAL) + Alembic.
+  - [ ] Logging.
+- **AI provider abstraction** with the two chosen Phase 0 backends: **Claude Code** (CLI,
   default) + **OpenRouter** (API, failover). Capability probing, `--output-format json` +
-  `--json-schema` structured path, JSON-repair loop, `atlas doctor`.
+  `--json-schema` structured path, JSON-repair loop, `atlas doctor`:
+  - [x] Core contract (`LLMProvider` + `complete_json()` recovery ladder) and the
+    `CliAdapter` base + injected `SubprocessRunner` boundary.
+  - [x] **Claude Code** CLI adapter (structured path, neutralized tools, `--bare` opt-in).
+  - [x] **OpenRouter** API adapter via LiteLLM behind `LLMProvider` (`atlas.ai.api`), with
+    per-model capability lookup and the transport/content retry split.
+  - [ ] Failover chain across the backend order, per-backend capability probing (cached), and
+    the `atlas doctor` command.
 - [ ] Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
 
 ### Phase 1 — Core loop (first genuinely useful release)

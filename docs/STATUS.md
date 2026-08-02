@@ -9,7 +9,7 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-01
+- **Last updated:** 2026-08-02
 - **Current phase:** Phase 0 — Foundations (in progress)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
@@ -19,10 +19,11 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · AI provider abstraction — OpenRouter API backend.** The core contract, the
-`CliAdapter` base, the **Claude Code adapter**, and **config + keyring** have landed (see
-"What has landed"). config + keyring unblocks the API failover backend, per
-[PROJECT.md §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
+**Phase 0 · AI provider abstraction — capability probing, failover chain & `atlas doctor`.**
+The core contract, the `CliAdapter` base, the **Claude Code adapter**, **config + keyring**,
+and now the **OpenRouter/LiteLLM API backend** have all landed (see "What has landed"). Both
+Phase 0 backends exist behind `LLMProvider`; what remains is to tie them together and prove
+they work end-to-end, per [PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
@@ -31,20 +32,43 @@
    `--output-format json --json-schema`, `--append-system-prompt` + no `--allowedTools`,
    `--bare`/`ANTHROPIC_API_KEY` opt-in (key injected, never logged), envelope→`LLMResponse`
    mapping, heuristic auth/rate-limit detection (`LLMAuthError`/`LLMRateLimitError`).
-4. **OpenRouter** adapter (default API failover backend) via LiteLLM behind `LLMProvider`.
-   Now unblocked — consumes `resolve_api_key()` (handle `"openrouter"`) from `atlas.config`.
-5. Capability probing, failover chain, and `atlas doctor` (also refines the Claude adapter's
-   stderr-based auth/rate-limit heuristic using stream-json's real `error` category).
+4. ✅ **OpenRouter** adapter (default API failover backend) via LiteLLM behind `LLMProvider`
+   (`src/atlas/ai/api/`) — consumes `resolve_api_key()` (handle `"openrouter"`) from
+   `atlas.config`; two injectable seams keep `litellm` out of the hermetic suite.
+5. **Failover chain + capability probing + `atlas doctor`.** A router that walks the
+   configured backend chain (`claude_code` → `openrouter`) on hard error/auth/quota; a
+   round-trip capability probe (JSON/schema/streaming/model-override) cached per backend; and
+   the Typer `atlas doctor` command that reports each backend's availability. (This step also
+   refines the Claude adapter's stderr auth/rate-limit heuristic using stream-json's real
+   `error` category.) Builds on the `atlas.config` load/save/validate primitives now landed.
 6. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
 > Also still open in Phase 0 (separate PRs): **SQLModel + SQLite (WAL) + Alembic** and
 > **logging** — see the Phase 0 checklist in
-> [PROJECT.md §15](./PROJECT.md#15-phased-roadmap). The Typer CLI (`atlas config get|set`,
-> `atlas doctor`) will build on the `atlas.config` load/save/validate primitives now landed.
+> [PROJECT.md §15](./PROJECT.md#15-phased-roadmap).
 
 ---
 
 ## ✅ What has landed
+
+Phase 0 · AI provider abstraction — OpenRouter/LiteLLM API backend (this branch):
+
+- `atlas.ai.api`: a single `LiteLLMProvider` implementing `LLMProvider` for every hosted
+  backend (OpenRouter, Bedrock, Anthropic, Gemini, …), plus `build_openrouter_provider` — the
+  default API failover backend. Maps `LLMRequest`→chat messages, applies a per-provider
+  adaptive timeout, normalizes `ModelResponse`→`LLMResponse`/`Usage` (tokens + cost) via
+  defensive access (no `litellm` types imported), and classifies failures by HTTP
+  status/message into `LLMAuthError`/`LLMRateLimitError`/`LLMTimeoutError`/`LLMBackendError`.
+- Two injectable seams keep the heavy `litellm` import out of the hermetic suite (AGENTS.md
+  §6.2) and the API path swappable: `CompletionFn` (the `litellm.completion` boundary owning
+  the **transport** retry layer via `num_retries` + `drop_params`) and `CapabilityFn`
+  (per-model schema support from LiteLLM's **registry, not hardcoded**, so `response_format`
+  is requested only where supported and `complete_json()` recovers structure otherwise).
+- OpenRouter key via `resolve_api_key()` (keyring first, `OPENROUTER_API_KEY` fallback),
+  passed to LiteLLM directly, never via `os.environ`; model auto-prefixed for routing.
+- New runtime dep: `litellm`. Reusable offline `FakeChatCompleter`/`FakeModelResponse` test
+  doubles in `tests/conftest.py`. 100% coverage; two justified pragmas on the lazy-import
+  boundaries.
 
 Phase 0 · Configuration + secrets — `atlas.config` (PR #9):
 
@@ -141,7 +165,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring done; DB/logging + OpenRouter adapter remain |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring + OpenRouter/LiteLLM backend done; failover chain + capability probing + `atlas doctor`, and DB/logging remain |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
