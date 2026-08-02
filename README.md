@@ -16,6 +16,7 @@ The first command is live — check your AI backend setup with:
 
 ```bash
 atlas doctor          # report each configured backend's availability
+atlas doctor --probe  # also run a live capability round-trip (makes a billable call)
 atlas doctor --json   # machine-readable, for scripting
 ```
 

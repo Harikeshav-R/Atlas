@@ -19,12 +19,13 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 0 · AI provider abstraction — capability probing.** The core contract, the
-`CliAdapter` base, the **Claude Code adapter**, **config + keyring**, the **OpenRouter/LiteLLM
-API backend**, the **failover chain**, and now the **CLI scaffold + `atlas doctor` v1** have
-all landed (see "What has landed"). What remains of the AI-provider item is the live
-capability probe, per
-[PROJECT.md §5.1 / §5.1a](./PROJECT.md#51-ai-provider-abstraction-atlasai):
+**Phase 0 · Data layer & logging.** The **AI provider abstraction is complete** for Phase 0:
+the core contract, the `CliAdapter` base, the Claude Code adapter, config + keyring, the
+OpenRouter/LiteLLM API backend, the failover chain, the CLI scaffold + `atlas doctor`, and now
+the **live capability probe** have all landed (see "What has landed"). What remains of Phase 0
+is the **data layer (SQLModel + SQLite (WAL) + Alembic)** and **logging** — pick either next;
+both are independent of the AI work and unblock Phase 1. The AI-provider checklist below is
+kept for reference:
 
 1. ✅ `LLMProvider` protocol + `LLMRequest`/`LLMResponse`/`Usage` models (`src/atlas/ai/base.py`)
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
@@ -44,23 +45,41 @@ capability probe, per
 6. ✅ **CLI scaffold + `atlas doctor` v1** (`src/atlas/cli/`) — a Typer command group
    (`atlas` console script + `python -m atlas`) whose `doctor` command reports each configured
    backend's availability (text or `--json`; exit 0/1). Pure report logic in `atlas.cli.doctor`.
-7. **Capability probe.** The remaining piece: a round-trip "reply OK as JSON against this
-   schema" probe recording per-backend support (JSON output / schema / streaming /
-   model-override), surfaced through the existing `atlas doctor` command. **Open decision:**
-   where probe results cache (the design leaves this unspecified — likely the cache dir or
-   in-memory for now). (This is also where the Claude adapter's stderr auth/rate-limit
-   heuristic is refined using stream-json's real `error` category.)
-8. Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
+7. ✅ **Capability probe** (`atlas.ai.probe` + `atlas.ai.probe_cache`) — a round-trip
+   "reply OK as JSON against this schema" probe recording all five capabilities (JSON output /
+   schema / streaming / system-prompt / model-override; last three best-effort), cached as
+   JSON under the platformdirs cache dir, surfaced through `atlas doctor --probe`/`--refresh`.
+8. ✅ Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
-> Also still open in Phase 0 (separate PRs): **SQLModel + SQLite (WAL) + Alembic** and
-> **logging** — see the Phase 0 checklist in
-> [PROJECT.md §15](./PROJECT.md#15-phased-roadmap).
+> **Deferred riders (separate PRs, not blocking):** refining the Claude adapter's stderr
+> auth/rate-limit heuristic using stream-json's real `error` category, and CLI
+> **version-minimum** detection/enforcement (§18.2 open question) — both co-located with
+> `atlas doctor` but out of scope of the probe itself.
+>
+> **Still open in Phase 0:** **SQLModel + SQLite (WAL) + Alembic** and **logging** — see the
+> Phase 0 checklist in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap).
 
 ---
 
 ## ✅ What has landed
 
-Phase 0 · CLI scaffold + `atlas doctor` v1 (this branch):
+Phase 0 · AI backend capability probe (this branch):
+
+- `atlas.ai.probe`: `probe_backend(provider)` runs a tiny "reply OK as JSON against this
+  schema" round-trip and reports a `BackendCapabilities` across all five design capabilities —
+  JSON output, JSON schema, streaming, system-prompt injection, model override (first two
+  deterministic; last three best-effort, documented). Pure over the `LLMProvider` protocol, so
+  the hermetic suite drives it with a fake provider and no live call. Any `LLMError` → a
+  generic `ok=False` result (no secrets/paths leaked). ≤3 live calls per probe.
+- `atlas.ai.probe_cache`: persists `ProbeResult`s (keyed by backend) as JSON under the
+  platformdirs cache dir, mirroring the config-loader idiom; a missing/corrupt cache is treated
+  as empty, never a crash.
+- `atlas doctor` now reports capabilities: bare invocation makes **no** live call and shows
+  cached results; `--probe` runs the live (billable) round-trip reusing/persisting the cache;
+  `--refresh` re-probes all. Themed capability column; included in `--json`. Verified live
+  against the installed `claude` (json/schema/stream/sys ✓, model ✗). 100% line+branch.
+
+Phase 0 · CLI scaffold + `atlas doctor` v1 (PR #12):
 
 - `atlas.cli`: Atlas's Typer command group, exposed via the `atlas` console script
   (`[project.scripts]`) and `python -m atlas`. A top-level callback keeps it multi-command so
@@ -206,7 +225,7 @@ high-level state.
 
 | Phase | Title | State |
 |---|---|---|
-| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — hygiene/CI + scaffold + AI core contract + `CliAdapter` base + Claude Code adapter + config/keyring + OpenRouter/LiteLLM backend + failover chain + CLI scaffold & `atlas doctor` v1 done; capability probe, and DB/logging remain |
+| 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | 🚧 in progress — **AI provider abstraction complete** (core contract · CLI + API backends · failover · CLI scaffold · `atlas doctor` · capability probe); config/keyring done; **DB (SQLModel/SQLite/Alembic) + logging remain** |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ⬜ not started |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
