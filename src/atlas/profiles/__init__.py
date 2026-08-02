@@ -17,6 +17,14 @@ drives a single profile.
 from __future__ import annotations
 
 from atlas.profiles.errors import ProfileNotFoundError, ProfilesError
+from atlas.profiles.onboarding import (
+    OnboardingResult,
+    ProfileAnswers,
+    UserAnswers,
+    ask_profile,
+    ask_user,
+    run_onboarding,
+)
 from atlas.profiles.preferences import (
     CompanyPreferences,
     CompanySize,
@@ -27,6 +35,7 @@ from atlas.profiles.preferences import (
     Seniority,
     WorkAuthorization,
 )
+from atlas.profiles.prompt import Prompter, RichPrompter
 from atlas.profiles.repository import (
     create_profile,
     get_active_profile,
@@ -43,17 +52,25 @@ __all__ = [
     "CompanySize",
     "CompensationPreferences",
     "LocationPreferences",
+    "OnboardingResult",
+    "ProfileAnswers",
     "ProfileNotFoundError",
     "ProfilePreferences",
     "ProfilesError",
+    "Prompter",
     "RemoteType",
+    "RichPrompter",
     "Seniority",
+    "UserAnswers",
     "WorkAuthorization",
+    "ask_profile",
+    "ask_user",
     "create_profile",
     "get_active_profile",
     "get_profile",
     "get_user",
     "list_profiles",
+    "run_onboarding",
     "set_active_profile",
     "update_profile",
     "upsert_user",

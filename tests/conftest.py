@@ -343,6 +343,41 @@ class FakeLiteLLMError(Exception):
         self.status_code = status_code
 
 
+class FakePrompter:
+    """A scripted, offline :class:`~atlas.profiles.prompt.Prompter` for tests.
+
+    Replays queued answers — strings for :meth:`ask_text`, bools for
+    :meth:`ask_bool` — so the onboarding wizard runs with no TTY (AGENTS.md
+    §6.2). Every prompt is recorded on :attr:`asked` (the message and offered
+    default) so tests can assert what was asked and that edit-mode defaults were
+    pre-filled. A queue that runs dry is an error, signalling the wizard asked
+    more than the test scripted.
+    """
+
+    def __init__(
+        self,
+        *,
+        texts: Sequence[str] = (),
+        bools: Sequence[bool] = (),
+    ) -> None:
+        """Queue the text and yes/no answers to replay in order."""
+        self._texts = list(texts)
+        self._bools = list(bools)
+        self.asked: list[tuple[str, object]] = []
+
+    def ask_text(self, message: str, *, default: str = "") -> str:
+        """Return the next queued text answer, recording the question."""
+        self.asked.append((message, default))
+        assert self._texts, "FakePrompter text queue exhausted"
+        return self._texts.pop(0)
+
+    def ask_bool(self, message: str, *, default: bool) -> bool:
+        """Return the next queued yes/no answer, recording the question."""
+        self.asked.append((message, default))
+        assert self._bools, "FakePrompter bool queue exhausted"
+        return self._bools.pop(0)
+
+
 class FakeKeyring:
     """An in-memory keyring backend for tests (no real keychain, no credentials).
 
