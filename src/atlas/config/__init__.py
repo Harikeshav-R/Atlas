@@ -20,14 +20,26 @@ from atlas.config.paths import (
     data_dir,
     state_dir,
 )
+from atlas.config.secrets import (
+    KEYRING_PASSPHRASE_ENV,
+    SecretStore,
+    default_secret_store,
+    resolve_api_key,
+    select_backend,
+)
 
 __all__ = [
+    "KEYRING_PASSPHRASE_ENV",
     "ConfigError",
     "ConfigValidationError",
     "KeyringUnavailableError",
+    "SecretStore",
     "cache_dir",
     "config_dir",
     "config_file",
     "data_dir",
+    "default_secret_store",
+    "resolve_api_key",
+    "select_backend",
     "state_dir",
 ]
