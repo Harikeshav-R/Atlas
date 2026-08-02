@@ -202,8 +202,7 @@ def _probe_backend(
     except LLMError as exc:
         return BackendStatus(name=name, role=role, available=False, detail=f"not configured: {exc}")
 
-    available = provider.is_available()
-    detail = "available" if available else "unavailable (binary missing, or no API key / login)"
+    available, detail = _availability(provider)
 
     capabilities, cached = _capabilities_for(
         name,
@@ -222,6 +221,23 @@ def _probe_backend(
         capabilities=capabilities,
         capabilities_cached=cached,
     )
+
+
+def _availability(provider: LLMProvider) -> tuple[bool, str]:
+    """Return ``(available, detail)`` for a backend.
+
+    CLI adapters expose :meth:`~atlas.ai.cli.base.CliAdapter.check_availability`,
+    which carries a specific reason (e.g. a version floor); use it when present so
+    ``atlas doctor`` shows *why* a backend is unavailable. Other providers (the API
+    backend) fall back to the plain ``is_available()`` boolean.
+    """
+    check = getattr(provider, "check_availability", None)
+    if callable(check):
+        result = check()
+        return result.available, result.reason
+    if provider.is_available():
+        return True, "available"
+    return False, "unavailable (binary missing, or no API key / login)"
 
 
 def _capabilities_for(

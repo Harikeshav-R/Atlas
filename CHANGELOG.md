@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Minimum Claude Code CLI version enforcement**: `CliAdapter` gained a
+  `parse_cli_version` helper, an overridable `_minimum_version()` hook, and a
+  `check_availability()` returning a `CliAvailability(available, reason)`. The
+  Claude Code adapter requires ≥ 2.1.205 (the release exposing the stream-json
+  structured error category); an older CLI is reported unavailable with a
+  version-specific reason in `atlas doctor` (failover to OpenRouter still
+  applies). Resolves the CLI version-minimum open question (PROJECT.md §18.2).
 - **AI backend capability probe** (`atlas.ai.probe`): `probe_backend(provider)`
   runs a tiny "reply OK as JSON against this schema" round-trip and reports a
   `BackendCapabilities` across the five capabilities the design names — JSON
@@ -140,5 +147,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/STATUS.md` session pick-up doc (current phase, what's landed, next step),
   wired into `AGENTS.md` as the mandatory first read and into the Definition of
   Done so it stays current.
+
+### Changed
+
+- **Claude Code adapter now drives `--output-format stream-json --verbose`**
+  instead of `--output-format json`. The terminal `result` event still carries
+  `structured_output`/`result`/`usage`/`total_cost_usd` (verified against the
+  real CLI), so the structured-output contract is unchanged — but failures now
+  carry a **structured `error` category** (`authentication_failed`, `rate_limit`,
+  …), so `_classify_error` maps auth/rate-limit failures from that category
+  rather than string-matching stderr (the stderr heuristic remains a fallback).
 
 [Unreleased]: https://github.com/Harikeshav-R/Atlas/commits/main

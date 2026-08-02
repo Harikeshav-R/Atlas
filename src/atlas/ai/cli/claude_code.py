@@ -1,9 +1,20 @@
 """The Claude Code CLI adapter — Atlas's default coding-CLI backend.
 
-Drives the local ``claude`` binary in headless print mode
-(``claude -p ... --output-format json --json-schema ...``) and maps its JSON
-envelope onto :class:`~atlas.ai.base.LLMResponse`. See ``docs/PROJECT.md``
-Appendix A.1 and ``docs/cli-reference/claude-code.md``.
+Drives the local ``claude`` binary in headless streaming mode
+(``claude -p ... --output-format stream-json --verbose --json-schema ...``) and
+maps the newline-delimited event stream's terminal ``result`` event onto
+:class:`~atlas.ai.base.LLMResponse`. See ``docs/PROJECT.md`` Appendix A.1 and
+``docs/cli-reference/claude-code.md``.
+
+``stream-json`` is used (rather than plain ``--output-format json``) because it
+carries the same structured payload — the terminal ``result`` event still holds
+``structured_output``, ``result``, ``usage``, and ``total_cost_usd`` when
+``--json-schema`` is set (verified against the real CLI) — **and** additionally
+surfaces a **structured error category** on failure (an ``error`` field such as
+``authentication_failed`` or ``rate_limit``, plus a ``system/api_retry`` event),
+which lets :meth:`ClaudeCodeAdapter._classify_error` map failures precisely
+instead of string-matching stderr. A stderr heuristic remains as a fallback for
+failures that exit before emitting any structured category.
 
 By default the adapter uses the user's existing Claude Code login and passes no
 ``--allowedTools`` (nothing is auto-approved); the base runs each call in a
@@ -40,15 +51,26 @@ __all__ = ["ANTHROPIC_API_KEY_ENV", "ClaudeCodeAdapter", "build_claude_code_prov
 #: Environment variable consulted as a fallback when the keyring has no bare-mode key.
 ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY"
 
-# Case-insensitive stderr substrings used to classify a failed invocation. Claude
-# Code only exposes structured error categories in stream-json mode, so plain
-# --output-format json runs fall back to matching diagnostic text; this heuristic
-# is refined once stream-json / ``atlas doctor`` can read the real category.
+# Structured ``error`` categories emitted by stream-json events (documented in
+# docs/cli-reference/claude-code.md, the system/api_retry event). Mapped to Atlas's
+# error hierarchy; anything not listed falls through to a generic backend error.
+_AUTH_CATEGORIES = frozenset({"authentication_failed", "oauth_org_not_allowed"})
+_RATE_LIMIT_CATEGORIES = frozenset({"rate_limit", "overloaded", "billing_error"})
+
+# Case-insensitive stderr substrings — a *fallback* heuristic for failures that exit
+# before emitting any structured ``error`` category (the structured category from
+# stream-json is preferred; see ``_classify_error``).
 _AUTH_MARKERS = ("authentication", "unauthorized", "not logged in", "oauth", "api key", "401")
 _RATE_LIMIT_MARKERS = ("rate limit", "429", "overloaded", "quota", "billing")
 
 # Appended to the caller's system prompt to keep Claude in a text/JSON-only mode.
 _NEUTRALIZE_INSTRUCTION = "Respond directly with the answer only; do not use any tools."
+
+# Minimum supported Claude Code version. 2.1.205 is the release that added the
+# stream-json structured ``error`` category / ``system/init`` capabilities array
+# this adapter relies on (docs/cli-reference/claude-code.md); older builds lack
+# the output shapes Atlas depends on, so they are treated as unavailable.
+_CLAUDE_MIN_VERSION = (2, 1, 205)
 
 
 class ClaudeCodeAdapter(CliAdapter):
@@ -88,12 +110,21 @@ class ClaudeCodeAdapter(CliAdapter):
         self._api_key = api_key
         self._model = model
 
+    def _minimum_version(self) -> tuple[int, int, int]:
+        """Return the minimum supported ``claude`` version (see :data:`_CLAUDE_MIN_VERSION`)."""
+        return _CLAUDE_MIN_VERSION
+
     def _build_argv(self, request: LLMRequest) -> list[str]:
-        """Assemble the ``claude`` argv for ``request`` (no ``--allowedTools``)."""
+        """Assemble the ``claude`` argv for ``request`` (no ``--allowedTools``).
+
+        Uses ``--output-format stream-json --verbose`` (``--verbose`` is required
+        by the CLI for stream-json): the terminal ``result`` event carries the
+        structured payload and failures carry a structured ``error`` category.
+        """
         argv = [self._command]
         if self._use_bare:
             argv.append("--bare")
-        argv += ["-p", request.prompt, "--output-format", "json"]
+        argv += ["-p", request.prompt, "--output-format", "stream-json", "--verbose"]
         system = self._system_prompt(request)
         argv += ["--append-system-prompt", system]
         if request.response_schema is not None:
@@ -123,39 +154,86 @@ class ClaudeCodeAdapter(CliAdapter):
         env["ANTHROPIC_API_KEY"] = self._api_key
         return env
 
-    def _classify_error(self, result: RunResult) -> NoReturn:
-        """Raise a specific error based on the CLI's stderr diagnostics.
+    def _events(self, stdout: str) -> list[dict[str, Any]]:
+        """Parse the stream-json stdout into a list of event objects.
 
-        Heuristic: match diagnostic text since plain JSON mode exposes no
-        structured error category (refined when stream-json / ``atlas doctor``
-        lands). Messages stay generic so stderr, paths, and secrets never leak.
+        Each non-blank line is a JSON object; lines that do not parse as an
+        object are skipped (the CLI can interleave non-event diagnostics).
         """
-        stderr = result.stderr.lower()
-        if any(marker in stderr for marker in _AUTH_MARKERS):
+        events: list[dict[str, Any]] = []
+        for line in stdout.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                events.append(parsed)
+        return events
+
+    def _error_category(self, events: list[dict[str, Any]]) -> str | None:
+        """Return the first structured ``error`` category across ``events``, if any.
+
+        The category surfaces on a ``system/api_retry`` event or an ``assistant``
+        event (verified against the real CLI), not necessarily the terminal
+        ``result`` event, so every event is scanned.
+        """
+        for event in events:
+            category = event.get("error")
+            if isinstance(category, str):
+                return category
+        return None
+
+    def _classify_error(self, result: RunResult) -> NoReturn:
+        """Raise a specific error for a failed invocation.
+
+        Prefers the structured ``error`` category from the stream-json events
+        (e.g. ``authentication_failed`` → :class:`LLMAuthError`), falling back to
+        the stderr-substring heuristic when a failure exits before emitting one.
+        Messages stay generic so stderr, paths, and secrets never leak.
+        """
+        category = self._error_category(self._events(result.stdout))
+        if category in _AUTH_CATEGORIES:
             raise LLMAuthError(f"{self.name} authentication failed.")
-        if any(marker in stderr for marker in _RATE_LIMIT_MARKERS):
+        if category in _RATE_LIMIT_CATEGORIES:
             raise LLMRateLimitError(f"{self.name} was rate-limited or over quota.")
+        if category is None:
+            stderr = result.stderr.lower()
+            if any(marker in stderr for marker in _AUTH_MARKERS):
+                raise LLMAuthError(f"{self.name} authentication failed.")
+            if any(marker in stderr for marker in _RATE_LIMIT_MARKERS):
+                raise LLMRateLimitError(f"{self.name} was rate-limited or over quota.")
         raise LLMBackendError(f"{self.name} exited with code {result.returncode}.")
 
     def _parse_response(self, result: RunResult, request: LLMRequest) -> LLMResponse:
-        """Map the ``claude`` JSON envelope onto an :class:`LLMResponse`."""
-        try:
-            envelope: dict[str, Any] = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise LLMBackendError(f"{self.name} returned unparseable output.") from exc
-        usage_obj = envelope.get("usage") or {}
+        """Map the terminal stream-json ``result`` event onto an :class:`LLMResponse`.
+
+        Raises:
+            LLMBackendError: If no terminal ``result`` event is present, or it
+                reports ``is_error`` (a failure that still exited zero).
+        """
+        events = self._events(result.stdout)
+        terminal = next((e for e in reversed(events) if e.get("type") == "result"), None)
+        if terminal is None:
+            raise LLMBackendError(f"{self.name} returned unparseable output.")
+        if terminal.get("is_error"):
+            # A failure reported in-band on a zero exit — classify it uniformly.
+            self._classify_error(result)
+        usage_obj = terminal.get("usage") or {}
         usage = Usage(
             input_tokens=usage_obj.get("input_tokens"),
             output_tokens=usage_obj.get("output_tokens"),
             total_tokens=usage_obj.get("total_tokens"),
-            cost_usd=envelope.get("total_cost_usd"),
+            cost_usd=terminal.get("total_cost_usd"),
         )
         return LLMResponse(
-            text=envelope.get("result", ""),
-            structured=envelope.get("structured_output"),
-            raw=envelope,
+            text=terminal.get("result", ""),
+            structured=terminal.get("structured_output"),
+            raw=terminal,
             usage=usage,
-            model=envelope.get("model") or self._model or self.name,
+            model=terminal.get("model") or self._model or self.name,
             backend=self.name,
         )
 

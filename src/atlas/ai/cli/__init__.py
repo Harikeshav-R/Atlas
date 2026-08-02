@@ -14,7 +14,7 @@ phases.
 
 from __future__ import annotations
 
-from atlas.ai.cli.base import CliAdapter
+from atlas.ai.cli.base import CliAdapter, CliAvailability, parse_cli_version
 from atlas.ai.cli.claude_code import (
     ANTHROPIC_API_KEY_ENV,
     ClaudeCodeAdapter,
@@ -26,8 +26,10 @@ __all__ = [
     "ANTHROPIC_API_KEY_ENV",
     "ClaudeCodeAdapter",
     "CliAdapter",
+    "CliAvailability",
     "RunResult",
     "SubprocessRunner",
     "build_claude_code_provider",
     "default_subprocess_runner",
+    "parse_cli_version",
 ]

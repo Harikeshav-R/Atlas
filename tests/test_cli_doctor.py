@@ -51,7 +51,16 @@ def test_run_doctor_claude_unavailable_when_binary_missing(fake_keyring: FakeKey
     runner = FakeSubprocessRunner(raises=FileNotFoundError("claude"))
     report = run_doctor(AiConfig(), _store(fake_keyring), runner=runner, cache_load=_empty_cache)
     assert report.backends[0].available is False
-    assert "unavailable" in report.backends[0].detail
+    assert "binary not found" in report.backends[0].detail
+
+
+def test_run_doctor_claude_too_old_reports_version_reason(fake_keyring: FakeKeyring) -> None:
+    # A CLI older than the floor is unavailable with a version-specific reason.
+    runner = FakeSubprocessRunner(RunResult(returncode=0, stdout="1.0.0 (Claude Code)", stderr=""))
+    config = AiConfig.model_validate({"default_backend": "claude_code", "failover": []})
+    report = run_doctor(config, _store(fake_keyring), runner=runner, cache_load=_empty_cache)
+    assert report.backends[0].available is False
+    assert "too old" in report.backends[0].detail
 
 
 def test_run_doctor_openrouter_available_with_key(fake_keyring: FakeKeyring) -> None:

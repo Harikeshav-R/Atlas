@@ -31,9 +31,10 @@ kept for reference:
    and the `complete_json()` structured-output ladder (`src/atlas/ai/complete_json.py`).
 2. ✅ **`CliAdapter` base class** + injected `SubprocessRunner` boundary — `src/atlas/ai/cli/`.
 3. ✅ **Claude Code** adapter (`src/atlas/ai/cli/claude_code.py`) — `-p`
-   `--output-format json --json-schema`, `--append-system-prompt` + no `--allowedTools`,
-   `--bare`/`ANTHROPIC_API_KEY` opt-in (key injected, never logged), envelope→`LLMResponse`
-   mapping, heuristic auth/rate-limit detection (`LLMAuthError`/`LLMRateLimitError`).
+   `--output-format stream-json --verbose --json-schema`, `--append-system-prompt` + no
+   `--allowedTools`, `--bare`/`ANTHROPIC_API_KEY` opt-in (key injected, never logged), terminal
+   `result` event→`LLMResponse` mapping, auth/rate-limit detection from the stream-json
+   structured `error` category (stderr heuristic fallback).
 4. ✅ **OpenRouter** adapter (default API failover backend) via LiteLLM behind `LLMProvider`
    (`src/atlas/ai/api/`) — consumes `resolve_api_key()` (handle `"openrouter"`) from
    `atlas.config`; two injectable seams keep `litellm` out of the hermetic suite.
@@ -49,12 +50,15 @@ kept for reference:
    "reply OK as JSON against this schema" probe recording all five capabilities (JSON output /
    schema / streaming / system-prompt / model-override; last three best-effort), cached as
    JSON under the platformdirs cache dir, surfaced through `atlas doctor --probe`/`--refresh`.
-8. ✅ Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
+8. ✅ **Structured error classification + CLI version floor** — the two previously-deferred
+   riders: Claude failures classified from the stream-json structured `error` category (item 3);
+   and a minimum CLI version (`CliAdapter._minimum_version` / `check_availability`), Claude Code
+   pinned to ≥ 2.1.205, surfaced in `atlas doctor` (resolves §18.2).
+9. ✅ Tests: fake provider + recorded fixtures, no live CLI/API calls (AGENTS.md §6.2).
 
-> **Deferred riders (separate PRs, not blocking):** refining the Claude adapter's stderr
-> auth/rate-limit heuristic using stream-json's real `error` category, and CLI
-> **version-minimum** detection/enforcement (§18.2 open question) — both co-located with
-> `atlas doctor` but out of scope of the probe itself.
+> **The AI provider abstraction is now fully complete for Phase 0** — no deferred riders remain.
+> (Codex/Antigravity adapters and Phase 1+ cross-cutting features — prompt library, response
+> caching, TUI cost accounting, PII redaction — are out of Phase 0 scope by design.)
 >
 > **Still open in Phase 0:** **SQLModel + SQLite (WAL) + Alembic** and **logging** — see the
 > Phase 0 checklist in [PROJECT.md §15](./PROJECT.md#15-phased-roadmap).
@@ -63,7 +67,24 @@ kept for reference:
 
 ## ✅ What has landed
 
-Phase 0 · AI backend capability probe (this branch):
+Phase 0 · AI provider — structured error classification + CLI version floor (this branch):
+
+- Claude Code adapter switched to `--output-format stream-json --verbose`. Verified against
+  the real CLI that the terminal `result` event still carries
+  `structured_output`/`result`/`usage`/`total_cost_usd` with `--json-schema`, so the
+  structured-output contract is intact; `_parse_response` reads the NDJSON terminal event.
+- `_classify_error` maps auth/rate-limit failures from the stream-json structured `error`
+  category (`authentication_failed`, `rate_limit`, …), scanning all events, with the stderr
+  substring heuristic kept only as a fallback.
+- CLI version floor: `parse_cli_version` + `CliAdapter._minimum_version()` /
+  `check_availability()` (returns `CliAvailability(available, reason)`); Claude Code pinned to
+  ≥ 2.1.205, hard-failed as unavailable when older. `atlas doctor` shows the specific reason
+  (e.g. "CLI too old; needs >= 2.1.205"). Resolves PROJECT.md §18.2.
+- Verified end-to-end against the real `claude` 2.1.220 (available; probe shows
+  json/schema/stream/sys ✓) and a raised floor (hard-fail). 100% line+branch coverage.
+- **This completes the AI provider abstraction for Phase 0.**
+
+Phase 0 · AI backend capability probe (PR #13):
 
 - `atlas.ai.probe`: `probe_backend(provider)` runs a tiny "reply OK as JSON against this
   schema" round-trip and reports a `BackendCapabilities` across all five design capabilities —
