@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Atlas **command-line interface** (`atlas.cli`, built on Typer): a command group
+  exposed via the `atlas` console script and `python -m atlas`, with a top-level
+  callback keeping it in multi-command mode for future subcommands.
+- **`atlas doctor`** command: validates configuration and reports each configured
+  AI backend's availability (default + failover, in chain order). Prints
+  human-readable text or `--json` for scripting; exits `0` when at least one
+  backend is usable and `1` when none is (or config/keyring can't be loaded).
+  Per-backend construction errors (unknown name, missing bare-mode key) are
+  reported rather than aborting the report. The live "reply OK as JSON"
+  capability round-trip is deferred to a later phase. Pure report logic lives in
+  `atlas.cli.doctor` (`run_doctor`/`render_report`), testable without invoking
+  the CLI.
+- `build_named_provider` in `atlas.ai.router` (promoted from the private
+  `_build_named`): construct a single AI backend by name, used by both
+  `build_provider_chain` and `atlas doctor`.
+- New runtime dependency: `typer`.
 - `atlas.ai.router`: the AI backend **failover chain**. `FailoverProvider` wraps
   an ordered list of `LLMProvider` backends and is itself an `LLMProvider`, so
   callers stay agnostic; `complete()`/`stream()` try each backend in order and

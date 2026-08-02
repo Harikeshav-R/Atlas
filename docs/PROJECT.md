@@ -1020,8 +1020,10 @@ The document specs everything; build order is phased. Each phase is independentl
   - [x] Failover chain across the backend order (`atlas.ai.router` — `FailoverProvider` +
     `build_provider_chain`; fails over on `LLMBackendError`/`LLMTimeoutError`, not
     `LLMOutputError`).
-  - [ ] Per-backend capability probing (cached) and the `atlas doctor` command (needs the
-    Typer CLI scaffold first).
+  - [x] CLI scaffold (`atlas.cli`, Typer) + **`atlas doctor` v1** reporting each backend's
+    availability (`atlas.cli.doctor`).
+  - [ ] Per-backend capability probing (cached; round-trip JSON probe) surfaced through
+    `atlas doctor`.
 - [ ] Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
 
 ### Phase 1 — Core loop (first genuinely useful release)
