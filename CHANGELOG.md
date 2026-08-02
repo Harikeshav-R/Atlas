@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **AI backend capability probe** (`atlas.ai.probe`): `probe_backend(provider)`
+  runs a tiny "reply OK as JSON against this schema" round-trip and reports a
+  `BackendCapabilities` across the five capabilities the design names — JSON
+  output, JSON schema, streaming, system-prompt injection, and model override
+  (the first two deterministic, the last three best-effort). Pure logic over the
+  `LLMProvider` protocol, so the default suite drives it with a fake provider and
+  no live call.
+- **Probe-result cache** (`atlas.ai.probe_cache`): persists `ProbeResult`s (keyed
+  by backend name) as JSON under the platformdirs cache dir; a missing or corrupt
+  cache is treated as empty rather than raising.
+- **`atlas doctor --probe` / `--refresh`**: `atlas doctor` now reports each
+  backend's capabilities. By default it makes no model call and shows cached
+  capabilities; `--probe` runs the live (billable) round-trip, reusing cached
+  results and persisting fresh ones; `--refresh` re-probes every backend.
+  Capabilities appear as a themed column (and in `--json`).
 - **Styled, consistent CLI output** via Rich: a shared console + named theme
   (`atlas.cli.console`, `ATLAS_THEME`) that every command renders through, using
   semantic style names (`success`/`error`/`heading`/`accent`/…) so the palette is

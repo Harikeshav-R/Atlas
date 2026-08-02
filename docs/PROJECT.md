@@ -1030,9 +1030,12 @@ The document specs everything; build order is phased. Each phase is independentl
     `LLMOutputError`).
   - [x] CLI scaffold (`atlas.cli`, Typer) + **`atlas doctor` v1** reporting each backend's
     availability (`atlas.cli.doctor`).
-  - [ ] Per-backend capability probing (cached; round-trip JSON probe) surfaced through
-    `atlas doctor`.
-- [ ] Verified against real installed CLIs (invocations captured in [Appendix A](#appendix-a--coding-cli-adapter-reference)).
+  - [x] Per-backend capability probing (`atlas.ai.probe` + `atlas.ai.probe_cache`; cached
+    round-trip JSON probe, all five capabilities) surfaced through `atlas doctor --probe`.
+  - Deferred riders (separate PRs): stream-json `error`-category heuristic refinement for the
+    Claude adapter, and CLI **version-minimum** detection (§18.2).
+- [x] Verified against the real installed `claude` CLI (the `atlas doctor --probe` round-trip;
+  Codex/Antigravity adapters and their live verification remain for a later phase).
 
 ### Phase 1 — Core loop (first genuinely useful release)
 - [ ] Onboarding Q&A + preferences; **single** profile (schema already multi-profile).
