@@ -34,6 +34,9 @@ def test_upgrade_to_head_creates_the_schema(tmp_path: Path) -> None:
         "profile",
         "master_resume",
         "resume_block",
+        "company",
+        "job_source",
+        "job_posting",
         "alembic_version",
     } <= tables
 
