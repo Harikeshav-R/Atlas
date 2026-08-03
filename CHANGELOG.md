@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Paste-URL scrape & parse** (`atlas.scrape`): the third Phase 1 feature
+  (PROJECT.md §5.5). Turns a job-posting URL into a normalized, persisted
+  `JobPosting`. Fetching is synchronous behind an injectable `Fetcher` protocol
+  (an `httpx`-backed default; a `BrowserFetcher` seam reserves the future
+  Playwright JS-render fallback, not wired yet). Extraction prefers structured
+  data — JSON-LD schema.org `JobPosting`, then OpenGraph — and falls back to the
+  page's main text; a structured posting with a title short-circuits the AI,
+  otherwise the **`parse_job_posting` AI extraction pass** runs (the first
+  command-flow model call in Atlas). Per §7, an `LLMOutputError` degrades
+  gracefully: the raw page text is kept as the description so a difficult page is
+  still saved. Postings are deduplicated by normalized apply URL (re-adding a URL
+  is a no-op), the raw HTML is stored on disk as a snapshot (referenced, never a
+  DB blob), and every external boundary is injected so the suite stays hermetic.
+- **`atlas add <url>` + `atlas postings list|show` commands** (PROJECT.md §9):
+  `add` scrapes, parses, and saves a posting (reporting the saved posting or a
+  no-op); `postings list`/`show` render saved postings (Rich table / detail grid,
+  `--json` for scripting). Fetch/extraction failures and unknown ids exit `1`.
+- **`company`, `job_source`, `job_posting` tables** (`atlas.db.models`, PROJECT.md
+  §6) with an Alembic migration. The paste-URL flow dedupes companies by name and
+  reuses one `type="url"` job source (§5.4); the tables are reused as-is by the
+  Phase 2 discovery daemon.
+- **Versioned Jinja2 AI-prompt library** (`atlas.ai.prompts`, PROJECT.md §7,
+  §18.1): `render_prompt(task, version, **context)` loads a task's
+  `system.jinja` + `user.jinja` from `templates/<task>/v<version>/` through a
+  `StrictUndefined` environment (a missing context variable fails loudly),
+  returning a `RenderedPrompt` that records the task and version used. Ships the
+  `parse_job_posting` v1 templates. Replaces the inline-constant prompt idiom.
+- New runtime dependencies: `httpx` (fetching), `beautifulsoup4` (JSON-LD /
+  OpenGraph / main-text extraction), and `jinja2` (the prompt template library).
 - **Master resume ingest, parse & versioning** (`atlas.resume`): the second Phase
   1 feature (PROJECT.md §5.3). A deterministic Markdown parser splits the single
   master resume into ordered, typed blocks (contact/summary/experience/project/

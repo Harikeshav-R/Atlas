@@ -7,7 +7,16 @@ from typing import TYPE_CHECKING
 
 from sqlmodel import col, select
 
-from atlas.db import MasterResume, Profile, ResumeBlock, User, session_scope
+from atlas.db import (
+    Company,
+    JobPosting,
+    JobSource,
+    MasterResume,
+    Profile,
+    ResumeBlock,
+    User,
+    session_scope,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -117,3 +126,84 @@ def test_master_resume_and_blocks_round_trip(db_engine: Engine) -> None:
         assert block.master_resume_id == stored.id
         assert block.content_id == "blk_abc123"
         assert block.tags == {"metrics": ["30% faster"]}
+
+
+def test_company_defaults() -> None:
+    company = Company(name="Acme")
+    assert company.id is None
+    assert company.ats_type is None
+    assert company.domain is None
+    assert company.notes is None
+
+
+def test_job_source_defaults() -> None:
+    source = JobSource(type="url")
+    assert source.id is None
+    assert source.config == {}
+    assert source.profile_id is None
+    assert source.enabled is True
+    assert source.last_polled_at is None
+
+
+def test_job_posting_defaults() -> None:
+    posting = JobPosting(
+        source_id=1,
+        company_id=1,
+        title="Backend Engineer",
+        apply_url="https://jobs.example.com/1",
+        fetched_at=datetime(2026, 8, 3, tzinfo=UTC),
+        dedupe_hash="abc",
+    )
+    assert posting.id is None
+    assert posting.salary == {}
+    assert posting.requirements == {}
+    assert posting.keywords == []
+    assert posting.description == ""
+    assert posting.posted_at is None
+    assert posting.raw_snapshot_ref is None
+
+
+def test_job_posting_round_trip_with_fks(db_engine: Engine) -> None:
+    fetched = datetime(2026, 8, 3, 15, 45, tzinfo=UTC)
+    with session_scope(db_engine) as session:
+        company = Company(name="Acme", domain="acme.test")
+        source = JobSource(type="url")
+        session.add(company)
+        session.add(source)
+        session.flush()
+        assert company.id is not None
+        assert source.id is not None
+        session.add(
+            JobPosting(
+                source_id=source.id,
+                company_id=company.id,
+                title="Senior Backend Engineer",
+                location="Remote (US)",
+                remote_type="remote",
+                salary={"min": 150000, "currency": "USD"},
+                description="Build things.",
+                requirements={"must": ["Python"], "nice": ["Rust"]},
+                keywords=["python", "postgres"],
+                apply_url="https://jobs.acme.test/senior-backend",
+                posted_at=fetched,
+                raw_snapshot_ref="snapshots/abc123.html",
+                fetched_at=fetched,
+                dedupe_hash="abc123",
+            )
+        )
+    with session_scope(db_engine) as session:
+        stored = session.exec(select(JobPosting)).one()
+        company = session.exec(select(Company)).one()
+        source = session.exec(select(JobSource)).one()
+        assert stored.company_id == company.id
+        assert stored.source_id == source.id
+        assert stored.salary == {"min": 150000, "currency": "USD"}
+        assert stored.requirements == {"must": ["Python"], "nice": ["Rust"]}
+        assert stored.keywords == ["python", "postgres"]
+        assert stored.raw_snapshot_ref == "snapshots/abc123.html"
+        # UtcDateTime re-attaches UTC on load for both timestamp columns.
+        assert stored.fetched_at == fetched
+        assert stored.fetched_at.tzinfo is UTC
+        assert stored.posted_at == fetched
+        assert stored.posted_at is not None
+        assert stored.posted_at.tzinfo is UTC

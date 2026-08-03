@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
+from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.doctor import render_report, run_doctor
 from atlas.cli.profile import (
@@ -35,6 +36,12 @@ from atlas.cli.resume import (
     render_resume_status,
     reparse_resume,
 )
+from atlas.cli.scrape import (
+    build_posting_detail,
+    build_postings_report,
+    render_posting_detail,
+    render_postings,
+)
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
@@ -44,6 +51,8 @@ from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
 from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
+from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
+from atlas.scrape.service import add_posting
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -70,6 +79,13 @@ resume_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(resume_app)
+
+postings_app = typer.Typer(
+    name="postings",
+    help="List and inspect scraped job postings.",
+    no_args_is_help=True,
+)
+app.add_typer(postings_app)
 
 
 @app.callback()
@@ -350,3 +366,88 @@ def resume_show(
         print_json_line(report.model_dump_json(indent=2))
     else:
         console.print(render_resume_status(report))
+
+
+@app.command()
+def add(
+    url: str = typer.Argument(..., help="URL of the job posting to scrape and save."),
+) -> None:
+    """Scrape a job posting from a URL, parse it, and save it.
+
+    Fetches the page, extracts the normalized fields (structured data first, then
+    an AI pass over the page text, PROJECT.md §5.5), stores a raw snapshot, and
+    persists the posting. Re-adding a URL already saved is a no-op. Scoring the
+    posting for fit is a separate step and is not part of this command yet.
+    """
+    try:
+        config = load_config()
+        store = default_secret_store()
+    except ConfigError as exc:
+        error_console.print(f"[error]atlas add:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    provider = build_provider_chain(config.ai, store)
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = add_posting(session, url, provider=provider)
+    except ScrapeError as exc:
+        error_console.print(f"[error]atlas add:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if outcome.created:
+        console.print(
+            f"[success]Saved posting[/success] [accent]{outcome.title}[/accent] "
+            f"@ {outcome.company} (id {outcome.posting_id})."
+        )
+    else:
+        console.print(
+            f"[muted]Already added — [/muted][accent]{outcome.title}[/accent]"
+            f"[muted] @ {outcome.company} (id {outcome.posting_id}).[/muted]"
+        )
+
+
+@postings_app.command("list")
+def postings_list(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the posting list as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """List every saved job posting."""
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            report = build_postings_report(session)
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(report.model_dump_json(indent=2))
+    else:
+        console.print(render_postings(report))
+
+
+@postings_app.command("show")
+def postings_show(
+    posting_id: int = typer.Argument(..., help="The id of the posting to show."),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the posting as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Show one saved posting's normalized fields."""
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            detail = build_posting_detail(session, posting_id)
+    except JobPostingNotFoundError as exc:
+        error_console.print(f"[error]atlas postings show:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(detail.model_dump_json(indent=2))
+    else:
+        console.print(render_posting_detail(detail))

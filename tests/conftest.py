@@ -20,6 +20,7 @@ from sqlmodel import SQLModel
 from atlas.ai.base import LLMRequest, LLMResponse
 from atlas.ai.cli.runner import RunResult
 from atlas.db.engine import create_db_engine
+from atlas.scrape.fetcher import FetchResult
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -201,6 +202,72 @@ def make_fake_runner() -> FakeRunnerFactory:
         raises: BaseException | None = None,
     ) -> FakeSubprocessRunner:
         return FakeSubprocessRunner(result, raises=raises)
+
+    return factory
+
+
+@dataclass
+class FetchCall:
+    """A single recorded invocation of :class:`FakeFetcher`."""
+
+    url: str
+    timeout_s: int
+
+
+class FakeFetcher:
+    """A scripted, offline :class:`~atlas.scrape.fetcher.Fetcher` for tests.
+
+    Returns ``result`` for every call, or raises ``raises`` (e.g. a
+    :class:`~atlas.scrape.errors.FetchError`) instead. Every invocation is
+    recorded on :attr:`calls` so tests assert on the url and timeout the scraper
+    passed — without any real HTTP request (AGENTS.md §6.2). Its shape also
+    satisfies the ``BrowserFetcher`` protocol, so the same double stands in for
+    the JS-render fallback seam.
+    """
+
+    def __init__(
+        self,
+        result: FetchResult | None = None,
+        *,
+        raises: BaseException | None = None,
+    ) -> None:
+        """Store the scripted result or exception to replay."""
+        self._result = result
+        self._raises = raises
+        self.calls: list[FetchCall] = []
+
+    def __call__(self, url: str, *, timeout_s: int) -> FetchResult:
+        """Record the call and return the scripted result, or raise."""
+        self.calls.append(FetchCall(url=url, timeout_s=timeout_s))
+        if self._raises is not None:
+            raise self._raises
+        assert self._result is not None, "FakeFetcher needs a result or a raises"
+        return self._result
+
+
+class FakeFetcherFactory(Protocol):
+    """Callable protocol for the ``make_fake_fetcher`` fixture."""
+
+    def __call__(
+        self,
+        result: FetchResult | None = ...,
+        *,
+        raises: BaseException | None = ...,
+    ) -> FakeFetcher:
+        """Build a :class:`FakeFetcher` from a scripted result or error."""
+        ...
+
+
+@pytest.fixture
+def make_fake_fetcher() -> FakeFetcherFactory:
+    """Return a factory that builds :class:`FakeFetcher` instances."""
+
+    def factory(
+        result: FetchResult | None = None,
+        *,
+        raises: BaseException | None = None,
+    ) -> FakeFetcher:
+        return FakeFetcher(result, raises=raises)
 
     return factory
 

@@ -41,6 +41,15 @@ atlas resume show          # list stored versions (● marks the latest)
 atlas resume show --json   # machine-readable, for scripting
 ```
 
+Scrape a job posting from a URL and inspect what was saved:
+
+```bash
+atlas add <url>            # scrape + parse a posting and save it (re-adding a URL is a no-op)
+atlas postings list        # list saved postings
+atlas postings show <id>   # show one posting's normalized fields
+atlas postings list --json # machine-readable, for scripting
+```
+
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
 the `ATLAS_LOG_LEVEL` env var / the `[logging]` config.

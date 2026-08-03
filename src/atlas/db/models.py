@@ -1,10 +1,11 @@
 """SQLModel table definitions for Atlas's core data model.
 
 This module defines the growing slice of the data model in PROJECT.md §6 — the
-single-user record, search profiles, and the versioned master resume — that
-Phase 1 features build on. The remaining tables (job postings, applications, …)
-land per-feature, each with its own Alembic migration (PROJECT.md §6; the
-data-handling rule in ``docs/agent/coding-standards.md``).
+single-user record, search profiles, the versioned master resume, and scraped
+job postings (with their company and source) — that Phase 1 features build on.
+The remaining tables (match scores, applications, …) land per-feature, each with
+its own Alembic migration (PROJECT.md §6; the data-handling rule in
+``docs/agent/coding-standards.md``).
 
 Each class is a SQLModel table (``table=True``): one class that is both the
 Pydantic model and the SQLAlchemy table (PROJECT.md §13). JSON-shaped columns
@@ -21,7 +22,15 @@ from sqlmodel import JSON, Column, Field, SQLModel
 
 from atlas.db.types import UtcDateTime
 
-__all__ = ["MasterResume", "Profile", "ResumeBlock", "User"]
+__all__ = [
+    "Company",
+    "JobPosting",
+    "JobSource",
+    "MasterResume",
+    "Profile",
+    "ResumeBlock",
+    "User",
+]
 
 
 class User(SQLModel, table=True):
@@ -138,3 +147,116 @@ class ResumeBlock(SQLModel, table=True):
     position: int
     text: str
     tags: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+
+
+class Company(SQLModel, table=True):
+    """A company a job posting belongs to (PROJECT.md §6).
+
+    Populated from a scraped posting's company name today; the ATS fields
+    (:attr:`ats_type`, :attr:`ats_board_ref`) stay empty until the Phase 2
+    watchlist feature auto-detects a company's board. Deduplicated by name in the
+    repository (in code, not by a DB constraint), so re-adding a posting for the
+    same company reuses its row.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        name: The company's display name.
+        ats_type: The company's ATS provider (e.g. ``"greenhouse"``), if known.
+        ats_board_ref: The company's board URL/token on that ATS, if known.
+        domain: The company's primary web domain, if known.
+        notes: Free-form user notes about the company.
+    """
+
+    __tablename__ = "company"
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    ats_type: str | None = None
+    ats_board_ref: str | None = None
+    domain: str | None = None
+    notes: str | None = None
+
+
+class JobSource(SQLModel, table=True):
+    """Where a job posting came from (PROJECT.md §5.4, §6).
+
+    A source is an ATS board, an aggregator search, a pasted URL, or a scrape.
+    The paste-URL flow (PROJECT.md §5.5) uses a single ``type="url"`` row,
+    reused for every pasted posting; the ATS/aggregator source rows arrive with
+    the Phase 2 discovery daemon.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        type: The source kind — ``"ats"`` / ``"aggregator"`` / ``"url"`` /
+            ``"scrape"``.
+        config: Source-specific settings as a JSON object (empty for a pasted
+            URL); ATS/aggregator sources store their board ref, saved search, etc.
+        profile_id: The owning profile, if the source is profile-scoped; ``None``
+            for the shared paste-URL source.
+        enabled: Whether a poller should include this source (Phase 2).
+        last_polled_at: When this source was last polled, or ``None`` if never
+            (timezone-aware UTC).
+    """
+
+    __tablename__ = "job_source"
+
+    id: int | None = Field(default=None, primary_key=True)
+    type: str
+    config: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    profile_id: int | None = Field(default=None, foreign_key="profile.id")
+    enabled: bool = True
+    last_polled_at: datetime | None = Field(default=None, sa_column=Column(UtcDateTime))
+
+
+class JobPosting(SQLModel, table=True):
+    """A normalized job posting scraped from a URL (PROJECT.md §5.5, §6).
+
+    Holds the normalized fields extracted from a posting — structured data first
+    (JSON-LD / OpenGraph), then an AI extraction pass over the page text
+    (:mod:`atlas.scrape`). The raw HTML lives on disk under the data dir and is
+    referenced by :attr:`raw_snapshot_ref` (never stored as a DB blob, PROJECT.md
+    §6), so a posting can be re-parsed without re-fetching. Deduplicated by
+    :attr:`dedupe_hash` (the normalized apply URL) so re-adding the same posting
+    is a no-op.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        external_id: The source's own id for the posting, if any.
+        source_id: The owning :class:`JobSource`'s id.
+        company_id: The owning :class:`Company`'s id.
+        title: The role title.
+        location: The posting's location(s), as free text.
+        remote_type: On-site / hybrid / remote, if determinable.
+        employment_type: Full-time / contract / internship, if determinable.
+        seniority: The role's seniority, if determinable.
+        salary: Salary details as a JSON object (empty when not stated).
+        description: The full description text.
+        requirements: Requirements as a JSON object (e.g. ``must`` / ``nice``).
+        keywords: Tech stack / keywords, as a JSON array.
+        apply_url: The URL to apply at (the pasted URL for a paste-URL posting).
+        posted_at: When the role was posted, if known (timezone-aware UTC).
+        raw_snapshot_ref: On-disk path to the raw HTML snapshot, or ``None``.
+        fetched_at: When Atlas fetched the posting (timezone-aware UTC).
+        dedupe_hash: A stable hash used to collapse duplicate postings.
+    """
+
+    __tablename__ = "job_posting"
+
+    id: int | None = Field(default=None, primary_key=True)
+    external_id: str | None = None
+    source_id: int = Field(foreign_key="job_source.id")
+    company_id: int = Field(foreign_key="company.id")
+    title: str
+    location: str | None = None
+    remote_type: str | None = None
+    employment_type: str | None = None
+    seniority: str | None = None
+    salary: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    description: str = ""
+    requirements: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    keywords: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    apply_url: str
+    posted_at: datetime | None = Field(default=None, sa_column=Column(UtcDateTime))
+    raw_snapshot_ref: str | None = None
+    fetched_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
+    dedupe_hash: str
