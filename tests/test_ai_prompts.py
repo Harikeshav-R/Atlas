@@ -8,6 +8,7 @@ from jinja2 import UndefinedError
 from atlas.ai.prompts import (
     PARSE_JOB_POSTING_PROMPT_VERSION,
     SCORE_FIT_PROMPT_VERSION,
+    SELECT_AND_REWORD_PROMPT_VERSION,
     PromptNotFoundError,
     RenderedPrompt,
     render_prompt,
@@ -68,6 +69,34 @@ def test_missing_score_fit_context_variable_raises() -> None:
     # StrictUndefined applies to score_fit too — an omitted var fails at render.
     with pytest.raises(UndefinedError):
         render_prompt("score_fit", SCORE_FIT_PROMPT_VERSION, title="only-title")
+
+
+def test_render_select_and_reword_templates() -> None:
+    rendered = render_prompt(
+        "select_and_reword",
+        SELECT_AND_REWORD_PROMPT_VERSION,
+        title="Backend Engineer",
+        company="Globex",
+        location="Remote",
+        seniority="senior",
+        keywords=["python"],
+        requirements={"must": ["Python"]},
+        description="Build reliable services.",
+        emphasis=["distributed systems"],
+        honesty_level="light_inference",
+        blocks="[blk_a] (experience) Led the platform team",
+    )
+    assert isinstance(rendered, RenderedPrompt)
+    assert rendered.task == "select_and_reword"
+    assert "resume tailor" in rendered.system
+    assert "light_inference" in rendered.user
+    assert "[blk_a] (experience)" in rendered.user
+    assert "distributed systems" in rendered.user
+
+
+def test_missing_select_and_reword_context_variable_raises() -> None:
+    with pytest.raises(UndefinedError):
+        render_prompt("select_and_reword", SELECT_AND_REWORD_PROMPT_VERSION, title="only-title")
 
 
 def test_unknown_task_raises_prompt_not_found() -> None:
