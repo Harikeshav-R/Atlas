@@ -25,6 +25,14 @@ from atlas.resume.errors import (
     ResumeSourceError,
 )
 from atlas.resume.parser import StructureExtractor, normalize_markdown, parse_markdown
+from atlas.resume.repository import (
+    create_version,
+    get_blocks,
+    get_latest_master_resume,
+    get_master_resume,
+    list_versions,
+)
+from atlas.resume.service import Parser, SetOutcome, apply_reparse, apply_set, utcnow
 from atlas.resume.structure import (
     BlockType,
     ParsedBlock,
@@ -38,11 +46,21 @@ __all__ = [
     "MasterResumeNotFoundError",
     "ParsedBlock",
     "ParsedResume",
+    "Parser",
     "ResumeError",
     "ResumeSourceError",
+    "SetOutcome",
     "StructureExtractor",
+    "apply_reparse",
+    "apply_set",
     "content_id_for",
+    "create_version",
+    "get_blocks",
+    "get_latest_master_resume",
+    "get_master_resume",
+    "list_versions",
     "normalize_markdown",
     "normalize_text",
     "parse_markdown",
+    "utcnow",
 ]
