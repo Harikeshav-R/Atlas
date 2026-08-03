@@ -23,6 +23,7 @@ from sqlmodel import JSON, Column, Field, SQLModel
 from atlas.db.types import UtcDateTime
 
 __all__ = [
+    "Application",
     "Company",
     "JobPosting",
     "JobSource",
@@ -30,6 +31,7 @@ __all__ = [
     "MatchScore",
     "Profile",
     "ResumeBlock",
+    "TailoredResume",
     "User",
 ]
 
@@ -316,4 +318,85 @@ class MatchScore(SQLModel, table=True):
     salary_fit: str
     signals: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     model: str
+    created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
+
+
+class Application(SQLModel, table=True):
+    """A job application Atlas is preparing or tracking (PROJECT.md §5.12, §6).
+
+    Every posting the user prepares materials for becomes an ``Application`` — the
+    parent that a :class:`TailoredResume` (and, later, a cover letter and Q&A
+    answers) hangs off. This table lands with resume tailoring (a tailored resume
+    needs an application to belong to); the full status **state machine** and the
+    Kanban/TUI that drive :attr:`status` / :attr:`status_history` / :attr:`applied_at`
+    / :attr:`outcome` arrive with application tracking (PROJECT.md §5.12). The
+    columns are the complete §6 set so that later work needs no further migration.
+    An application is deduplicated by (job posting, profile) in code.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        job_posting_id: The :class:`JobPosting` this application is for.
+        profile_id: The :class:`Profile` the application is being prepared under.
+        status: The current pipeline stage (defaults to ``"preparing"``; the full
+            state machine is wired in a later feature).
+        status_history: Timestamped status transitions, as a JSON array (empty
+            until the state machine lands).
+        applied_at: When the user marked the application submitted, if at all
+            (timezone-aware UTC).
+        outcome: The final outcome (offer / rejected / …), if known.
+        notes: Free-form user notes / journal.
+        created_at: When the application was created (timezone-aware UTC).
+        updated_at: When the application was last updated (timezone-aware UTC).
+    """
+
+    __tablename__ = "application"
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_posting_id: int = Field(foreign_key="job_posting.id")
+    profile_id: int = Field(foreign_key="profile.id")
+    status: str = "preparing"
+    status_history: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    applied_at: datetime | None = Field(default=None, sa_column=Column(UtcDateTime))
+    outcome: str | None = None
+    notes: str | None = None
+    created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
+    updated_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
+
+
+class TailoredResume(SQLModel, table=True):
+    """One tailored resume produced for an application (PROJECT.md §5.7, §6).
+
+    A tailored resume selects and rewords content from a specific immutable
+    :class:`MasterResume` version (:attr:`master_resume_version`, the traceability
+    anchor) to fit one posting, and is rendered to a one-page PDF referenced by
+    :attr:`rendered_pdf_ref` (on disk, never a DB blob, §6). Tailored resumes are
+    **append-only and versioned per application**: re-tailoring inserts a new row
+    with an incremented :attr:`version` rather than mutating an earlier one.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        application_id: The owning :class:`Application`.
+        master_resume_version: The master-resume version the content was drawn
+            from (links back to the immutable source for traceability).
+        selections: The selected, content-ID'd items and their reasons, as a JSON
+            array.
+        final_content: The rendered resume view model snapshot, as a JSON object.
+        rendered_pdf_ref: On-disk path to the rendered PDF, or ``None``.
+        decisions: The include/exclude/reword rationale per item, as a JSON array.
+        edited_by_user: Whether the user has hand-edited this tailored resume.
+        version: 1-based version number within the owning application.
+        created_at: When this tailored resume was created (timezone-aware UTC).
+    """
+
+    __tablename__ = "tailored_resume"
+
+    id: int | None = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="application.id")
+    master_resume_version: int
+    selections: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    final_content: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    rendered_pdf_ref: str | None = None
+    decisions: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+    edited_by_user: bool = False
+    version: int
     created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))

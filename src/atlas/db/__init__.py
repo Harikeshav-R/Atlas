@@ -15,6 +15,7 @@ from atlas.db.engine import create_db_engine, db_path, sqlite_url
 from atlas.db.errors import DatabaseError, MigrationError
 from atlas.db.migrate import alembic_config, initialize_database, upgrade_to_head
 from atlas.db.models import (
+    Application,
     Company,
     JobPosting,
     JobSource,
@@ -22,11 +23,13 @@ from atlas.db.models import (
     MatchScore,
     Profile,
     ResumeBlock,
+    TailoredResume,
     User,
 )
 from atlas.db.session import session_scope
 
 __all__ = [
+    "Application",
     "Company",
     "DatabaseError",
     "JobPosting",
@@ -36,6 +39,7 @@ __all__ = [
     "MigrationError",
     "Profile",
     "ResumeBlock",
+    "TailoredResume",
     "User",
     "alembic_config",
     "create_db_engine",
