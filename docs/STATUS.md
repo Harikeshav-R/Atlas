@@ -9,9 +9,10 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-03 (master-resume ingest/parse/versioning landed —
-  **Phase 1 item #2 done**; paste-URL scrape is next)
-- **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ **done**)
+- **Last updated:** 2026-08-03 (paste-URL scrape/parse landed — **Phase 1 item #3
+  done**; fit scoring is next)
+- **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
+  paste-URL scrape ✅ **done**)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -20,26 +21,32 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #2 (master resume ingest + parse + versioning) has landed** — see "What has
-landed". The `atlas.resume` package (deterministic Markdown parser into content-ID'd blocks
-behind an AI-fallback seam, immutable monotonic versions, repository + ingest/reparse
-service), the `atlas resume set|reparse|show` commands, and the `master_resume` /
-`resume_block` tables are in. **Do #3 next: paste-URL scrape + parse** (§5.5) — turn a
-user-pasted job URL into a normalized `JobPosting` (static `httpx` fetch + Playwright
-fallback; JSON-LD/OpenGraph/ATS DOM extraction, then an AI extraction pass), storing a raw
-snapshot. It feeds the fit-scoring and tailoring steps that follow. Remaining Phase 1 order:
+**Phase 1 item #3 (paste-URL scrape + parse) has landed** — see "What has landed". The
+`atlas.scrape` package (injectable `httpx` fetch with a `BrowserFetcher` seam for the
+deferred Playwright fallback, JSON-LD/OpenGraph/main-text extraction then the
+`parse_job_posting` AI pass, dedup + on-disk snapshots), the `atlas add` /
+`atlas postings list|show` commands, the `company` / `job_source` / `job_posting` tables, and
+the versioned Jinja2 `atlas.ai.prompts` library are in. **Do #4 next: fit scoring for a
+pasted job** (§5.6) — for a stored `JobPosting` + the active profile + a compact master-resume
+summary, ask the AI (via `complete_json`) for a structured fit assessment (score 0-100,
+verdict, rationale, matched strengths, gaps, dealbreaker hits, salary fit), computing the
+deterministic signals (salary/location/work-auth/deal-breakers) as prompt context + badges,
+and persist a `match_score` row. Wire it into `atlas add` (scrape → score) and add
+`atlas score <id>`. Remaining Phase 1 order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
 2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
-3. **Paste-URL scrape + parse** (static + Playwright fallback) — `atlas.scrape`. ← **do this next**
-4. **Fit scoring** for a pasted job — `atlas.matching`.
+3. ✅ **Paste-URL scrape + parse** — `atlas.scrape`.
+4. **Fit scoring** for a pasted job — `atlas.matching`. ← **do this next**
 5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement.
 6. **Application tracking** + the core TUI screens.
 
-> **Note for #3+:** the AI provider abstraction is fully built but **not yet wired to any
-> command**. The resume parser leaves a `StructureExtractor` seam (`atlas.resume.parser`) for
-> its `parse_master_resume` AI fallback; the scrape step's AI extraction pass is the natural
-> place to make the first real command→model call (`complete_json` + `build_provider_chain`).
+> **Reusable groundwork for #4:** the AI provider abstraction is now **wired end-to-end** —
+> `atlas add` builds a `build_provider_chain(config.ai, store)` and drives `complete_json`
+> through the versioned Jinja2 prompt library (`atlas.ai.prompts`). Fit scoring adds a
+> `score_fit` prompt (a new `templates/score_fit/v1/` pair) and a `match_score` table, reusing
+> that same wiring. Note: `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` exist but are
+> still unconsumed — the cheaper-tier/spend-cap plumbing (§5.6 cost controls) is greenfield.
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -84,7 +91,37 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 
 ## ✅ What has landed
 
-Phase 1 · Master resume ingest + parse + versioning — `atlas.resume` + CLI (this branch):
+Phase 1 · Paste-URL scrape + parse — `atlas.scrape` + `atlas.ai.prompts` + CLI (this branch):
+
+- `atlas.scrape.fetcher`: an injectable `Fetcher` protocol (httpx-backed `default_fetcher`,
+  pragma'd; a `FakeFetcher` in the suite) fronts the network, with a `BrowserFetcher` seam for
+  the **deferred Playwright** JS-render fallback (no `playwright` dep yet — wired in a later
+  step, like the resume parser's AI seam).
+- `atlas.scrape.extract` + `ai_extract`: a deterministic ladder — JSON-LD (schema.org
+  `JobPosting`) → OpenGraph → main text; a structured posting with a title short-circuits the
+  AI, otherwise the **`parse_job_posting` AI pass** runs. This is the **first command-flow
+  model call** in Atlas. Per §7 an `LLMOutputError` degrades gracefully (raw text kept as the
+  description) so a hard page is still saved.
+- `atlas.scrape.repository` + `snapshot` + `service`: pure repo over an open session
+  (get-or-create company by name + the single `type="url"` source, dedup by normalized apply
+  URL), on-disk raw-HTML snapshots (referenced, never a DB blob), and the `add_posting`
+  orchestration (fetch → extract → AI-if-needed → snapshot → persist; idempotent re-add). All
+  boundaries injected (fetcher, provider, snapshot dir, clock) so the suite is hermetic.
+- `atlas.ai.prompts`: the versioned Jinja2 prompt library §18.1 locks in — `render_prompt`
+  loads `system.jinja` + `user.jinja` from `templates/<task>/v<version>/` under a
+  `StrictUndefined` env, returning a `RenderedPrompt`. Ships `parse_job_posting/v1`; `.jinja`
+  files ship in the wheel (verified via `uv build`).
+- `company` / `job_source` / `job_posting` tables (`atlas.db.models`) with an Alembic migration
+  (`down_revision` on the master-resume schema); `job_posting.fetched_at`/`posted_at` use
+  `UtcDateTime`.
+- CLI (`atlas.cli.scrape` + `main`): `atlas add <url>` (build provider chain like `doctor` →
+  `add_posting`) and `atlas postings list|show` (Rich table / detail grid + `--json`). Pure
+  logic/render/orchestrate split like `resume`; fetch/extraction failures and unknown ids →
+  exit 1. 100% line+branch; `mypy --strict` incl. win32. Verified end-to-end (hermetically):
+  first add creates the posting + writes a snapshot, re-adding the same URL is a no-op, and
+  `postings list`/`show`/`--json` behave.
+
+Phase 1 · Master resume ingest + parse + versioning — `atlas.resume` + CLI:
 
 - `atlas.resume.structure` + `parser`: a deterministic Markdown parser splits the resume into
   ordered, typed `ParsedBlock`s (contact/summary/experience/project/skill/education/…) by
@@ -356,7 +393,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master-resume ingest/parse/versioning ✅; paste-URL scrape next |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅; fit scoring next |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

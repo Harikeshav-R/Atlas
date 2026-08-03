@@ -1054,7 +1054,11 @@ The document specs everything; build order is phased. Each phase is independentl
   set|reparse|show`; deterministic Markdown parser into content-ID'd blocks
   behind an AI-fallback seam, immutable monotonic versions, `master_resume` /
   `resume_block` tables.)
-- [ ] **Paste-URL** scrape + parse (static + Playwright fallback).
+- [x] **Paste-URL** scrape + parse (static + Playwright fallback). (`atlas.scrape`
+  + `atlas add` / `atlas postings list|show`; injectable `httpx` fetch with a
+  `BrowserFetcher` seam for the deferred Playwright fallback, JSON-LD/OpenGraph/
+  main-text extraction then the `parse_job_posting` AI pass, `company` /
+  `job_source` / `job_posting` tables, on-disk snapshots.)
 - [ ] **Fit scoring** for a pasted job.
 - [ ] **Resume tailoring** + **cover letter** + **HTML→PDF rendering** with one-page enforce.
 - [ ] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
