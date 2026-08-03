@@ -1050,7 +1050,10 @@ The document specs everything; build order is phased. Each phase is independentl
 - [x] Onboarding Q&A + preferences; **single** profile (schema already multi-profile).
   (`atlas.profiles` + `atlas init` / `atlas profile list|add|edit|use`; typed
   `ProfilePreferences`, repository, injectable-prompter wizard, DB bootstrap.)
-- [ ] Master resume ingest + parse + versioning.
+- [x] Master resume ingest + parse + versioning. (`atlas.resume` + `atlas resume
+  set|reparse|show`; deterministic Markdown parser into content-ID'd blocks
+  behind an AI-fallback seam, immutable monotonic versions, `master_resume` /
+  `resume_block` tables.)
 - [ ] **Paste-URL** scrape + parse (static + Playwright fallback).
 - [ ] **Fit scoring** for a pasted job.
 - [ ] **Resume tailoring** + **cover letter** + **HTML→PDF rendering** with one-page enforce.

@@ -32,6 +32,15 @@ atlas profile edit <id>    # edit a profile (current values offered as defaults)
 atlas profile use <id>     # make a profile the active one
 ```
 
+Ingest and version your single master resume (a Markdown file):
+
+```bash
+atlas resume set <path>    # ingest/point at your resume (new version only if it changed)
+atlas resume reparse       # re-parse the current resume into a new version
+atlas resume show          # list stored versions (● marks the latest)
+atlas resume show --json   # machine-readable, for scripting
+```
+
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
 the `ATLAS_LOG_LEVEL` env var / the `[logging]` config.
