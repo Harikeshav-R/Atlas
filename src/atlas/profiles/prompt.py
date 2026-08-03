@@ -23,8 +23,6 @@ from typing import TYPE_CHECKING, Protocol
 from rich.markup import escape
 from rich.prompt import Confirm, Prompt
 
-from atlas.cli.console import console as _shared_console
-
 if TYPE_CHECKING:
     from rich.console import Console
 
@@ -54,8 +52,18 @@ class RichPrompter:
     """
 
     def __init__(self, console: Console | None = None) -> None:
-        """Store the console to prompt on (defaults to the shared Atlas console)."""
-        self._console = console if console is not None else _shared_console
+        """Store the console to prompt on (defaults to the shared Atlas console).
+
+        The shared console is imported lazily here rather than at module load, so
+        the lower-level ``profiles`` package does not import ``atlas.cli`` while
+        the CLI is still initializing (which would form an import cycle once other
+        packages sit between them).
+        """
+        if console is None:
+            from atlas.cli.console import console as shared_console
+
+            console = shared_console
+        self._console = console
 
     def ask_text(  # pragma: no cover - reads from the interactive console (AGENTS.md §6.2)
         self, message: str, *, default: str = ""
