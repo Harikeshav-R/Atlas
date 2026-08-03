@@ -9,10 +9,11 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-03 (fit scoring landed — **Phase 1 item #4 done**;
-  resume tailoring + cover letter + HTML→PDF is next)
+- **Last updated:** 2026-08-03 (rendering-pipeline foundation landed — **Phase 1
+  item #5, PR 1 of 3**; tailoring engine is next)
 - **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
-  paste-URL scrape ✅ · fit scoring ✅ **done**)
+  paste-URL scrape ✅ · fit scoring ✅ · **item #5 in progress**: render
+  foundation ✅, tailoring + cover letter next)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -21,34 +22,38 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #4 (fit scoring) has landed** — see "What has landed". The `atlas.matching`
-package (deterministic salary/location/work-auth/deal-breaker `signals`, the compact
-`build_resume_summary`, the `score_fit` AI pass via `complete_json`, the append-only
-`match_score` persistence, and the `score_posting` orchestration), the `atlas score <id>`
-command, the best-effort scoring wired into `atlas add`, the latest score surfaced in
-`atlas postings list|show`, the `match_score` table + migration, and the `score_fit/v1`
-prompt are all in. **Do #5 next: resume tailoring + cover letter + HTML→PDF rendering with
-one-page enforcement** (§5.7, §5.8, §5.11) — the diff-mode tailoring pipeline (relevance
-selection by content id → targeted diffs → apply → verify) with a full-output fallback, the
-honesty guardrails + deterministic safety nets (§5.7 step 6, §11), a cover-letter generator,
-and the WeasyPrint HTML/CSS→PDF renderer with the render-measure-trim one-page loop. Remaining
-Phase 1 order:
+**Phase 1 item #5, PR 1 of 3 (rendering-pipeline foundation) has landed** — see "What has
+landed". `atlas.render` turns the master resume into a one-page PDF: a Jinja2 HTML theme
+(`jakes-resume`, the default) rendered against a view model built from the content-ID'd resume
+blocks, a `PdfRenderer` seam with a lazy WeasyPrint impl that reports the measured page count,
+an on-disk PDF store, the `[render]` config section, and the `atlas resume render` command.
+Item #5 is being built as three PRs — **do PR 2 next: the tailoring engine** (`atlas.tailor`,
+§5.7) — the diff-mode pipeline (relevance selection by content id → targeted diffs → apply →
+verify) with a full-output fallback, the honesty guardrails + deterministic date-restore safety
+net (§5.7 step 6, §11), a minimal `application` + `tailored_resume` table pair, and the
+render-measure-**trim** one-page loop built on this PR's page-count signal. PR 3 is the
+cover-letter generator (`atlas.coverletter`, §5.8) + the application-keyed `atlas render` /
+`atlas open` commands. Remaining Phase 1 order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
 2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
 3. ✅ **Paste-URL scrape + parse** — `atlas.scrape`.
 4. ✅ **Fit scoring** for a pasted job — `atlas.matching`.
-5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement. ← **do this next**
+5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement (3 PRs).
+   ← **in progress**: render foundation ✅ (`atlas.render`); tailoring + cover letter next.
 6. **Application tracking** + the core TUI screens.
 
-> **Reusable groundwork for #5:** the content-ID'd `resume_block` traceability anchor
-> (`atlas.resume`) is the input to diff-mode tailoring; the versioned Jinja2 prompt library
-> (`atlas.ai.prompts`) and `complete_json` wiring extend to the `select_resume_content` /
-> `reword_bullets` / `write_cover_letter` tasks (§7); and `atlas.matching` establishes the
+> **Reusable groundwork for #5 PR 2 (tailoring):** the content-ID'd `resume_block` traceability
+> anchor (`atlas.resume`) is the input to diff-mode tailoring; the versioned Jinja2 prompt
+> library (`atlas.ai.prompts`) and `complete_json` wiring extend to the `select_resume_content`
+> / `reword_bullets` / `write_cover_letter` tasks (§7); `atlas.matching` establishes the
 > domain-package shape (structure / ai-pass / service / repository split, injected boundaries)
-> to mirror. Still unconsumed: `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` — the
-> cheaper-tier/spend-cap plumbing (§5.6 cost controls) remains greenfield; `render` config
-> (`[render]` engine/theme) is not yet wired.
+> to mirror; and `atlas.render` now provides the PDF pipeline + **page-count** signal the
+> one-page trim loop consumes (inject a `PdfRenderer`; re-render → measure → trim → repeat). The
+> tailoring PR also introduces the minimal `application` + `tailored_resume` tables (the render
+> output is application-keyed per §6). Still unconsumed: `AiConfig.scoring_model_tier` /
+> `daily_spend_cap_usd` — the cheaper-tier/spend-cap plumbing (§5.6 cost controls) remains
+> greenfield.
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -92,6 +97,37 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 1 · Rendering-pipeline foundation — `atlas.render` + `atlas resume render` (item #5, PR 1/3):
+
+- `atlas.render.structure` + `context`: pure view models (`ResumeContext` / `ResumeSection` /
+  `ResumeEntry`, and `RenderResult` = pdf bytes + measured page count) and
+  `build_resume_context(blocks, *, name)` — groups the content-ID'd `ResumeBlock`s by type into
+  ordered, titled sections (contact → header; unknown types folded into "Additional" so nothing
+  is dropped), normalizing bullet markers.
+- `atlas.render.themes` + `themes/jakes-resume/`: a `render_resume_html(context, *, theme)` that
+  reads a theme's `resume.html.jinja` + `resume.css` and renders self-contained HTML (CSS inlined;
+  `autoescape=True`, `StrictUndefined`). Ships the **`jakes-resume`** theme (the default) — the
+  familiar Jake Gutierrez one-page layout (centered name/contact header, ruled section headings,
+  two-line entry headers with right-aligned dates/locations, tight bullet lists). A missing
+  template or stylesheet → `ThemeNotFoundError`. `.jinja`/`.css` ship in the wheel (verified via
+  `uv build`).
+- `atlas.render.renderer`: the `PdfRenderer` seam mirroring the scraper's `Fetcher` /
+  litellm `CompletionFn` — `default_weasyprint_renderer` (lazy `import weasyprint`, `# pragma: no
+  cover`) returns pdf bytes + `len(document.pages)`; `build_renderer(config)` maps `engine` →
+  impl (`weasyprint` today; anything else → a clear `RenderError`, so Chromium plugs in later).
+- `atlas.render.store`: `write_pdf(...)` writes the PDF under `<data_dir>/renders` (injectable
+  dir; referenced by path, never a DB blob, §6), mirroring `scrape.snapshot`.
+- `atlas.render.service`: `render_master_resume(session, *, renderer, theme, renders_dir=None)` —
+  resolve latest resume + user name → build context → render HTML → render PDF → write →
+  `RenderOutcome` (path, page_count, one_page, version, theme). `NoMasterResumeError` when unset.
+- `[render]` config (`RenderConfig`: `engine`/`resume_theme`/`cover_theme`) now loads (was an
+  ignored block); default `resume_theme = "jakes-resume"`.
+- CLI (`atlas.cli.render` + `main`): `atlas resume render` (build renderer from config →
+  `render_master_resume` → Rich detail grid / `--json`), warning when the render overflows one
+  page (the trim loop lands with tailoring). Invalid config / unsupported engine / no resume →
+  exit 1. 100% line+branch; `mypy --strict` incl. win32. Verified the real WeasyPrint path
+  produces a valid 1-page PDF; the suite injects a `FakePdfRenderer` so CI never loads WeasyPrint.
 
 Phase 1 · Fit scoring — `atlas.matching` + `score_fit` prompt + CLI (this branch):
 

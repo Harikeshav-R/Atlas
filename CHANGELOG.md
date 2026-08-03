@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rendering pipeline foundation** (`atlas.render`): the first slice of Phase 1
+  item #5 (PROJECT.md §5.11). Renders the master resume to a one-page PDF through
+  an HTML/CSS → PDF pipeline — a Jinja2 HTML theme (`clean-one-page`, ATS-safe,
+  single-column) rendered against a view model built from the content-ID'd resume
+  blocks, turned into a PDF by an injectable `PdfRenderer`. The default renderer
+  uses **WeasyPrint**, imported lazily behind the seam (marked `# pragma: no
+  cover`) so the hermetic suite injects a fake and never loads WeasyPrint or its
+  system libs. The renderer reports the measured **page count** — the signal the
+  one-page enforcement loop will consume when tailoring lands — and `atlas.render`
+  warns when the resume overflows one page. Rendered PDFs are stored on disk under
+  the data dir (referenced by path, never as DB blobs, §6). Other backends
+  (`engine = "chromium"`) are rejected with a clear error until implemented.
+- **`atlas resume render` command** (PROJECT.md §9): renders the latest
+  master-resume version to a PDF and reports the path, page count, version, and
+  theme (Rich detail grid, or `--json` for scripting). Rendering is deterministic
+  (no AI). Invalid config, an unsupported render engine, or no master resume exit
+  `1`.
+- **`[render]` config section** (`RenderConfig`): `engine` (default `weasyprint`),
+  `resume_theme` (default `clean-one-page`), and `cover_theme` (default `matching`,
+  reserved for the later cover-letter step), per PROJECT.md §10. Previously an
+  ignored block; now loaded into `Config.render`.
+- New runtime dependency: `weasyprint` (the pure-Python HTML/CSS → PDF renderer).
 - **Fit scoring** (`atlas.matching`): the fourth Phase 1 feature (PROJECT.md
   §5.6, §7 `score_fit`). Scores a stored `JobPosting` against the active
   profile's preferences and a compact master-resume summary: it asks the AI (via

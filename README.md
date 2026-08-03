@@ -39,7 +39,13 @@ atlas resume set <path>    # ingest/point at your resume (new version only if it
 atlas resume reparse       # re-parse the current resume into a new version
 atlas resume show          # list stored versions (● marks the latest)
 atlas resume show --json   # machine-readable, for scripting
+atlas resume render        # render the latest version to a one-page PDF (Jake's-résumé theme)
+atlas resume render --json # machine-readable, for scripting
 ```
+
+`atlas resume render` produces the PDF via an HTML/CSS → PDF pipeline (WeasyPrint
+by default) and reports the output path and measured page count; if the resume
+overflows one page it warns you (tailoring, coming next, trims it to fit).
 
 Scrape a job posting from a URL, inspect what was saved, and score it for fit:
 
