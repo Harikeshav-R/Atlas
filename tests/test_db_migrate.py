@@ -28,8 +28,14 @@ def test_upgrade_to_head_creates_the_schema(tmp_path: Path) -> None:
         tables = set(inspect(engine).get_table_names())
     finally:
         engine.dispose()
-    # The migration built both tables plus Alembic's bookkeeping table.
-    assert {"user", "profile", "alembic_version"} <= tables
+    # The migrations build every table declared so far plus Alembic's bookkeeping.
+    assert {
+        "user",
+        "profile",
+        "master_resume",
+        "resume_block",
+        "alembic_version",
+    } <= tables
 
 
 def test_upgrade_to_head_wraps_failures_in_migration_error(
