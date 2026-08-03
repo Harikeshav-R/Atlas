@@ -19,6 +19,8 @@ from typing import Any
 
 from sqlmodel import JSON, Column, Field, SQLModel
 
+from atlas.db.types import UtcDateTime
+
 __all__ = ["MasterResume", "Profile", "ResumeBlock", "User"]
 
 
@@ -101,7 +103,7 @@ class MasterResume(SQLModel, table=True):
     source_path: str | None = None
     raw_markdown: str
     parsed: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
-    created_at: datetime
+    created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
 
 
 class ResumeBlock(SQLModel, table=True):

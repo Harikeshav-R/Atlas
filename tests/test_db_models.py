@@ -110,6 +110,9 @@ def test_master_resume_and_blocks_round_trip(db_engine: Engine) -> None:
         assert stored.version == 1
         assert stored.source_path == "/home/sam/resume.md"
         assert stored.parsed == {"blocks": [{"type": "experience", "text": "Shipped a thing"}]}
+        # UtcDateTime re-attaches UTC on load (SQLite would otherwise drop tzinfo).
+        assert stored.created_at == created
+        assert stored.created_at.tzinfo is UTC
         block = session.exec(select(ResumeBlock).order_by(col(ResumeBlock.position))).one()
         assert block.master_resume_id == stored.id
         assert block.content_id == "blk_abc123"
