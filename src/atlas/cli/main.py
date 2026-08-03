@@ -13,6 +13,7 @@ re-exported :data:`app` Typer instance in :mod:`atlas.cli`.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -28,6 +29,12 @@ from atlas.cli.profile import (
     render_profiles,
     switch_active_profile,
 )
+from atlas.cli.resume import (
+    build_resume_report,
+    ingest_resume,
+    render_resume_status,
+    reparse_resume,
+)
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
@@ -36,6 +43,7 @@ from atlas.logging import setup_logging
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
+from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -55,6 +63,13 @@ profile_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(profile_app)
+
+resume_app = typer.Typer(
+    name="resume",
+    help="Ingest, reparse, and inspect your master resume.",
+    no_args_is_help=True,
+)
+app.add_typer(resume_app)
 
 
 @app.callback()
@@ -257,3 +272,81 @@ def profile_use(
     finally:
         engine.dispose()
     console.print(f"[success]Activated profile[/success] (id {profile_id}).")
+
+
+@resume_app.command("set")
+def resume_set(
+    path: Path = typer.Argument(
+        ...,
+        help="Path to the master-resume Markdown file to ingest.",
+        exists=False,  # missing files are reported by us, not by Typer, for a themed error
+    ),
+) -> None:
+    """Ingest a Markdown master resume, versioning it when the content changed.
+
+    Reads the file, parses it into content-ID'd blocks, and stores it as a new
+    version — unless the content is unchanged from the current version, in which
+    case nothing is written (PROJECT.md §5.3). Past versions are never modified.
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = ingest_resume(session, path)
+    except ResumeSourceError as exc:
+        error_console.print(f"[error]atlas resume set:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if outcome.created:
+        console.print(
+            f"[success]Saved master resume[/success] (version [accent]{outcome.version}[/accent], "
+            f"{outcome.block_count} blocks)."
+        )
+    else:
+        console.print(
+            f"[muted]No change — master resume is already at version {outcome.version}.[/muted]"
+        )
+
+
+@resume_app.command("reparse")
+def resume_reparse() -> None:
+    """Re-parse the current master resume into a new version.
+
+    Re-runs the parser on the latest version's stored Markdown and saves the
+    result as a new version, so an improved parser can be applied without the
+    original file. Fails if no master resume has been set yet.
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = reparse_resume(session)
+    except MasterResumeNotFoundError as exc:
+        error_console.print(f"[error]atlas resume reparse:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    console.print(
+        f"[success]Reparsed master resume[/success] (version [accent]{outcome.version}[/accent], "
+        f"{outcome.block_count} blocks)."
+    )
+
+
+@resume_app.command("show")
+def resume_show(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the version list as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Show the stored master-resume versions, marking the latest."""
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            report = build_resume_report(session)
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(report.model_dump_json(indent=2))
+    else:
+        console.print(render_resume_status(report))

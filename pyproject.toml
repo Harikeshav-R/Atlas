@@ -101,6 +101,13 @@ convention = "google"
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
+[tool.ruff.lint.flake8-bugbear]
+# Typer declares CLI parameters via calls in argument defaults
+# (``x: T = typer.Argument(...)``). These are the framework's declarative idiom,
+# not mutable-default bugs, so exempt them from B008. (Primitive-typed params are
+# already exempt as immutable types; this covers the rest, e.g. ``Path``.)
+extend-immutable-calls = ["typer.Argument", "typer.Option"]
+
 # --- mypy (strict) --------------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"

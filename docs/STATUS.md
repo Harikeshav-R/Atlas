@@ -9,9 +9,9 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-02 (onboarding + profiles landed — **Phase 1 item #1 done**;
-  master-resume ingest is next)
-- **Current phase:** Phase 1 — Core loop 🚧 (onboarding Q&A + preferences ✅ **done**)
+- **Last updated:** 2026-08-03 (master-resume ingest/parse/versioning landed —
+  **Phase 1 item #2 done**; paste-URL scrape is next)
+- **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ **done**)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -20,18 +20,26 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #1 (onboarding Q&A + preferences) has landed** — see "What has landed". The
-`atlas.profiles` package (typed preferences, repository, injectable-prompter wizard), the
-`atlas init` / `atlas profile list|add|edit|use` commands, and the `initialize_database`
-bootstrap are in. **Do #2 next: master resume ingest + parse + versioning** (§5.3) — it
-feeds the fit-scoring and tailoring steps that follow. Remaining Phase 1 order:
+**Phase 1 item #2 (master resume ingest + parse + versioning) has landed** — see "What has
+landed". The `atlas.resume` package (deterministic Markdown parser into content-ID'd blocks
+behind an AI-fallback seam, immutable monotonic versions, repository + ingest/reparse
+service), the `atlas resume set|reparse|show` commands, and the `master_resume` /
+`resume_block` tables are in. **Do #3 next: paste-URL scrape + parse** (§5.5) — turn a
+user-pasted job URL into a normalized `JobPosting` (static `httpx` fetch + Playwright
+fallback; JSON-LD/OpenGraph/ATS DOM extraction, then an AI extraction pass), storing a raw
+snapshot. It feeds the fit-scoring and tailoring steps that follow. Remaining Phase 1 order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
-2. **Master resume ingest + parse + versioning** — `atlas.resume`. ← **do this next**
-3. **Paste-URL scrape + parse** (static + Playwright fallback) — `atlas.scrape`.
+2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
+3. **Paste-URL scrape + parse** (static + Playwright fallback) — `atlas.scrape`. ← **do this next**
 4. **Fit scoring** for a pasted job — `atlas.matching`.
 5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement.
 6. **Application tracking** + the core TUI screens.
+
+> **Note for #3+:** the AI provider abstraction is fully built but **not yet wired to any
+> command**. The resume parser leaves a `StructureExtractor` seam (`atlas.resume.parser`) for
+> its `parse_master_resume` AI fallback; the scrape step's AI extraction pass is the natural
+> place to make the first real command→model call (`complete_json` + `build_provider_chain`).
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -76,7 +84,35 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 
 ## ✅ What has landed
 
-Phase 1 · Onboarding & profiles — `atlas.profiles` + CLI (this branch):
+Phase 1 · Master resume ingest + parse + versioning — `atlas.resume` + CLI (this branch):
+
+- `atlas.resume.structure` + `parser`: a deterministic Markdown parser splits the resume into
+  ordered, typed `ParsedBlock`s (contact/summary/experience/project/skill/education/…) by
+  heading convention. Each block carries a **stable `content_id`** (a truncated SHA-256 of its
+  type + normalized text) so an unchanged bullet keeps its id across versions — the
+  traceability anchor for fit-scoring/tailoring/honesty. Duplicate identical blocks
+  disambiguate via an occurrence index; heading-less input is captured best-effort so nothing
+  is dropped. The `parse_master_resume` **AI fallback is deliberately not wired yet**:
+  `parse_markdown` exposes a `StructureExtractor` seam (consulted only for heading-less input)
+  that the AI extractor fills later with no change to the deterministic path.
+- `atlas.resume.repository` + `service`: pure functions over an open `Session` (mirroring
+  `atlas.profiles.repository`) plus the ingest/reparse orchestration. Versions are **immutable
+  and monotonic**: `apply_set` creates a new version only when the normalized Markdown differs
+  from the latest (identical content is a no-op), `apply_reparse` re-versions from the stored
+  source, and neither touches earlier versions. The parser and clock are injected so the logic
+  is hermetic (`utcnow` is the default clock).
+- `master_resume` + `resume_block` tables (`atlas.db.models`) with an Alembic migration
+  (`down_revision` on the initial schema). `atlas.db.types.UtcDateTime` makes `created_at`
+  round-trip as timezone-aware UTC (SQLite otherwise drops `tzinfo`); every future timestamp
+  column uses it.
+- CLI (`atlas.cli.resume` + `main`): `atlas resume set <path>` (ingest, version-if-changed),
+  `atlas resume reparse` (re-version from stored source), `atlas resume show` (Rich table +
+  `--json`). Pure logic/render/orchestrate split like `profile`; missing file → clean error +
+  exit 1, not-yet-set resume on `reparse` → exit 1. 100% line+branch; `mypy --strict` incl.
+  win32. Verified end-to-end: `set` writes v1, an unchanged re-`set` is a no-op, an edit + `set`
+  writes v2, `reparse` writes v3, and `show`/`--json` behave.
+
+Phase 1 · Onboarding & profiles — `atlas.profiles` + CLI:
 
 - `ProfilePreferences` (`atlas.profiles.preferences`): typed, structured per-profile
   preferences covering PROJECT.md §5.2 — target roles/variants, seniority, specializations,
@@ -320,7 +356,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding Q&A + preferences ✅; master-resume ingest next |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master-resume ingest/parse/versioning ✅; paste-URL scrape next |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

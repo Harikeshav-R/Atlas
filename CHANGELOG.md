@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Master resume ingest, parse & versioning** (`atlas.resume`): the second Phase
+  1 feature (PROJECT.md §5.3). A deterministic Markdown parser splits the single
+  master resume into ordered, typed blocks (contact/summary/experience/project/
+  skill/education/…) by heading convention; each block gets a **stable content
+  id** derived from its type and normalized text, so an unchanged bullet keeps its
+  id across versions — the traceability anchor the later fit-scoring, tailoring,
+  and honesty-validation steps build on. Duplicate identical blocks disambiguate
+  via an occurrence index, and heading-less input is still captured best-effort.
+  The AI-assisted structure extractor (the `parse_master_resume` task, §7) is not
+  wired yet; `parse_markdown` exposes a `StructureExtractor` seam it will fill
+  later, with no change to the deterministic path. A repository (pure functions
+  over an open `Session`) and an ingest/reparse service persist **immutable,
+  monotonically-versioned** rows into the new `master_resume` + `resume_block`
+  tables: `atlas resume set` creates a new version only when the content changed
+  (identical content is a no-op), `atlas resume reparse` re-versions from the
+  stored source, and both keep earlier versions untouched.
+- **`atlas resume set|reparse|show` commands** (PROJECT.md §9): `set <path>`
+  ingests a Markdown resume (reporting the new version or a no-op), `reparse`
+  re-versions the current resume, and `show` lists versions (Rich table or
+  `--json`) marking the latest. Missing files and a not-yet-set resume map to a
+  clear message and exit code 1. Logic lives in `atlas.cli.resume` (mirroring
+  `atlas.cli.profile`), testable without invoking the CLI.
+- **`master_resume` and `resume_block` tables** (`atlas.db.models`, PROJECT.md §6)
+  with an Alembic migration: `master_resume` holds immutable per-user versions
+  (version, source path, raw Markdown, parsed-structure JSON, created-at) and
+  `resume_block` holds the content-ID'd blocks referencing it.
+- **`UtcDateTime` column type** (`atlas.db.types`): SQLite drops `tzinfo` on a
+  datetime round-trip, so this type decorator stores UTC and re-attaches it on
+  load, guaranteeing timezone-aware UTC timestamps regardless of backend. Used by
+  `master_resume.created_at` and by every future timestamp column.
 - **Onboarding & profiles** (`atlas.profiles`): the first Phase 1 feature
   (PROJECT.md §5.2). A typed `ProfilePreferences` model captures per-profile
   job-search preferences — target roles/variants, seniority, specializations,
