@@ -19,6 +19,7 @@ from atlas.ai.prompts.loader import RenderedPrompt, render_prompt
 
 __all__ = [
     "PARSE_JOB_POSTING_PROMPT_VERSION",
+    "SCORE_FIT_PROMPT_VERSION",
     "PromptError",
     "PromptNotFoundError",
     "RenderedPrompt",
@@ -27,3 +28,6 @@ __all__ = [
 
 #: The prompt-template version the ``parse_job_posting`` task currently uses.
 PARSE_JOB_POSTING_PROMPT_VERSION = 1
+
+#: The prompt-template version the ``score_fit`` task currently uses.
+SCORE_FIT_PROMPT_VERSION = 1
