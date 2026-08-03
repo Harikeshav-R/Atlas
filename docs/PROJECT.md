@@ -818,7 +818,7 @@ backup_count = 3                     # rotated files to keep
 
 [render]
 engine = "weasyprint"                # or "chromium"
-resume_theme = "clean-one-page"
+resume_theme = "jakes-resume"        # ships as the default one-page theme
 cover_theme  = "matching"
 
 [tailoring]

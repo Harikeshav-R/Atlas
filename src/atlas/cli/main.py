@@ -31,6 +31,7 @@ from atlas.cli.profile import (
     render_profiles,
     switch_active_profile,
 )
+from atlas.cli.render import render_render_outcome
 from atlas.cli.resume import (
     build_resume_report,
     ingest_resume,
@@ -53,6 +54,9 @@ from atlas.matching.service import ScoreOutcome, score_posting
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
+from atlas.render.errors import RenderError
+from atlas.render.renderer import build_renderer
+from atlas.render.service import render_master_resume
 from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
 from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
 from atlas.scrape.service import AddOutcome, add_posting
@@ -350,6 +354,45 @@ def resume_reparse() -> None:
         f"[success]Reparsed master resume[/success] (version [accent]{outcome.version}[/accent], "
         f"{outcome.block_count} blocks)."
     )
+
+
+@resume_app.command("render")
+def resume_render(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the render outcome as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Render the latest master-resume version to a one-page PDF.
+
+    Builds the HTML from the configured theme, renders it to PDF with the
+    configured engine (PROJECT.md §5.11), stores the PDF under the data dir, and
+    reports the path and measured page count. Rendering is deterministic (no AI).
+    Exits ``1`` if configuration is invalid, the render engine is unsupported, or
+    no master resume has been set yet.
+    """
+    try:
+        config = load_config()
+        renderer = build_renderer(config.render)
+    except (ConfigError, RenderError) as exc:
+        error_console.print(f"[error]atlas resume render:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = render_master_resume(
+                session, renderer=renderer, theme=config.render.resume_theme
+            )
+    except RenderError as exc:
+        error_console.print(f"[error]atlas resume render:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_render_outcome(outcome))
 
 
 @resume_app.command("show")
