@@ -41,14 +41,24 @@ atlas resume show          # list stored versions (● marks the latest)
 atlas resume show --json   # machine-readable, for scripting
 ```
 
-Scrape a job posting from a URL and inspect what was saved:
+Scrape a job posting from a URL, inspect what was saved, and score it for fit:
 
 ```bash
-atlas add <url>            # scrape + parse a posting and save it (re-adding a URL is a no-op)
-atlas postings list        # list saved postings
-atlas postings show <id>   # show one posting's normalized fields
+atlas add <url>            # scrape + parse a posting, save it, and score it for fit
+atlas postings list        # list saved postings (with their latest fit score)
+atlas postings show <id>   # show one posting's normalized fields + latest fit
 atlas postings list --json # machine-readable, for scripting
+
+atlas score <id>           # (re)score a saved posting for fit against the active profile
+atlas score <id> --json    # machine-readable, for scripting
 ```
+
+`atlas add` scores a newly-saved posting automatically; if you haven't set an
+active profile or a master resume yet, it saves the posting and points you at
+`atlas score`. Scoring combines an AI fit assessment (score, verdict, rationale,
+matched strengths, gaps) with deterministic salary / location / work-auth /
+deal-breaker signals shown as badges. Re-scoring appends a new assessment rather
+than replacing the last one.
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /

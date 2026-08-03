@@ -9,10 +9,10 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-03 (paste-URL scrape/parse landed — **Phase 1 item #3
-  done**; fit scoring is next)
+- **Last updated:** 2026-08-03 (fit scoring landed — **Phase 1 item #4 done**;
+  resume tailoring + cover letter + HTML→PDF is next)
 - **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
-  paste-URL scrape ✅ **done**)
+  paste-URL scrape ✅ · fit scoring ✅ **done**)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -21,32 +21,34 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #3 (paste-URL scrape + parse) has landed** — see "What has landed". The
-`atlas.scrape` package (injectable `httpx` fetch with a `BrowserFetcher` seam for the
-deferred Playwright fallback, JSON-LD/OpenGraph/main-text extraction then the
-`parse_job_posting` AI pass, dedup + on-disk snapshots), the `atlas add` /
-`atlas postings list|show` commands, the `company` / `job_source` / `job_posting` tables, and
-the versioned Jinja2 `atlas.ai.prompts` library are in. **Do #4 next: fit scoring for a
-pasted job** (§5.6) — for a stored `JobPosting` + the active profile + a compact master-resume
-summary, ask the AI (via `complete_json`) for a structured fit assessment (score 0-100,
-verdict, rationale, matched strengths, gaps, dealbreaker hits, salary fit), computing the
-deterministic signals (salary/location/work-auth/deal-breakers) as prompt context + badges,
-and persist a `match_score` row. Wire it into `atlas add` (scrape → score) and add
-`atlas score <id>`. Remaining Phase 1 order:
+**Phase 1 item #4 (fit scoring) has landed** — see "What has landed". The `atlas.matching`
+package (deterministic salary/location/work-auth/deal-breaker `signals`, the compact
+`build_resume_summary`, the `score_fit` AI pass via `complete_json`, the append-only
+`match_score` persistence, and the `score_posting` orchestration), the `atlas score <id>`
+command, the best-effort scoring wired into `atlas add`, the latest score surfaced in
+`atlas postings list|show`, the `match_score` table + migration, and the `score_fit/v1`
+prompt are all in. **Do #5 next: resume tailoring + cover letter + HTML→PDF rendering with
+one-page enforcement** (§5.7, §5.8, §5.11) — the diff-mode tailoring pipeline (relevance
+selection by content id → targeted diffs → apply → verify) with a full-output fallback, the
+honesty guardrails + deterministic safety nets (§5.7 step 6, §11), a cover-letter generator,
+and the WeasyPrint HTML/CSS→PDF renderer with the render-measure-trim one-page loop. Remaining
+Phase 1 order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
 2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
 3. ✅ **Paste-URL scrape + parse** — `atlas.scrape`.
-4. **Fit scoring** for a pasted job — `atlas.matching`. ← **do this next**
-5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement.
+4. ✅ **Fit scoring** for a pasted job — `atlas.matching`.
+5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement. ← **do this next**
 6. **Application tracking** + the core TUI screens.
 
-> **Reusable groundwork for #4:** the AI provider abstraction is now **wired end-to-end** —
-> `atlas add` builds a `build_provider_chain(config.ai, store)` and drives `complete_json`
-> through the versioned Jinja2 prompt library (`atlas.ai.prompts`). Fit scoring adds a
-> `score_fit` prompt (a new `templates/score_fit/v1/` pair) and a `match_score` table, reusing
-> that same wiring. Note: `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` exist but are
-> still unconsumed — the cheaper-tier/spend-cap plumbing (§5.6 cost controls) is greenfield.
+> **Reusable groundwork for #5:** the content-ID'd `resume_block` traceability anchor
+> (`atlas.resume`) is the input to diff-mode tailoring; the versioned Jinja2 prompt library
+> (`atlas.ai.prompts`) and `complete_json` wiring extend to the `select_resume_content` /
+> `reword_bullets` / `write_cover_letter` tasks (§7); and `atlas.matching` establishes the
+> domain-package shape (structure / ai-pass / service / repository split, injected boundaries)
+> to mirror. Still unconsumed: `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` — the
+> cheaper-tier/spend-cap plumbing (§5.6 cost controls) remains greenfield; `render` config
+> (`[render]` engine/theme) is not yet wired.
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -90,6 +92,43 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 1 · Fit scoring — `atlas.matching` + `score_fit` prompt + CLI (this branch):
+
+- `atlas.matching.structure`: the pure `FitAssessment` (the `complete_json` target — score,
+  verdict, rationale, matched strengths / gaps / dealbreaker hits, salary fit) and
+  `DeterministicSignals` models, with `Verdict` / `SalaryFit` / `SignalStatus` `StrEnum`s and
+  `extra="ignore"` (forward-compatible), mirroring `atlas.scrape.structure`.
+- `atlas.matching.signals`: `compute_signals(posting, preferences)` computes the deterministic
+  salary / location / work-auth / deal-breaker signals locally (never the LLM), each degrading
+  to `UNKNOWN` when the inputs don't support a decision — passed into the prompt as context and
+  shown as badges, never used to pre-discard (§5.6).
+- `atlas.matching.summary`: `build_resume_summary(blocks)` builds a compact, size-capped
+  plaintext summary of the fit-relevant resume blocks for the prompt (the "compact master-resume
+  summary" §5.6 asks for).
+- `atlas.matching.ai_score`: `score_fit(...)` renders the versioned `score_fit` prompt and drives
+  `complete_json` for a `FitAssessment`. Unlike `parse_job_posting`, it **does not** swallow
+  `LLMOutputError` — a bogus score would pollute the queue, so it propagates for the service to
+  wrap.
+- `atlas.matching.repository` + `service`: append-only `create_match_score` /
+  `get_latest_match_score`, and `score_posting(session, id, *, provider, clock=utcnow)` —
+  resolve posting/active-profile/latest-resume, compute signals, score, persist, return a
+  `ScoreOutcome`; precondition failures raise `NoActiveProfileError` / `NoMasterResumeError`,
+  and `LLMOutputError` → `ScoringError`. All boundaries injected (provider, clock) so the suite
+  is hermetic.
+- `score_fit/v1` prompt (`atlas.ai.prompts`, `SCORE_FIT_PROMPT_VERSION`); `.jinja` files ship
+  in the wheel (verified via `uv build`).
+- `match_score` table (`atlas.db.models`) with an Alembic migration (`down_revision` on the
+  job-posting schema); beyond §6 it adds `salary_fit` + a `signals` JSON blob so badges render
+  on re-view. `created_at` uses `UtcDateTime`.
+- CLI (`atlas.cli.matching` + `main`): `atlas score <id>` (build provider chain like `add` →
+  `score_posting` → Rich detail grid with signal badges / `--json`), best-effort scoring wired
+  into `atlas add` (scores a new posting in its own transaction; a scoring failure warns and
+  keeps the saved posting), and the latest score/verdict surfaced as a Fit column in
+  `atlas postings list|show`. Unknown id / no profile / no resume / unusable AI output → exit 1.
+  100% line+branch; `mypy --strict` incl. win32. (A pre-existing latent import cycle —
+  `profiles.prompt` importing `atlas.cli.console` at module load — was made lazy so the new
+  `atlas.matching → atlas.profiles` edge doesn't close the loop.)
 
 Phase 1 · Paste-URL scrape + parse — `atlas.scrape` + `atlas.ai.prompts` + CLI (this branch):
 
@@ -393,7 +432,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅; fit scoring next |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅ · fit scoring ✅; tailoring next |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

@@ -656,7 +656,12 @@ Core tables (simplified):
   employment_type, seniority, salary (JSON), description, requirements (JSON),
   keywords (JSON), apply_url, posted_at, raw_snapshot_ref, fetched_at, dedupe_hash.
 - **match_score** — id, job_posting_id, profile_id, score, verdict, rationale,
-  matched_strengths (JSON), gaps (JSON), dealbreaker_hits (JSON), model, created_at.
+  matched_strengths (JSON), gaps (JSON), dealbreaker_hits (JSON), salary_fit,
+  signals (JSON), model, created_at. (`salary_fit` is the AI's salary verdict and
+  `signals` holds the computed deterministic signals — salary / location /
+  work-auth / deal-breakers — so §5.6's badges render on re-view without
+  recomputing against a since-changed profile. Rows are **append-only**: re-scoring
+  inserts a new row and the latest is surfaced, preserving fit history.)
 - **application** — id, job_posting_id, profile_id, status, status_history (JSON),
   applied_at, outcome, notes, created_at, updated_at.
 - **tailored_resume** — id, application_id, master_resume_version, selections (JSON),
@@ -1059,7 +1064,10 @@ The document specs everything; build order is phased. Each phase is independentl
   `BrowserFetcher` seam for the deferred Playwright fallback, JSON-LD/OpenGraph/
   main-text extraction then the `parse_job_posting` AI pass, `company` /
   `job_source` / `job_posting` tables, on-disk snapshots.)
-- [ ] **Fit scoring** for a pasted job.
+- [x] **Fit scoring** for a pasted job. (`atlas.matching` + `atlas score` /
+  `atlas add` scoring; deterministic salary/location/work-auth/deal-breaker
+  signals as prompt context + badges, the `score_fit` AI pass via `complete_json`,
+  append-only `match_score` rows, latest score surfaced in `atlas postings`.)
 - [ ] **Resume tailoring** + **cover letter** + **HTML→PDF rendering** with one-page enforce.
 - [ ] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
   workspace, Applications, Application detail).
