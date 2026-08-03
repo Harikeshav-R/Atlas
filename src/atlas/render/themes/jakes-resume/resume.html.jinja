@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ resume.name }} — Resume</title>
+    <style>{{ css | safe }}</style>
+  </head>
+  <body>
+    <header class="resume-header">
+      <h1 class="resume-name">{{ resume.name }}</h1>
+      {% if resume.contact_lines %}
+      <div class="resume-contact">
+        {% for line in resume.contact_lines %}
+        <span class="contact-item">{{ line }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </header>
+
+    {% for section in resume.sections %}
+    <section class="resume-section">
+      <h2 class="section-heading">{{ section.heading }}</h2>
+      {% for entry in section.entries %}
+      <div class="entry">
+        {% if entry.lines %}
+        <p class="entry-title">{{ entry.lines[0] }}</p>
+        {% if entry.lines | length > 1 %}
+        <ul class="entry-bullets">
+          {% for line in entry.lines[1:] %}
+          <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endfor %}
+  </body>
+</html>

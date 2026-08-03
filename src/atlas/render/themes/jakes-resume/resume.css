@@ -1,0 +1,83 @@
+/* jakes-resume — an HTML/CSS port of Jake Gutierrez's popular one-page résumé
+   template (github.com/jakegut/resume). A centered name/contact header, small-caps
+   section headings underlined by a full-width rule, and tight bullet lists — tuned
+   for a dense single Letter page. WeasyPrint reads @page for size and margins. */
+
+@page {
+  size: Letter;
+  margin: 1.3cm 1.4cm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  /* Jake's template is set in Computer Modern; a serif stack is the closest
+     browser-safe approximation without shipping a font file. */
+  font-family: "Latin Modern Roman", "Georgia", "Times New Roman", serif;
+  font-size: 10.5pt;
+  line-height: 1.25;
+  color: #000;
+  margin: 0;
+}
+
+/* --- Header ------------------------------------------------------------------ */
+
+.resume-header {
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.resume-name {
+  font-size: 24pt;
+  font-weight: 700;
+  margin: 0 0 2px 0;
+  letter-spacing: 0.3px;
+}
+
+.resume-contact {
+  font-size: 9.5pt;
+}
+
+.contact-item + .contact-item::before {
+  content: " | ";
+  color: #000;
+}
+
+/* --- Sections ---------------------------------------------------------------- */
+
+.resume-section {
+  margin-top: 8px;
+}
+
+.section-heading {
+  font-size: 11pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 4px 0 2px 0;
+  padding-bottom: 1px;
+  border-bottom: 0.7px solid #000;
+}
+
+/* --- Entries ----------------------------------------------------------------- */
+
+.entry {
+  margin: 3px 0;
+}
+
+.entry-title {
+  font-weight: 700;
+  margin: 0;
+}
+
+.entry-bullets {
+  margin: 1px 0 3px 0;
+  padding-left: 16px;
+}
+
+.entry-bullets li {
+  margin: 0 0 1px 0;
+  padding-left: 2px;
+}

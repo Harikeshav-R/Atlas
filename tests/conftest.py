@@ -20,6 +20,7 @@ from sqlmodel import SQLModel
 from atlas.ai.base import LLMRequest, LLMResponse
 from atlas.ai.cli.runner import RunResult
 from atlas.db.engine import create_db_engine
+from atlas.render.structure import RenderResult
 from atlas.scrape.fetcher import FetchResult
 
 if TYPE_CHECKING:
@@ -270,6 +271,28 @@ def make_fake_fetcher() -> FakeFetcherFactory:
         return FakeFetcher(result, raises=raises)
 
     return factory
+
+
+class FakePdfRenderer:
+    """A scripted, offline :class:`~atlas.render.renderer.PdfRenderer` for tests.
+
+    Returns a :class:`~atlas.render.structure.RenderResult` with a canned
+    ``pdf_bytes`` and the configured ``page_count`` for every call, recording the
+    HTML it was handed on :attr:`html_calls` so tests assert what was rendered —
+    without ever importing WeasyPrint or its system libs (AGENTS.md §6.2). The
+    scripted page count drives the one-page vs. overflow branches.
+    """
+
+    def __init__(self, *, page_count: int = 1, pdf_bytes: bytes = b"%PDF-fake") -> None:
+        """Store the page count and canned bytes to replay."""
+        self._page_count = page_count
+        self._pdf_bytes = pdf_bytes
+        self.html_calls: list[str] = []
+
+    def __call__(self, *, html: str) -> RenderResult:
+        """Record the HTML and return the scripted :class:`RenderResult`."""
+        self.html_calls.append(html)
+        return RenderResult(pdf_bytes=self._pdf_bytes, page_count=self._page_count)
 
 
 @dataclass
