@@ -1,12 +1,12 @@
 """Typed schema for Atlas's ``config.toml``.
 
 Only the sections Atlas consumes today are modelled — cross-platform behaviour
-plus the ``[ai]`` backend selection. Unknown keys and whole sections (the
-``[render]``, ``[tailoring]``, ``[discovery]``, ``[integrations]``, and
-``[notifications]`` blocks from PROJECT.md §10) are **ignored** rather than
-rejected, so a user's fuller config still loads while those features are built
-out in later phases. Every field is defaulted, so a missing or empty config file
-yields a valid default :class:`Config`.
+plus the ``[ai]`` backend selection and the ``[render]`` pipeline. Unknown keys
+and the not-yet-built sections (the ``[tailoring]``, ``[discovery]``,
+``[integrations]``, and ``[notifications]`` blocks from PROJECT.md §10) are
+**ignored** rather than rejected, so a user's fuller config still loads while
+those features are built out in later phases. Every field is defaulted, so a
+missing or empty config file yields a valid default :class:`Config`.
 
 Secrets never appear here: API keys and passwords live in the OS keychain and
 the config references them only by handle (see :mod:`atlas.config.secrets`).
@@ -23,6 +23,7 @@ __all__ = [
     "Config",
     "LoggingConfig",
     "OpenRouterBackend",
+    "RenderConfig",
 ]
 
 
@@ -92,8 +93,29 @@ class LoggingConfig(_Base):
     backup_count: int = 3
 
 
+class RenderConfig(_Base):
+    """The ``[render]`` section: the HTML/CSS → PDF pipeline (PROJECT.md §5.11).
+
+    Attributes:
+        engine: The PDF renderer backend. ``"weasyprint"`` (the pure-Python
+            default) is implemented today; ``"chromium"`` (headless
+            Playwright print-to-PDF) is a documented later option and is
+            rejected with a clear error until it lands.
+        resume_theme: The name of the resume theme directory under
+            ``atlas/render/themes/``. Defaults to ``"jakes-resume"`` (the
+            familiar Jake Gutierrez one-page layout).
+        cover_theme: The cover-letter theme name. Not consumed yet (cover-letter
+            rendering is a later step); modelled now to match PROJECT.md §10.
+    """
+
+    engine: str = "weasyprint"
+    resume_theme: str = "jakes-resume"
+    cover_theme: str = "matching"
+
+
 class Config(_Base):
     """The top-level Atlas configuration."""
 
     ai: AiConfig = Field(default_factory=AiConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    render: RenderConfig = Field(default_factory=RenderConfig)

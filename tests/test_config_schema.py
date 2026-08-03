@@ -61,15 +61,30 @@ def test_failover_default_is_independent_per_instance() -> None:
 
 
 def test_extra_keys_are_ignored() -> None:
-    # Unknown keys and whole sections (future features) load without error.
+    # Unknown keys and not-yet-built sections (future features) load without error.
     config = Config.model_validate(
         {
             "ai": {"default_backend": "claude_code", "unknown_key": 1},
-            "render": {"engine": "weasyprint"},
+            "tailoring": {"honesty_level": "strict"},
         }
     )
     assert config.ai.default_backend == "claude_code"
-    assert not hasattr(config, "render")
+    assert not hasattr(config, "tailoring")
+
+
+def test_render_defaults() -> None:
+    render = Config().render
+    assert render.engine == "weasyprint"
+    assert render.resume_theme == "jakes-resume"
+    assert render.cover_theme == "matching"
+
+
+def test_render_section_loads() -> None:
+    config = Config.model_validate({"render": {"engine": "chromium", "resume_theme": "compact"}})
+    assert config.render.engine == "chromium"
+    assert config.render.resume_theme == "compact"
+    # Unset render keys keep their defaults.
+    assert config.render.cover_theme == "matching"
 
 
 def test_values_override_defaults() -> None:

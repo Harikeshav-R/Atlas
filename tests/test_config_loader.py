@@ -28,11 +28,22 @@ def test_load_valid_config(tmp_path: Path) -> None:
 def test_load_ignores_unknown_sections(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        '[ai]\ndefault_backend = "claude_code"\n\n[render]\nengine = "weasyprint"\n',
+        '[ai]\ndefault_backend = "claude_code"\n\n[tailoring]\nhonesty_level = "strict"\n',
         encoding="utf-8",
     )
     config = load_config(path)
     assert config.ai.default_backend == "claude_code"
+
+
+def test_load_render_section(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[render]\nengine = "weasyprint"\nresume_theme = "compact"\n',
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    assert config.render.engine == "weasyprint"
+    assert config.render.resume_theme == "compact"
 
 
 def test_load_malformed_toml_raises(tmp_path: Path) -> None:
