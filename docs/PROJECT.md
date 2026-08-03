@@ -1069,8 +1069,15 @@ The document specs everything; build order is phased. Each phase is independentl
   signals as prompt context + badges, the `score_fit` AI pass via `complete_json`,
   append-only `match_score` rows, latest score surfaced in `atlas postings`.)
 - [ ] **Resume tailoring** + **cover letter** + **HTML→PDF rendering** with one-page enforce.
+  *(In progress, built as three PRs: **HTML→PDF rendering** ✅ `atlas.render` + `atlas resume
+  render`; **resume tailoring** ✅ `atlas.tailor` + `atlas tailor` — the honesty-governed
+  `select_and_reword` pass, deterministic date-restore, the render-measure-trim one-page loop,
+  and the `application` + `tailored_resume` tables; **cover letter** + application-keyed
+  `atlas render`/`open` remain. Deferred to a PR 2b: the `honesty_validate` traceability pass,
+  AI-phrase scrub, keyword-gap suggestions, diff-mode, and per-profile honesty.)*
 - [ ] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
-  workspace, Applications, Application detail).
+  workspace, Applications, Application detail). *(The `application` table landed with tailoring;
+  this item adds the status state machine, history, and TUI on top.)*
 
 ### Phase 2 — Discovery & background
 - [ ] **Daemon** + scheduler + IPC.

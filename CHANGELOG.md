@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Resume tailoring engine** (`atlas.tailor`): the second slice of Phase 1 item
+  #5 (PROJECT.md §5.7). Produces a truth-anchored, one-page tailored resume PDF
+  for a stored posting: an honesty-governed AI pass (`select_and_reword`) selects
+  and rewords the most relevant master-resume content — every item traceable to a
+  source block by `content_id`, with hallucinated ids dropped — then a
+  deterministic safety net restores month-precision dates the model may have
+  dropped (§5.7 step 6), and a render-measure-trim loop packs the result onto one
+  page using the `atlas.render` pipeline. The AI provider, PDF renderer, clock,
+  and output directory are all injected, so the whole flow (including the trim
+  loop) is exercised hermetically. Diff-mode, the separate honesty-validation /
+  AI-phrase-scrub / keyword-gap passes, and per-profile honesty are deferred to a
+  follow-up.
+- **`atlas tailor <job_id>` command** (PROJECT.md §9): tailors your resume to a
+  saved posting and renders it to a PDF, reporting the path, included-block count,
+  page count, and any unsupported-keyword gaps (Rich detail grid or `--json`).
+  Unknown posting id, no active profile, no master resume, invalid config/engine,
+  or unusable AI output exit `1`.
+- **`[tailoring]` config section** (`TailoringConfig`): `honesty_level` (a
+  `strict` / `reword_only` / `light_inference` `HonestyLevel` enum, default
+  `light_inference` per §11) and `enforce_one_page` (default `true`), per
+  PROJECT.md §10. Previously an ignored block; now loaded into `Config.tailoring`.
+- **`application` and `tailored_resume` tables** (`atlas.db.models`, PROJECT.md
+  §6) with an Alembic migration. `application` ships its full §6 column set (status
+  machine + Kanban/TUI arrive with application tracking, item #6, needing no
+  further migration); `tailored_resume` is append-only and versioned per
+  application, referencing the immutable `master_resume_version` and the rendered
+  PDF by path (never a DB blob, §6).
+- **`select_and_reword` v1 prompt templates** (`atlas.ai.prompts`): the third task
+  in the versioned Jinja2 prompt library, with a `SELECT_AND_REWORD_PROMPT_VERSION`
+  constant.
 - **Rendering pipeline foundation** (`atlas.render`): the first slice of Phase 1
   item #5 (PROJECT.md §5.11). Renders the master resume to a one-page PDF through
   an HTML/CSS → PDF pipeline — a Jinja2 HTML theme (`clean-one-page`, ATS-safe,

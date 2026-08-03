@@ -57,6 +57,9 @@ atlas postings list --json # machine-readable, for scripting
 
 atlas score <id>           # (re)score a saved posting for fit against the active profile
 atlas score <id> --json    # machine-readable, for scripting
+
+atlas tailor <id>          # tailor your resume to a saved posting → one-page PDF
+atlas tailor <id> --json   # machine-readable, for scripting
 ```
 
 `atlas add` scores a newly-saved posting automatically; if you haven't set an
@@ -65,6 +68,12 @@ active profile or a master resume yet, it saves the posting and points you at
 matched strengths, gaps) with deterministic salary / location / work-auth /
 deal-breaker signals shown as badges. Re-scoring appends a new assessment rather
 than replacing the last one.
+
+`atlas tailor` builds a truth-anchored, one-page tailored resume for a posting:
+an AI pass selects and rewords the most relevant master-resume content (governed
+by the `[tailoring] honesty_level`), a safety net restores any dropped dates, and
+a render-measure-trim loop packs it onto one page. It reports the PDF path and any
+posting keywords it couldn't truthfully support; re-tailoring keeps a new version.
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /

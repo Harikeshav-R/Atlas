@@ -9,11 +9,11 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-03 (rendering-pipeline foundation landed — **Phase 1
-  item #5, PR 1 of 3**; tailoring engine is next)
+- **Last updated:** 2026-08-03 (resume-tailoring engine landed — **Phase 1 item
+  #5, PR 2 of 3**; cover letter + application-keyed render/open is next)
 - **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
   paste-URL scrape ✅ · fit scoring ✅ · **item #5 in progress**: render
-  foundation ✅, tailoring + cover letter next)
+  foundation ✅, tailoring engine ✅, cover letter next)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -22,38 +22,36 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #5, PR 1 of 3 (rendering-pipeline foundation) has landed** — see "What has
-landed". `atlas.render` turns the master resume into a one-page PDF: a Jinja2 HTML theme
-(`jakes-resume`, the default) rendered against a view model built from the content-ID'd resume
-blocks, a `PdfRenderer` seam with a lazy WeasyPrint impl that reports the measured page count,
-an on-disk PDF store, the `[render]` config section, and the `atlas resume render` command.
-Item #5 is being built as three PRs — **do PR 2 next: the tailoring engine** (`atlas.tailor`,
-§5.7) — the diff-mode pipeline (relevance selection by content id → targeted diffs → apply →
-verify) with a full-output fallback, the honesty guardrails + deterministic date-restore safety
-net (§5.7 step 6, §11), a minimal `application` + `tailored_resume` table pair, and the
-render-measure-**trim** one-page loop built on this PR's page-count signal. PR 3 is the
-cover-letter generator (`atlas.coverletter`, §5.8) + the application-keyed `atlas render` /
-`atlas open` commands. Remaining Phase 1 order:
+**Phase 1 item #5, PR 2 of 3 (resume-tailoring engine) has landed** — see "What has landed".
+`atlas.tailor` turns a stored posting + the master resume into a truth-anchored, one-page
+tailored resume PDF: an honesty-governed `select_and_reword` AI pass selects/rewords relevant
+blocks by `content_id`, a deterministic date-restore safety net runs, and a
+render-measure-**trim** loop (built on PR 1's page-count signal) packs it to one page. It ships
+the `[tailoring]` config, the `application` + `tailored_resume` tables, and `atlas tailor
+<job_id>`. Item #5 has one PR left — **do PR 3 next: the cover-letter generator**
+(`atlas.coverletter`, §5.8) + the application-keyed `atlas render` / `atlas open` commands. A
+**PR 2b** is also queued: the deferred tailoring depth — the separate `honesty_validate`
+traceability pass, the AI-phrase scrub (§5.7 step 5), keyword-gap suggestions (§5.7 step 4),
+diff-mode (skill-target plan → diffs → apply → verify), and per-profile honesty override.
+Remaining Phase 1 order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
 2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
 3. ✅ **Paste-URL scrape + parse** — `atlas.scrape`.
 4. ✅ **Fit scoring** for a pasted job — `atlas.matching`.
 5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement (3 PRs).
-   ← **in progress**: render foundation ✅ (`atlas.render`); tailoring + cover letter next.
-6. **Application tracking** + the core TUI screens.
+   ← **in progress**: render foundation ✅ (`atlas.render`) · tailoring engine ✅ (`atlas.tailor`);
+   cover letter + application-keyed render/open next.
+6. **Application tracking** + the core TUI screens (builds on the `application` table this PR added).
 
-> **Reusable groundwork for #5 PR 2 (tailoring):** the content-ID'd `resume_block` traceability
-> anchor (`atlas.resume`) is the input to diff-mode tailoring; the versioned Jinja2 prompt
-> library (`atlas.ai.prompts`) and `complete_json` wiring extend to the `select_resume_content`
-> / `reword_bullets` / `write_cover_letter` tasks (§7); `atlas.matching` establishes the
-> domain-package shape (structure / ai-pass / service / repository split, injected boundaries)
-> to mirror; and `atlas.render` now provides the PDF pipeline + **page-count** signal the
-> one-page trim loop consumes (inject a `PdfRenderer`; re-render → measure → trim → repeat). The
-> tailoring PR also introduces the minimal `application` + `tailored_resume` tables (the render
-> output is application-keyed per §6). Still unconsumed: `AiConfig.scoring_model_tier` /
-> `daily_spend_cap_usd` — the cheaper-tier/spend-cap plumbing (§5.6 cost controls) remains
-> greenfield.
+> **Reusable groundwork for #5 PR 3 (cover letter):** `atlas.tailor` establishes the full
+> shape to mirror — an AI pass via `complete_json` + a versioned prompt (`write_cover_letter`,
+> §7), rendered to PDF through `atlas.render` (add a cover-letter theme + the `cover_theme`
+> config, already modelled), persisted on the **existing `application`** row as a `cover_letter`
+> table (a new migration). The application-keyed `atlas render` / `atlas open` commands read the
+> latest `tailored_resume` / `cover_letter` `rendered_pdf_ref`. Still unconsumed:
+> `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` (§5.6 cost controls); per-profile
+> honesty override (§11); the deferred PR 2b tailoring passes noted above.
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -97,6 +95,40 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 1 · Resume-tailoring engine — `atlas.tailor` + `atlas tailor` (item #5, PR 2/3):
+
+- `atlas.tailor.structure`: pure `TailoredItem` / `TailoredResume` models (the `complete_json`
+  target — selection items keyed by `content_id` with reworded text + reasons, plus gaps),
+  mirroring `matching.structure`.
+- `atlas.tailor.ai_tailor`: `select_and_reword(...)` renders the versioned `select_and_reword`
+  prompt (posting + emphasis + honesty level + content-ID-tagged blocks) and drives
+  `complete_json`; **propagates `LLMOutputError`** (truth-anchored — the service wraps it).
+- `atlas.tailor.blocks`: `tag_blocks_for_prompt` (the `[content_id] (type) text` rendering) and
+  `render_blocks` — maps the AI's included items back onto real source blocks **by content_id**,
+  dropping any hallucinated id (anti-fabrication guard), producing unpersisted `ResumeBlock`s the
+  render pipeline already accepts.
+- `atlas.tailor.safety`: `restore_dates` — the deterministic §5.7-step-6 safety net that
+  re-appends month-year dates the rework dropped (regex, no LLM), keyed by content_id.
+- `atlas.tailor.onepage`: `pack_to_one_page` — the render-measure-**trim** loop (reuses
+  `render_resume_html` + the injected `PdfRenderer`), trimming the lowest-priority trailing
+  entry until it fits one page or a bounded cap; `enforce_one_page=False` renders once.
+- `atlas.tailor.service`: `tailor_posting(...)` — resolve posting/profile/resume → select+reword
+  → date-restore → block-map → build context → one-page pack → write PDF → get-or-create
+  `Application` + append versioned `TailoredResume` → `TailorOutcome`. `LLMOutputError` →
+  `TailoringOutputError`; missing posting/profile/resume raise. All boundaries injected.
+- `[tailoring]` config (`TailoringConfig` + `HonestyLevel` enum: `honesty_level` default
+  `light_inference`, `enforce_one_page` default `true`) now loads.
+- `application` (full §6 columns) + `tailored_resume` tables + an Alembic migration
+  (`down_revision` on the match_score head); `tailored_resume` append-only + versioned per
+  application, PDF referenced by path.
+- `select_and_reword/v1` prompt (`SELECT_AND_REWORD_PROMPT_VERSION`); `.jinja` ships in the wheel.
+- CLI (`atlas.cli.tailor` + `main`): `atlas tailor <job_id>` (build provider chain + renderer →
+  `tailor_posting` → Rich grid with PDF path / included count / page count / gaps, or `--json`),
+  warning on one-page overflow. Unknown id / no profile / no resume / config / AI failure → exit
+  1. 100% line+branch; `mypy --strict` incl. win32. Verified the full pipeline end-to-end with a
+  fake provider + real WeasyPrint → a valid 1-page PDF with dates restored; the suite injects a
+  `SequencedPdfRenderer` so CI never renders for real.
 
 Phase 1 · Rendering-pipeline foundation — `atlas.render` + `atlas resume render` (item #5, PR 1/3):
 
