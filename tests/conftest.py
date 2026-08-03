@@ -295,6 +295,32 @@ class FakePdfRenderer:
         return RenderResult(pdf_bytes=self._pdf_bytes, page_count=self._page_count)
 
 
+class SequencedPdfRenderer:
+    """A :class:`~atlas.render.renderer.PdfRenderer` returning a page-count *sequence*.
+
+    Unlike :class:`FakePdfRenderer` (a fixed page count), this returns the next
+    count from ``page_counts`` on each call, so a test can drive the one-page
+    render-measure-trim loop through convergence (e.g. ``[2, 1]``) or a
+    never-converging overflow (e.g. ``[2, 2, 2, ...]``). The last value is repeated
+    once the sequence is exhausted. Records each HTML on :attr:`html_calls`.
+    """
+
+    def __init__(self, page_counts: list[int], *, pdf_bytes: bytes = b"%PDF-fake") -> None:
+        """Store the page-count sequence and canned bytes to replay."""
+        assert page_counts, "SequencedPdfRenderer needs at least one page count"
+        self._page_counts = list(page_counts)
+        self._pdf_bytes = pdf_bytes
+        self._index = 0
+        self.html_calls: list[str] = []
+
+    def __call__(self, *, html: str) -> RenderResult:
+        """Record the HTML and return the next scripted :class:`RenderResult`."""
+        self.html_calls.append(html)
+        page_count = self._page_counts[min(self._index, len(self._page_counts) - 1)]
+        self._index += 1
+        return RenderResult(pdf_bytes=self._pdf_bytes, page_count=page_count)
+
+
 @dataclass
 class FakeMessage:
     """The ``choices[i].message`` shape the API provider reads via ``getattr``."""
