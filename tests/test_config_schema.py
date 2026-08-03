@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from atlas.config import AiConfig, ClaudeCodeBackend, Config, LoggingConfig
+from atlas.config.schema import HonestyLevel
 
 
 def test_config_defaults() -> None:
@@ -65,11 +66,11 @@ def test_extra_keys_are_ignored() -> None:
     config = Config.model_validate(
         {
             "ai": {"default_backend": "claude_code", "unknown_key": 1},
-            "tailoring": {"honesty_level": "strict"},
+            "discovery": {"poll_interval_minutes": 120},
         }
     )
     assert config.ai.default_backend == "claude_code"
-    assert not hasattr(config, "tailoring")
+    assert not hasattr(config, "discovery")
 
 
 def test_render_defaults() -> None:
@@ -85,6 +86,20 @@ def test_render_section_loads() -> None:
     assert config.render.resume_theme == "compact"
     # Unset render keys keep their defaults.
     assert config.render.cover_theme == "matching"
+
+
+def test_tailoring_defaults() -> None:
+    tailoring = Config().tailoring
+    assert tailoring.honesty_level is HonestyLevel.LIGHT_INFERENCE
+    assert tailoring.enforce_one_page is True
+
+
+def test_tailoring_section_loads() -> None:
+    config = Config.model_validate(
+        {"tailoring": {"honesty_level": "strict", "enforce_one_page": False}}
+    )
+    assert config.tailoring.honesty_level is HonestyLevel.STRICT
+    assert config.tailoring.enforce_one_page is False
 
 
 def test_values_override_defaults() -> None:
