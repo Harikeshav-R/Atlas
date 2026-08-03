@@ -37,6 +37,7 @@ def test_upgrade_to_head_creates_the_schema(tmp_path: Path) -> None:
         "company",
         "job_source",
         "job_posting",
+        "match_score",
         "alembic_version",
     } <= tables
 

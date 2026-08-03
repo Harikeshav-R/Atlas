@@ -27,6 +27,7 @@ __all__ = [
     "JobPosting",
     "JobSource",
     "MasterResume",
+    "MatchScore",
     "Profile",
     "ResumeBlock",
     "User",
@@ -260,3 +261,59 @@ class JobPosting(SQLModel, table=True):
     raw_snapshot_ref: str | None = None
     fetched_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
     dedupe_hash: str
+
+
+class MatchScore(SQLModel, table=True):
+    """One AI fit assessment of a posting against a profile (PROJECT.md §5.6, §6).
+
+    Atlas scores every candidate posting for fit rather than pre-filtering it away
+    (PROJECT.md §5.6): the AI returns a 0-100 :attr:`score`, a :attr:`verdict`, a
+    short :attr:`rationale`, and the matched strengths / gaps / dealbreaker hits it
+    found, while Atlas computes deterministic :attr:`signals` (salary / location /
+    work-auth / deal-breakers) that inform and annotate the score without
+    discarding anything.
+
+    Scores are **append-only**: re-scoring a posting (``atlas score``) inserts a
+    new row rather than mutating an earlier one, mirroring the immutable versioning
+    of :class:`MasterResume`, so the history of how a posting's fit changed (across
+    prompt/model versions or profile edits) is preserved. The latest row by
+    :attr:`created_at` is the one surfaced in the queue.
+
+    Beyond the PROJECT.md §6 column list this row also persists :attr:`salary_fit`
+    (the AI's salary verdict) and :attr:`signals` (the computed deterministic
+    signals) so the badges render on re-view without recomputing against a
+    since-changed profile.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        job_posting_id: The scored :class:`JobPosting`'s id.
+        profile_id: The :class:`Profile` the posting was scored against.
+        score: The AI fit score, 0-100.
+        verdict: The AI verdict — ``strong`` / ``good`` / ``stretch`` / ``weak``.
+        rationale: A 2-4 sentence explanation of the score.
+        matched_strengths: Strengths the posting matches, as a JSON array.
+        gaps: Missing keywords/skills/requirements, as a JSON array.
+        dealbreaker_hits: Deal-breakers the posting triggers, as a JSON array.
+        salary_fit: The AI salary verdict — ``above`` / ``within`` / ``below`` /
+            ``unknown``.
+        signals: The computed deterministic signals as a JSON object (salary /
+            location / work-auth / deal-breakers), shown as badges.
+        model: The AI model that produced the assessment.
+        created_at: When this assessment was created (timezone-aware UTC).
+    """
+
+    __tablename__ = "match_score"
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_posting_id: int = Field(foreign_key="job_posting.id")
+    profile_id: int = Field(foreign_key="profile.id")
+    score: int
+    verdict: str
+    rationale: str
+    matched_strengths: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    gaps: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    dealbreaker_hits: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    salary_fit: str
+    signals: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    model: str
+    created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))

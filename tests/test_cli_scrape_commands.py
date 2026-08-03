@@ -97,6 +97,14 @@ def test_add_saves_posting(
             posting_id=1, created=True, title="Backend Engineer", company="Acme"
         ),
     )
+    # A newly-saved posting is scored; the scoring step is stubbed here (its own
+    # wiring is covered in test_cli_matching_commands).
+    from atlas.matching.errors import NoActiveProfileError
+
+    def _no_score(session: object, posting_id: int, *, provider: object) -> object:
+        raise NoActiveProfileError
+
+    monkeypatch.setattr(app_module, "score_posting", _no_score)
     result = runner.invoke(app, ["add", "https://jobs.acme.test/1"])
     assert result.exit_code == 0
     assert "Saved posting" in result.output

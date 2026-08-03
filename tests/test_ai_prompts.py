@@ -7,6 +7,7 @@ from jinja2 import UndefinedError
 
 from atlas.ai.prompts import (
     PARSE_JOB_POSTING_PROMPT_VERSION,
+    SCORE_FIT_PROMPT_VERSION,
     PromptNotFoundError,
     RenderedPrompt,
     render_prompt,
@@ -29,10 +30,44 @@ def test_render_parse_job_posting_templates() -> None:
     assert "Senior Backend Engineer at Acme." in rendered.user
 
 
+def test_render_score_fit_templates() -> None:
+    rendered = render_prompt(
+        "score_fit",
+        SCORE_FIT_PROMPT_VERSION,
+        title="Backend Engineer",
+        company="Acme",
+        location="Remote",
+        remote_type="remote",
+        employment_type="full-time",
+        seniority="senior",
+        salary={"min": 150000},
+        keywords=["python"],
+        requirements={"must": ["Python"]},
+        description="Build reliable services.",
+        preferences={"target_roles": ["Backend Engineer"]},
+        resume_summary="Summary:\n- Shipped a distributed queue",
+        signals={"salary": "within", "location": "match"},
+    )
+    assert isinstance(rendered, RenderedPrompt)
+    assert rendered.task == "score_fit"
+    assert rendered.version == SCORE_FIT_PROMPT_VERSION
+    # The system prompt sets the assessor role; the user prompt carries context.
+    assert "job-fit assessor" in rendered.system
+    assert "Backend Engineer" in rendered.user
+    assert "Shipped a distributed queue" in rendered.user
+    assert "within" in rendered.user
+
+
 def test_missing_context_variable_raises() -> None:
     # StrictUndefined: a template var the caller omits fails loudly at render.
     with pytest.raises(UndefinedError):
         render_prompt("parse_job_posting", PARSE_JOB_POSTING_PROMPT_VERSION, url="only-url")
+
+
+def test_missing_score_fit_context_variable_raises() -> None:
+    # StrictUndefined applies to score_fit too — an omitted var fails at render.
+    with pytest.raises(UndefinedError):
+        render_prompt("score_fit", SCORE_FIT_PROMPT_VERSION, title="only-title")
 
 
 def test_unknown_task_raises_prompt_not_found() -> None:

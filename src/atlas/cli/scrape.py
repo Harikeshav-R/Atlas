@@ -19,7 +19,9 @@ from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
+from atlas.cli.matching import verdict_style
 from atlas.db.models import Company
+from atlas.matching.repository import get_latest_match_score
 from atlas.scrape.repository import get_posting, list_postings
 
 if TYPE_CHECKING:
@@ -46,6 +48,8 @@ class PostingSummary(BaseModel):
         company: The hiring company's name.
         location: The posting's location, if any.
         apply_url: The URL to apply at.
+        score: The latest fit score (0-100), or ``None`` if not yet scored.
+        verdict: The latest fit verdict, or ``None`` if not yet scored.
     """
 
     id: int
@@ -53,6 +57,8 @@ class PostingSummary(BaseModel):
     company: str
     location: str | None
     apply_url: str
+    score: int | None = None
+    verdict: str | None = None
 
 
 class PostingsReport(BaseModel):
@@ -80,6 +86,8 @@ class PostingDetail(BaseModel):
         keywords: Tech stack / keywords.
         apply_url: The URL to apply at.
         description: The full description text.
+        score: The latest fit score (0-100), or ``None`` if not yet scored.
+        verdict: The latest fit verdict, or ``None`` if not yet scored.
     """
 
     id: int
@@ -92,6 +100,8 @@ class PostingDetail(BaseModel):
     keywords: list[str]
     apply_url: str
     description: str
+    score: int | None = None
+    verdict: str | None = None
 
 
 def _company_name(session: Session, company_id: int) -> str:
@@ -114,6 +124,7 @@ def build_postings_report(session: Session) -> PostingsReport:
     summaries: list[PostingSummary] = []
     for posting in list_postings(session):
         assert posting.id is not None  # persisted rows always have an id
+        latest = get_latest_match_score(session, posting.id)
         summaries.append(
             PostingSummary(
                 id=posting.id,
@@ -121,6 +132,8 @@ def build_postings_report(session: Session) -> PostingsReport:
                 company=_company_name(session, posting.company_id),
                 location=posting.location,
                 apply_url=posting.apply_url,
+                score=latest.score if latest is not None else None,
+                verdict=latest.verdict if latest is not None else None,
             )
         )
     return PostingsReport(postings=summaries)
@@ -134,6 +147,7 @@ def build_posting_detail(session: Session, posting_id: int) -> PostingDetail:
     """
     posting = get_posting(session, posting_id)
     assert posting.id is not None
+    latest = get_latest_match_score(session, posting.id)
     return PostingDetail(
         id=posting.id,
         title=posting.title,
@@ -145,15 +159,17 @@ def build_posting_detail(session: Session, posting_id: int) -> PostingDetail:
         keywords=list(posting.keywords),
         apply_url=posting.apply_url,
         description=posting.description,
+        score=latest.score if latest is not None else None,
+        verdict=latest.verdict if latest is not None else None,
     )
 
 
 def render_postings(report: PostingsReport) -> RenderableType:
     """Render a :class:`PostingsReport` as a styled Rich renderable.
 
-    Produces a table of postings (id, title, company, location, apply URL) using
-    the shared semantic theme. An empty report renders a muted hint pointing at
-    ``atlas add``. Machine-readable output is produced separately via
+    Produces a table of postings (id, title, company, location, fit, apply URL)
+    using the shared semantic theme. An empty report renders a muted hint pointing
+    at ``atlas add``. Machine-readable output is produced separately via
     :meth:`PostingsReport.model_dump_json`.
     """
     if not report.postings:
@@ -163,6 +179,7 @@ def render_postings(report: PostingsReport) -> RenderableType:
     table.add_column("Title", style="accent")
     table.add_column("Company")
     table.add_column("Location")
+    table.add_column("Fit", no_wrap=True)
     table.add_column("Apply URL", style="muted")
     for posting in report.postings:
         table.add_row(
@@ -170,9 +187,21 @@ def render_postings(report: PostingsReport) -> RenderableType:
             posting.title,
             posting.company,
             Text(posting.location or "—", style="muted"),
+            _fit_text(posting.score, posting.verdict),
             posting.apply_url,
         )
     return table
+
+
+def _fit_text(score: int | None, verdict: str | None) -> Text:
+    """Render a posting's latest fit as ``"<score> <verdict>"``, or a muted ``"—"``.
+
+    An unscored posting (``score is None``) shows a muted ``"—"``; a scored one
+    colors the verdict through the shared semantic theme.
+    """
+    if score is None or verdict is None:
+        return Text("—", style="muted")
+    return Text.assemble((f"{score} ", "accent"), (verdict, verdict_style(verdict)))
 
 
 def render_posting_detail(detail: PostingDetail) -> RenderableType:
@@ -191,5 +220,6 @@ def render_posting_detail(detail: PostingDetail) -> RenderableType:
     table.add_row("Employment", detail.employment_type or "—")
     table.add_row("Seniority", detail.seniority or "—")
     table.add_row("Keywords", ", ".join(detail.keywords) or "—")
+    table.add_row("Fit", _fit_text(detail.score, detail.verdict))
     table.add_row("Apply URL", detail.apply_url)
     return Group(header, Text(), table)

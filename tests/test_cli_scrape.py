@@ -19,6 +19,9 @@ from atlas.cli.scrape import (
     render_postings,
 )
 from atlas.db import session_scope
+from atlas.matching.repository import create_match_score
+from atlas.profiles.preferences import ProfilePreferences
+from atlas.profiles.repository import create_profile
 from atlas.scrape.errors import JobPostingNotFoundError
 from atlas.scrape.repository import (
     create_job_posting,
@@ -55,6 +58,30 @@ def _seed(engine: Engine, *, title: str = "Backend Engineer", company: str = "Ac
         return posting.id
 
 
+def _score(engine: Engine, posting_id: int, *, score: int = 82, verdict: str = "strong") -> None:
+    """Attach a fit score to a seeded posting so the fit column has data."""
+    with session_scope(engine) as session:
+        profile = create_profile(
+            session, name="Backend Engineer", preferences=ProfilePreferences(), active=True
+        )
+        assert profile.id is not None
+        create_match_score(
+            session,
+            job_posting_id=posting_id,
+            profile_id=profile.id,
+            score=score,
+            verdict=verdict,
+            rationale="Strong overlap.",
+            matched_strengths=["Python"],
+            gaps=[],
+            dealbreaker_hits=[],
+            salary_fit="within",
+            signals={"salary": "within"},
+            model="fake-model",
+            created_at=_FETCHED,
+        )
+
+
 def _render(renderable: RenderableType) -> str:
     with console.capture() as capture:
         console.print(renderable)
@@ -85,6 +112,29 @@ def test_build_posting_detail_missing_raises(db_engine: Engine) -> None:
         build_posting_detail(session, 999)
 
 
+def test_build_reports_surface_latest_score(db_engine: Engine) -> None:
+    posting_id = _seed(db_engine)
+    _score(db_engine, posting_id, score=82, verdict="strong")
+    with session_scope(db_engine) as session:
+        report = build_postings_report(session)
+        detail = build_posting_detail(session, posting_id)
+    assert report.postings[0].score == 82
+    assert report.postings[0].verdict == "strong"
+    assert detail.score == 82
+    assert detail.verdict == "strong"
+
+
+def test_build_reports_leave_score_none_when_unscored(db_engine: Engine) -> None:
+    posting_id = _seed(db_engine)
+    with session_scope(db_engine) as session:
+        report = build_postings_report(session)
+        detail = build_posting_detail(session, posting_id)
+    assert report.postings[0].score is None
+    assert report.postings[0].verdict is None
+    assert detail.score is None
+    assert detail.verdict is None
+
+
 def test_render_empty_report_hints_at_add() -> None:
     text = _render(render_postings(PostingsReport(postings=[])))
     assert "atlas add" in text
@@ -105,8 +155,27 @@ def test_render_report_shows_postings() -> None:
     text = _render(render_postings(report))
     assert "Job postings" in text
     assert "Backend Engineer" in text
-    # A posting with no location renders the em-dash placeholder.
+    # A posting with no location (and no score) renders the em-dash placeholder.
     assert "—" in text
+
+
+def test_render_report_shows_scored_fit_column() -> None:
+    report = PostingsReport(
+        postings=[
+            PostingSummary(
+                id=1,
+                title="Backend Engineer",
+                company="Acme",
+                location="Remote",
+                apply_url="https://jobs.acme.test/1",
+                score=82,
+                verdict="strong",
+            )
+        ]
+    )
+    text = _render(render_postings(report))
+    assert "82" in text
+    assert "strong" in text
 
 
 def test_render_posting_detail() -> None:
@@ -126,8 +195,28 @@ def test_render_posting_detail() -> None:
     assert "Backend Engineer" in text
     assert "Acme" in text
     assert "python, postgres" in text
-    # Absent fields render the em-dash placeholder.
+    # Absent fields (and the not-yet-scored fit) render the em-dash placeholder.
     assert "—" in text
+
+
+def test_render_posting_detail_shows_scored_fit() -> None:
+    detail = PostingDetail(
+        id=1,
+        title="Backend Engineer",
+        company="Acme",
+        location="Remote",
+        remote_type="remote",
+        employment_type=None,
+        seniority=None,
+        keywords=["python"],
+        apply_url="https://jobs.acme.test/1",
+        description="Build things.",
+        score=91,
+        verdict="strong",
+    )
+    text = _render(render_posting_detail(detail))
+    assert "91" in text
+    assert "strong" in text
 
 
 def test_reports_json_round_trip() -> None:

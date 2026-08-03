@@ -1,0 +1,29 @@
+Assess the fit between the candidate and the posting below, returning the required
+JSON fields: score, verdict, rationale, matched_strengths, gaps, dealbreaker_hits,
+salary_fit.
+
+--- JOB POSTING START ---
+Title: {{ title }}
+Company: {{ company }}
+Location: {{ location }}
+Remote: {{ remote_type }}
+Employment type: {{ employment_type }}
+Seniority: {{ seniority }}
+Salary: {{ salary }}
+Keywords: {{ keywords }}
+Requirements: {{ requirements }}
+
+{{ description }}
+--- JOB POSTING END ---
+
+--- CANDIDATE PREFERENCES START ---
+{{ preferences }}
+--- CANDIDATE PREFERENCES END ---
+
+--- CANDIDATE RESUME SUMMARY START ---
+{{ resume_summary }}
+--- CANDIDATE RESUME SUMMARY END ---
+
+--- DETERMINISTIC SIGNALS START ---
+{{ signals }}
+--- DETERMINISTIC SIGNALS END ---

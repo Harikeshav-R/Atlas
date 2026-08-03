@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Fit scoring** (`atlas.matching`): the fourth Phase 1 feature (PROJECT.md
+  §5.6, §7 `score_fit`). Scores a stored `JobPosting` against the active
+  profile's preferences and a compact master-resume summary: it asks the AI (via
+  `complete_json` through the versioned `score_fit` Jinja2 prompt) for a
+  structured `FitAssessment` (score 0-100, verdict, rationale, matched strengths,
+  gaps, dealbreaker hits, salary fit) and computes deterministic signals
+  (salary / location / work-auth / deal-breakers) locally that are passed into
+  the prompt as context and shown as badges — they inform and annotate the score
+  but never pre-discard a posting (§5.6). Unlike the scrape parser, a failed
+  scoring call surfaces as an error (a bogus score would pollute the queue)
+  rather than degrading to a placeholder. Every external boundary (provider,
+  clock, session) is injected so the suite stays hermetic.
+- **`atlas score <id>` command + `atlas add` scoring integration** (PROJECT.md
+  §9): `score` scores a saved posting for fit and prints the assessment (Rich
+  detail grid with signal badges, or `--json` for scripting); re-scoring appends
+  a new assessment rather than replacing the last. `atlas add` now scores a
+  newly-saved posting in its own transaction (best-effort — a missing
+  profile/resume or AI failure prints a hint and keeps the saved posting rather
+  than failing). `atlas postings list`/`show` surface each posting's latest
+  fit score and verdict. Unknown ids, no active profile, no master resume, and
+  unusable AI output exit `1`.
+- **`match_score` table** (`atlas.db.models`, PROJECT.md §6) with an Alembic
+  migration. Beyond the §6 column list (score, verdict, rationale,
+  matched_strengths / gaps / dealbreaker_hits JSON, model, created_at) the row
+  also persists `salary_fit` and a `signals` JSON blob, so the deterministic
+  badges render on re-view without recomputing against a since-changed profile.
+  Scores are **append-only** (mirroring the immutable master-resume versioning),
+  preserving the history of how a posting's fit changed.
+- **`score_fit` v1 prompt templates** (`atlas.ai.prompts`, PROJECT.md §7): the
+  second task in the versioned Jinja2 prompt library, with a
+  `SCORE_FIT_PROMPT_VERSION` constant.
 - **Paste-URL scrape & parse** (`atlas.scrape`): the third Phase 1 feature
   (PROJECT.md §5.5). Turns a job-posting URL into a normalized, persisted
   `JobPosting`. Fetching is synchronous behind an injectable `Fetcher` protocol
@@ -270,6 +301,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`atlas add` now scores a newly-saved posting** (previously scoring was a
+  separate step). Scoring runs in its own transaction after the posting is
+  committed, so a scoring failure (e.g. no profile/resume yet) prints a hint and
+  never discards the saved posting.
 - **Claude Code adapter now drives `--output-format stream-json --verbose`**
   instead of `--output-format json`. The terminal `result` event still carries
   `structured_output`/`result`/`usage`/`total_cost_usd` (verified against the

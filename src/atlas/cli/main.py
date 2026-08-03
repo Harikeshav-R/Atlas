@@ -21,6 +21,7 @@ import typer
 from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.doctor import render_report, run_doctor
+from atlas.cli.matching import render_score
 from atlas.cli.profile import (
     apply_profile_edit,
     build_profile_report,
@@ -47,15 +48,19 @@ from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
 from atlas.db import initialize_database, session_scope
 from atlas.logging import setup_logging
+from atlas.matching.errors import MatchingError
+from atlas.matching.service import ScoreOutcome, score_posting
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
 from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
 from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
-from atlas.scrape.service import add_posting
+from atlas.scrape.service import AddOutcome, add_posting
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
+
+    from atlas.ai.base import LLMProvider
 
 __all__ = ["app"]
 
@@ -372,12 +377,14 @@ def resume_show(
 def add(
     url: str = typer.Argument(..., help="URL of the job posting to scrape and save."),
 ) -> None:
-    """Scrape a job posting from a URL, parse it, and save it.
+    """Scrape a job posting from a URL, parse it, save it, and score it for fit.
 
     Fetches the page, extracts the normalized fields (structured data first, then
     an AI pass over the page text, PROJECT.md §5.5), stores a raw snapshot, and
-    persists the posting. Re-adding a URL already saved is a no-op. Scoring the
-    posting for fit is a separate step and is not part of this command yet.
+    persists the posting. Re-adding a URL already saved is a no-op. A newly saved
+    posting is then scored for fit (PROJECT.md §5.6); scoring runs in its own
+    transaction so a scoring failure (e.g. no profile/resume yet) never discards
+    the saved posting — it just prints a hint to run ``atlas score`` later.
     """
     try:
         config = load_config()
@@ -390,21 +397,84 @@ def add(
     try:
         with session_scope(engine) as session:
             outcome = add_posting(session, url, provider=provider)
+        score = _score_after_add(engine, outcome, provider=provider) if outcome.created else None
     except ScrapeError as exc:
         error_console.print(f"[error]atlas add:[/error] {exc}")
         raise typer.Exit(code=1) from exc
     finally:
         engine.dispose()
     if outcome.created:
-        console.print(
+        message = (
             f"[success]Saved posting[/success] [accent]{outcome.title}[/accent] "
             f"@ {outcome.company} (id {outcome.posting_id})."
         )
+        if score is not None:
+            message += f" [muted]Fit:[/muted] [accent]{score.score}[/accent] {score.verdict}."
+        console.print(message)
     else:
         console.print(
             f"[muted]Already added — [/muted][accent]{outcome.title}[/accent]"
             f"[muted] @ {outcome.company} (id {outcome.posting_id}).[/muted]"
         )
+
+
+def _score_after_add(
+    engine: Engine, outcome: AddOutcome, *, provider: LLMProvider
+) -> ScoreOutcome | None:
+    """Score a freshly-added posting best-effort, in its own transaction.
+
+    Returns the :class:`~atlas.matching.service.ScoreOutcome` on success, or
+    ``None`` when scoring can't run yet (no active profile / no master resume) or
+    the AI backend fails — printing a muted hint rather than failing ``atlas add``,
+    since the posting is already saved.
+    """
+    try:
+        with session_scope(engine) as session:
+            return score_posting(session, outcome.posting_id, provider=provider)
+    except MatchingError as exc:
+        console.print(
+            f"[muted]Saved, but not scored — {exc} Run `atlas score {outcome.posting_id}`.[/muted]"
+        )
+        return None
+
+
+@app.command()
+def score(
+    posting_id: int = typer.Argument(..., help="The id of the saved posting to score."),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the fit assessment as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Score a saved posting for fit against the active profile.
+
+    Sends the posting, the active profile's preferences, a compact master-resume
+    summary, and Atlas's deterministic signals to the AI and records a fit
+    assessment (PROJECT.md §5.6). Re-scoring appends a new assessment rather than
+    replacing the last one. Exits ``1`` if the posting id is unknown, no profile is
+    active, no master resume is set, or the AI cannot produce an assessment.
+    """
+    try:
+        config = load_config()
+        store = default_secret_store()
+    except ConfigError as exc:
+        error_console.print(f"[error]atlas score:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    provider = build_provider_chain(config.ai, store)
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = score_posting(session, posting_id, provider=provider)
+    except (JobPostingNotFoundError, MatchingError) as exc:
+        error_console.print(f"[error]atlas score:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_score(outcome))
 
 
 @postings_app.command("list")
