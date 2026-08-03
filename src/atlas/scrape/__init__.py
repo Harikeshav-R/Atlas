@@ -31,9 +31,20 @@ from atlas.scrape.extract import (
     extract_posting,
 )
 from atlas.scrape.fetcher import BrowserFetcher, Fetcher, FetchResult, default_fetcher
+from atlas.scrape.repository import (
+    create_job_posting,
+    get_or_create_company,
+    get_or_create_url_source,
+    get_posting,
+    get_posting_by_dedupe,
+    list_postings,
+)
+from atlas.scrape.service import AddOutcome, add_posting, dedupe_hash_for, normalize_url
+from atlas.scrape.snapshot import default_snapshots_dir, write_snapshot
 from atlas.scrape.structure import Requirements, ScrapedPosting
 
 __all__ = [
+    "AddOutcome",
     "BrowserFetcher",
     "ExtractionError",
     "FetchError",
@@ -43,10 +54,21 @@ __all__ = [
     "Requirements",
     "ScrapeError",
     "ScrapedPosting",
+    "add_posting",
+    "create_job_posting",
+    "dedupe_hash_for",
     "default_fetcher",
+    "default_snapshots_dir",
     "extract_jsonld",
     "extract_main_text",
     "extract_opengraph",
     "extract_posting",
+    "get_or_create_company",
+    "get_or_create_url_source",
+    "get_posting",
+    "get_posting_by_dedupe",
+    "list_postings",
+    "normalize_url",
     "parse_job_posting",
+    "write_snapshot",
 ]
