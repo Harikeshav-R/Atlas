@@ -341,6 +341,62 @@ class FakeFileOpener:
             raise self._raises
 
 
+class FakeScheduler:
+    """A scripted, offline :class:`~atlas.daemon.scheduler.Scheduler` for tests.
+
+    Records every ``add_job`` call on :attr:`jobs` and flips :attr:`started` /
+    :attr:`shut_down` instead of running a real APScheduler loop, so the daemon
+    lifecycle is testable without spawning threads or blocking (AGENTS.md §6.2).
+    """
+
+    def __init__(self) -> None:
+        """Start with no recorded jobs and a not-yet-started scheduler."""
+        self.jobs: list[tuple[Callable[[], None], str, dict[str, object]]] = []
+        self.started = False
+        self.shut_down = False
+
+    def add_job(self, func: Callable[[], None], trigger: str, **kwargs: object) -> object:
+        """Record the registered job and return a placeholder handle."""
+        self.jobs.append((func, trigger, dict(kwargs)))
+        return object()
+
+    def start(self) -> None:
+        """Mark the scheduler started (a real one would block here)."""
+        self.started = True
+
+    def shutdown(self, *, wait: bool = True) -> None:
+        """Mark the scheduler shut down."""
+        self.shut_down = True
+
+
+class FakeProcessControl:
+    """A scripted, offline :class:`~atlas.daemon.service.ProcessControl` for tests.
+
+    Reports a fixed :attr:`pid` as the current process, treats a configurable set
+    of pids as alive, and records terminate requests on :attr:`terminated` —
+    exercising the daemon lifecycle without touching real OS processes.
+    """
+
+    def __init__(self, *, pid: int = 4242, alive: set[int] | None = None) -> None:
+        """Store the current pid and the set of pids considered alive."""
+        self.pid = pid
+        self.alive = alive if alive is not None else set()
+        self.terminated: list[int] = []
+
+    def current_pid(self) -> int:
+        """Return the configured current pid."""
+        return self.pid
+
+    def is_running(self, pid: int) -> bool:
+        """Return whether ``pid`` is in the alive set."""
+        return pid in self.alive
+
+    def terminate(self, pid: int) -> None:
+        """Record a terminate request and drop ``pid`` from the alive set."""
+        self.terminated.append(pid)
+        self.alive.discard(pid)
+
+
 @dataclass
 class FakeMessage:
     """The ``choices[i].message`` shape the API provider reads via ``getattr``."""
