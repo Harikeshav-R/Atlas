@@ -13,6 +13,7 @@ re-exported :data:`app` Typer instance in :mod:`atlas.cli`.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -230,6 +231,40 @@ def _open_database() -> Engine:
         # error + exit code, rather than dumping a traceback at the user.
         error_console.print(f"[error]atlas:[/error] could not open the database: {exc}")
         raise typer.Exit(code=1) from exc
+
+
+def _quiet_console_logging() -> None:
+    """Remove the ``atlas`` logger's console handler before the TUI takes over.
+
+    The top-level callback installs a :class:`~rich.logging.RichHandler` on the
+    stderr console; left in place it would paint over the Textual display. The
+    rotating file handler (a :class:`~logging.FileHandler`) is kept, so DEBUG logs
+    still land on disk while the app runs.
+    """
+    atlas_logger = logging.getLogger("atlas")
+    for handler in list(atlas_logger.handlers):
+        if not isinstance(handler, logging.FileHandler):
+            atlas_logger.removeHandler(handler)
+
+
+@app.command()
+def tui() -> None:
+    """Launch the interactive Atlas TUI (PROJECT.md §8).
+
+    Opens the Dashboard, Applications (table + Kanban), Application-detail, and
+    Posting-detail screens over your saved data. The app owns the database for its
+    session; console logging is quieted first so log records don't corrupt the
+    display (file logging continues).
+    """
+    engine = _open_database()
+    _quiet_console_logging()
+    from atlas.tui.app import AtlasApp
+
+    app_instance = AtlasApp(engine=engine)
+    try:
+        app_instance.run()  # pragma: no cover - launches the interactive Textual app
+    finally:
+        engine.dispose()
 
 
 @app.command()
