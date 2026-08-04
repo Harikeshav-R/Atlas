@@ -10,20 +10,23 @@ table/Kanban toggle, and status changes (valid + invalid). The autouse
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from textual.widgets import DataTable, OptionList
 
+from atlas.config.schema import RenderConfig, TailoringConfig
 from atlas.db import session_scope
 from atlas.matching.repository import create_match_score
 from atlas.profiles.preferences import ProfilePreferences
-from atlas.profiles.repository import create_profile
+from atlas.profiles.repository import create_profile, upsert_user
+from atlas.resume.repository import create_version
+from atlas.resume.structure import BlockType, ParsedBlock, ParsedResume
 from atlas.scrape.repository import (
     create_job_posting,
     get_or_create_company,
     get_or_create_url_source,
 )
-from atlas.tailor.repository import get_or_create_application
+from atlas.tailor.repository import get_latest_tailored_resume, get_or_create_application
 from atlas.tracking.service import set_application_status
 from atlas.tracking.status import ApplicationStatus
 from atlas.tui.app import AtlasApp
@@ -32,11 +35,36 @@ from atlas.tui.screens.applications import ApplicationsScreen
 from atlas.tui.screens.dashboard import DashboardScreen
 from atlas.tui.screens.posting_detail import PostingDetailScreen
 from atlas.tui.screens.status_picker import StatusPickerScreen
+from atlas.tui.screens.tailor_workspace import TailorWorkspaceScreen
+from tests.conftest import FakeFileOpener, FakeLLMProvider, FakePdfRenderer, make_response
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from sqlalchemy.engine import Engine
 
 _NOW = datetime(2026, 8, 4, 9, 30, tzinfo=UTC)
+
+_TAILORED: dict[str, object] = {
+    "items": [
+        {
+            "content_id": "blk_a",
+            "block_type": "experience",
+            "final_text": "Led the platform team",
+            "reason": "core",
+            "included": True,
+        }
+    ],
+    "gaps": ["Kubernetes"],
+    "summary_rationale": "focus",
+}
+_COVER: dict[str, object] = {
+    "greeting": "Dear team",
+    "hook": "I build platforms.",
+    "body_paragraphs": ["Para one."],
+    "closing": "Thanks",
+    "gaps": [],
+}
 
 
 def _seed(engine: Engine, *, scored: bool = True) -> int:
@@ -305,3 +333,162 @@ async def test_detail_invalid_status_shows_error(db_engine: Engine) -> None:
 
     with session_scope(db_engine) as session:
         assert build_application_detail(session, app_id).status == "preparing"
+
+
+# --- Tailor workspace ------------------------------------------------------------
+
+
+def _seed_full(engine: Engine) -> int:
+    """Seed a posting + active profile + master resume + application; return app id."""
+    app_id = _seed(engine, scored=False)
+    with session_scope(engine) as session:
+        upsert_user(session, name="Sam Lee")
+        parsed = ParsedResume(
+            blocks=[
+                ParsedBlock(
+                    type=BlockType.EXPERIENCE,
+                    content_id="blk_a",
+                    position=0,
+                    text="Led the platform team Jan 2024 - Present",
+                )
+            ]
+        )
+        create_version(
+            session, raw_markdown="# Sam", source_path=None, parsed=parsed, created_at=_NOW
+        )
+    return app_id
+
+
+def _action_app(
+    engine: Engine,
+    *,
+    provider: FakeLLMProvider,
+    opener: FakeFileOpener | None = None,
+    renders_dir: Path | None = None,
+) -> AtlasApp:
+    """Build an action-capable AtlasApp with injected fakes (hermetic)."""
+    return AtlasApp(
+        engine=engine,
+        provider=provider,
+        renderer=FakePdfRenderer(),
+        opener=opener if opener is not None else FakeFileOpener(),
+        tailoring=TailoringConfig(),
+        render_config=RenderConfig(),
+        renders_dir=renders_dir,
+    )
+
+
+async def test_workspace_opens_from_application_detail(db_engine: Engine) -> None:
+    _seed_full(db_engine)
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    async with _action_app(db_engine, provider=provider).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.press("enter")  # → application detail
+        await pilot.pause()
+        await pilot.press("t")  # → tailor workspace
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, TailorWorkspaceScreen)
+        blocks = pilot.app.screen.query_one("#master-blocks", DataTable)
+        assert blocks.row_count == 1
+
+
+async def test_workspace_tailor_worker_persists(db_engine: Engine, tmp_path: Path) -> None:
+    app_id = _seed_full(db_engine)
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await app.push_screen(TailorWorkspaceScreen(app_id))
+        await pilot.pause()
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+    with session_scope(db_engine) as session:
+        tailored = get_latest_tailored_resume(session, app_id)
+        assert tailored is not None
+        assert tailored.version == 1
+
+
+async def test_workspace_cover_rerender_open(db_engine: Engine, tmp_path: Path) -> None:
+    app_id = _seed_full(db_engine)
+    # Tailor first (so materials exist to re-render/open), then cover.
+    provider = FakeLLMProvider(
+        [make_response(structured=_TAILORED), make_response(structured=_COVER)]
+    )
+    opener = FakeFileOpener()
+    app = _action_app(db_engine, provider=provider, opener=opener, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await app.push_screen(TailorWorkspaceScreen(app_id))
+        await pilot.pause()
+        await pilot.press("t")  # tailor
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("c")  # cover letter
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("r")  # re-render (no AI)
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        await pilot.press("o")  # open
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+    assert len(opener.opened) >= 1  # at least the resume PDF was opened
+
+
+async def test_workspace_worker_error_is_handled(db_engine: Engine, tmp_path: Path) -> None:
+    # No active profile → tailor_posting raises NoActiveProfileError inside the worker.
+    app_id = _seed(db_engine, scored=False)
+    with session_scope(db_engine) as session:
+        from atlas.profiles.repository import get_active_profile
+
+        active = get_active_profile(session)
+        assert active is not None
+        active.active = False  # deactivate so tailoring has no profile to target
+        session.add(active)
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await app.push_screen(TailorWorkspaceScreen(app_id))
+        await pilot.pause()
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # The app survived the worker error and stayed on the workspace.
+        assert isinstance(pilot.app.screen, TailorWorkspaceScreen)
+    with session_scope(db_engine) as session:
+        assert get_latest_tailored_resume(session, app_id) is None  # nothing persisted
+
+
+async def test_workspace_browse_only_disables_actions(db_engine: Engine) -> None:
+    app_id = _seed_full(db_engine)
+    # No provider/renderer → browse-only.
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.app.push_screen(TailorWorkspaceScreen(app_id))
+        await pilot.pause()
+        assert not cast(AtlasApp, pilot.app).actions_enabled
+        # Every AI/render action is disabled (no worker, no crash).
+        for key in ("t", "c", "r"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert isinstance(pilot.app.screen, TailorWorkspaceScreen)
+    with session_scope(db_engine) as session:
+        assert get_latest_tailored_resume(session, app_id) is None
+
+
+async def test_workspace_open_with_no_materials(db_engine: Engine, tmp_path: Path) -> None:
+    # The open action has no actions_enabled guard; with nothing rendered it opens
+    # nothing and runs cleanly.
+    app_id = _seed_full(db_engine)
+    provider = FakeLLMProvider([])
+    opener = FakeFileOpener()
+    app = _action_app(db_engine, provider=provider, opener=opener, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await app.push_screen(TailorWorkspaceScreen(app_id))
+        await pilot.pause()
+        await pilot.press("o")  # open with nothing rendered yet
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, TailorWorkspaceScreen)
+    assert opener.opened == []  # no materials → nothing opened

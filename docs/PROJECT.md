@@ -1079,18 +1079,22 @@ The document specs everything; build order is phased. Each phase is independentl
   file-open seam). Deferred to a PR 2b: the `honesty_validate` traceability pass, AI-phrase
   scrub, keyword-gap suggestions, diff-mode, per-profile honesty, and the editable/regenerate
   loop.)*
-- [ ] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
-  workspace, Applications, Application detail). *(The `application` table landed with tailoring.
-  **Core + CLI ✅** `atlas.tracking` — the `ApplicationStatus` state machine + `can_transition`,
-  the transition service recording timestamped `status_history` / `applied_at` / `outcome`
-  (validated, with a `--force` override), `list_applications`, and the manual-transition CLI
-  `atlas status set` / `atlas apply mark` / `atlas list` (§9); no migration, the schema was
-  already in place. **Core TUI ✅** `atlas.tui` (Textual) + `atlas tui` — the Dashboard,
-  Applications (table + Kanban), Application-detail, and Posting-detail screens over pure data
-  builders (`atlas.tui.data` + reused CLI `build_*`), in-TUI status changes, the async `Pilot`
-  test harness (`textual` + `pytest-asyncio`), and `count_applications_by_status` for the funnel.
-  **Remaining:** the three-pane **Tailor workspace** (§5.7) + wiring tailoring/cover/score/
-  render/open through Textual **thread workers** (those services block).)*
+- [x] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
+  workspace, Applications, Application detail). *(Built as three PRs. **Tracking core + CLI**
+  `atlas.tracking` — the `ApplicationStatus` state machine + `can_transition`, the transition
+  service recording timestamped `status_history` / `applied_at` / `outcome` (validated, with a
+  `--force` override), `list_applications`, and `atlas status set` / `atlas apply mark` /
+  `atlas list` (§9); no migration, the schema landed with tailoring. **Core TUI** `atlas.tui`
+  (Textual) + `atlas tui` — the Dashboard, Applications (table + Kanban), Application-detail, and
+  Posting-detail screens over pure data builders (`atlas.tui.data` + reused CLI `build_*`),
+  in-TUI status changes, the async `Pilot` harness (`textual` + `pytest-asyncio`), and
+  `count_applications_by_status` for the funnel. **Tailor workspace** — the workspace screen with
+  its Tailor / Cover / Re-render / Open actions each run in a Textual **thread worker**
+  (`@work(thread=True)`) since the services block; `atlas tui` builds the AI/render boundaries
+  best-effort and launches browse-only when they're unavailable. **This completes the Phase 1
+  core loop.** Deferred to a follow-up (Phase-1 optional depth): the workspace's interactive
+  editing (include/exclude/pin) + per-section regenerate + Questions tab, and the PR-2b tailoring
+  depth — `honesty_validate` / AI-phrase scrub / keyword-gap / diff-mode (§5.7, §5.8, §11).)*
 
 ### Phase 2 — Discovery & background
 - [ ] **Daemon** + scheduler + IPC.

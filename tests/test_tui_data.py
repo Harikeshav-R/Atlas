@@ -17,6 +17,8 @@ from atlas.db import session_scope
 from atlas.matching.repository import create_match_score
 from atlas.profiles.preferences import ProfilePreferences
 from atlas.profiles.repository import create_profile
+from atlas.resume.repository import create_version
+from atlas.resume.structure import BlockType, ParsedBlock, ParsedResume
 from atlas.scrape.repository import (
     create_job_posting,
     get_or_create_company,
@@ -29,8 +31,10 @@ from atlas.tracking.status import ApplicationStatus
 from atlas.tui.data import (
     ApplicationDetail,
     DashboardReport,
+    TailorWorkspaceView,
     build_application_detail,
     build_dashboard_report,
+    build_tailor_workspace,
 )
 
 if TYPE_CHECKING:
@@ -218,13 +222,90 @@ def test_application_detail_unknown_raises(db_engine: Engine) -> None:
         build_application_detail(session, 999)
 
 
+# --- build_tailor_workspace ------------------------------------------------------
+
+
+def _add_master_resume(engine: Engine) -> None:
+    with session_scope(engine) as session:
+        parsed = ParsedResume(
+            blocks=[
+                ParsedBlock(
+                    type=BlockType.EXPERIENCE,
+                    content_id="blk_a",
+                    position=0,
+                    text="Led the platform team",
+                )
+            ]
+        )
+        create_version(
+            session, raw_markdown="# Sam", source_path=None, parsed=parsed, created_at=_NOW
+        )
+
+
+def test_tailor_workspace_minimal(db_engine: Engine) -> None:
+    app_id, _ = _seed_application(db_engine)
+    with session_scope(db_engine) as session:
+        view = build_tailor_workspace(session, app_id)
+    assert view.application_id == app_id
+    assert view.job_posting_id > 0
+    assert view.title == "Backend Engineer"
+    assert view.master_blocks == []  # no master resume seeded
+    assert view.selections == []
+    assert view.resume_version is None
+    assert view.resume_path is None
+    assert view.cover_version is None
+
+
+def test_tailor_workspace_with_master_and_materials(db_engine: Engine) -> None:
+    app_id, _ = _seed_application(db_engine, with_materials=True)
+    _add_master_resume(db_engine)
+    # Give the tailored resume real selections to decode.
+    with session_scope(db_engine) as session:
+        create_tailored_resume(
+            session,
+            application_id=app_id,
+            master_resume_version=1,
+            selections=[
+                {
+                    "content_id": "blk_a",
+                    "block_type": "experience",
+                    "final_text": "Led the platform team",
+                    "reason": "core",
+                    "included": True,
+                }
+            ],
+            final_content={},
+            rendered_pdf_ref="renders/r2.pdf",
+            decisions=[],
+            created_at=_NOW,
+        )
+    with session_scope(db_engine) as session:
+        view = build_tailor_workspace(session, app_id)
+    assert [b.content_id for b in view.master_blocks] == ["blk_a"]
+    assert len(view.selections) == 1
+    assert view.selections[0].content_id == "blk_a"
+    assert view.selections[0].included is True
+    assert view.selections[0].final_text == "Led the platform team"
+    assert view.resume_version == 2  # the second tailored resume
+    assert view.resume_path == "renders/r2.pdf"
+    assert view.cover_version == 1
+
+
+def test_tailor_workspace_unknown_raises(db_engine: Engine) -> None:
+    with session_scope(db_engine) as session, pytest.raises(ApplicationNotFoundError):
+        build_tailor_workspace(session, 999)
+
+
 # --- serialization ---------------------------------------------------------------
 
 
 def test_reports_json_round_trip(db_engine: Engine) -> None:
     app_id, _ = _seed_application(db_engine, scored=True, with_materials=True)
+    _add_master_resume(db_engine)
     with session_scope(db_engine) as session:
         dashboard = build_dashboard_report(session)
         detail = build_application_detail(session, app_id)
+        workspace = build_tailor_workspace(session, app_id)
     assert DashboardReport.model_validate_json(dashboard.model_dump_json()) == dashboard
     assert ApplicationDetail.model_validate_json(detail.model_dump_json()) == detail
+    assert TailorWorkspaceView.model_validate_json(workspace.model_dump_json()) == workspace
