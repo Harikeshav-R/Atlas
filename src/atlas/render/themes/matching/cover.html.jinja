@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>{{ letter.name }} — Cover Letter</title>
+    <style>{{ css | safe }}</style>
+  </head>
+  <body>
+    <header class="letter-header">
+      <h1 class="letter-name">{{ letter.name }}</h1>
+      {% if letter.contact_lines %}
+      <div class="letter-contact">
+        {% for line in letter.contact_lines %}
+        <span class="contact-item">{{ line }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </header>
+
+    {% if letter.date %}
+    <p class="letter-date">{{ letter.date }}</p>
+    {% endif %}
+    {% if letter.company %}
+    <p class="letter-recipient">{{ letter.company }}</p>
+    {% endif %}
+
+    {% if letter.greeting %}
+    <p class="letter-greeting">{{ letter.greeting }}</p>
+    {% endif %}
+
+    {% for paragraph in letter.paragraphs %}
+    <p class="letter-paragraph">{{ paragraph }}</p>
+    {% endfor %}
+
+    {% if letter.closing %}
+    <p class="letter-closing">{{ letter.closing }}</p>
+    {% endif %}
+    {% if letter.signoff_name %}
+    <p class="letter-signoff">{{ letter.signoff_name }}</p>
+    {% endif %}
+  </body>
+</html>

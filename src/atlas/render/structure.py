@@ -11,7 +11,13 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-__all__ = ["RenderResult", "ResumeContext", "ResumeEntry", "ResumeSection"]
+__all__ = [
+    "CoverLetterContext",
+    "RenderResult",
+    "ResumeContext",
+    "ResumeEntry",
+    "ResumeSection",
+]
 
 
 class _Base(BaseModel):
@@ -70,3 +76,28 @@ class ResumeContext(_Base):
     name: str = ""
     contact_lines: list[str] = Field(default_factory=list)
     sections: list[ResumeSection] = Field(default_factory=list)
+
+
+class CoverLetterContext(_Base):
+    """The full view model a cover-letter theme is rendered against (PROJECT.md §5.8).
+
+    Attributes:
+        name: The candidate's display name (the letter header).
+        contact_lines: Contact/header lines shown under the name.
+        date: The letter's date line, as free text.
+        company: The addressed company's name.
+        greeting: The salutation line (e.g. ``"Dear Hiring Manager,"``).
+        paragraphs: The letter's body paragraphs in order (hook first, then the
+            body paragraphs).
+        closing: The closing line (e.g. ``"Sincerely,"``).
+        signoff_name: The name under the closing (usually the candidate's).
+    """
+
+    name: str = ""
+    contact_lines: list[str] = Field(default_factory=list)
+    date: str = ""
+    company: str = ""
+    greeting: str = ""
+    paragraphs: list[str] = Field(default_factory=list)
+    closing: str = ""
+    signoff_name: str = ""

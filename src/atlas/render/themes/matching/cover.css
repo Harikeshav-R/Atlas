@@ -1,0 +1,74 @@
+/* matching — a cover-letter theme that shares the jakes-resume visual language
+   (same @page, serif font stack, and centered name/contact header) so a resume
+   and its cover letter read as one set. Body is a normal letter: date, greeting,
+   paragraphs, close. WeasyPrint reads @page for size and margins. */
+
+@page {
+  size: Letter;
+  margin: 1.5cm 1.6cm;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Latin Modern Roman", "Georgia", "Times New Roman", serif;
+  font-size: 11pt;
+  line-height: 1.4;
+  color: #000;
+  margin: 0;
+}
+
+/* --- Header (matches the resume) --------------------------------------------- */
+
+.letter-header {
+  text-align: center;
+  margin-bottom: 18px;
+  border-bottom: 0.7px solid #000;
+  padding-bottom: 6px;
+}
+
+.letter-name {
+  font-size: 24pt;
+  font-weight: 700;
+  margin: 0 0 2px 0;
+  letter-spacing: 0.3px;
+}
+
+.letter-contact {
+  font-size: 9.5pt;
+}
+
+.contact-item + .contact-item::before {
+  content: " | ";
+  color: #000;
+}
+
+/* --- Body -------------------------------------------------------------------- */
+
+.letter-date {
+  margin: 0 0 14px 0;
+}
+
+.letter-recipient {
+  margin: 0 0 14px 0;
+}
+
+.letter-greeting {
+  margin: 0 0 10px 0;
+}
+
+.letter-paragraph {
+  margin: 0 0 10px 0;
+  text-align: left;
+}
+
+.letter-closing {
+  margin: 14px 0 0 0;
+}
+
+.letter-signoff {
+  margin: 2px 0 0 0;
+  font-weight: 600;
+}

@@ -21,10 +21,21 @@ from atlas.render.errors import NoMasterResumeError, RenderError, ThemeNotFoundE
 from atlas.render.renderer import PdfRenderer, build_renderer, default_weasyprint_renderer
 from atlas.render.service import RenderOutcome, render_master_resume
 from atlas.render.store import default_renders_dir, write_pdf
-from atlas.render.structure import RenderResult, ResumeContext, ResumeEntry, ResumeSection
-from atlas.render.themes import default_themes_dir, render_resume_html
+from atlas.render.structure import (
+    CoverLetterContext,
+    RenderResult,
+    ResumeContext,
+    ResumeEntry,
+    ResumeSection,
+)
+from atlas.render.themes import (
+    default_themes_dir,
+    render_cover_letter_html,
+    render_resume_html,
+)
 
 __all__ = [
+    "CoverLetterContext",
     "NoMasterResumeError",
     "PdfRenderer",
     "RenderError",
@@ -39,6 +50,7 @@ __all__ = [
     "default_renders_dir",
     "default_themes_dir",
     "default_weasyprint_renderer",
+    "render_cover_letter_html",
     "render_master_resume",
     "render_resume_html",
     "write_pdf",
