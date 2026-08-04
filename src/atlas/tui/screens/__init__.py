@@ -11,6 +11,7 @@ from atlas.tui.screens.applications import ApplicationsScreen
 from atlas.tui.screens.dashboard import DashboardScreen
 from atlas.tui.screens.posting_detail import PostingDetailScreen
 from atlas.tui.screens.status_picker import StatusPickerScreen
+from atlas.tui.screens.tailor_workspace import TailorWorkspaceScreen
 
 __all__ = [
     "ApplicationDetailScreen",
@@ -18,4 +19,5 @@ __all__ = [
     "DashboardScreen",
     "PostingDetailScreen",
     "StatusPickerScreen",
+    "TailorWorkspaceScreen",
 ]

@@ -32,6 +32,7 @@ class ApplicationDetailScreen(Screen[None]):
 
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("s", "set_status", "Set status"),
+        Binding("t", "tailor_workspace", "Tailor"),
         Binding("p", "open_posting", "Open posting"),
         Binding("escape", "app.pop_screen", "Back"),
     ]
@@ -108,6 +109,12 @@ class ApplicationDetailScreen(Screen[None]):
             return
         self._populate(self._load())
         self.notify(f"{outcome.previous_status} → {outcome.new_status}")
+
+    def action_tailor_workspace(self) -> None:
+        """Open the Tailor workspace for this application."""
+        from atlas.tui.screens.tailor_workspace import TailorWorkspaceScreen
+
+        self.app.push_screen(TailorWorkspaceScreen(self._application_id))
 
     def action_open_posting(self) -> None:
         """Open the posting-detail screen for this application's posting."""
