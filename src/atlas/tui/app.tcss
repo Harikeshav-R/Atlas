@@ -1,0 +1,43 @@
+/* Atlas TUI styles (PROJECT.md §8).
+   Shipped in the wheel via Hatchling's default packaging — like the render
+   themes' .css/.jinja under src/atlas/ — and loaded by CSS_PATH on AtlasApp. */
+
+.section-heading {
+    text-style: bold;
+    color: $accent;
+    margin: 1 0 0 0;
+}
+
+#dashboard,
+#detail,
+#posting {
+    padding: 1 2;
+}
+
+#profile {
+    text-style: bold;
+}
+
+DataTable {
+    height: auto;
+    margin-bottom: 1;
+}
+
+#apps-kanban {
+    height: 1fr;
+}
+
+.kanban-column {
+    width: 1fr;
+    border: round $panel;
+    margin: 0 1;
+    padding: 0 1;
+}
+
+#status-picker {
+    width: 40;
+    height: auto;
+    padding: 1 2;
+    border: thick $accent;
+    background: $surface;
+}

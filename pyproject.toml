@@ -34,6 +34,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "rich>=15.0.0",
     "sqlmodel>=0.0.39",
+    "textual>=8.2.8",
     "tomli-w>=1.2.0",
     "typer>=0.27.0",
     "weasyprint>=63",
@@ -61,6 +62,7 @@ packages = ["src/atlas"]
 dev = [
     "mypy>=1.18",
     "pytest>=8.4",
+    "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.0",
     "ruff==0.16.1",
 ]
@@ -134,6 +136,9 @@ ignore_missing_imports = true
 # --- pytest + coverage ----------------------------------------------------------
 [tool.pytest.ini_options]
 minversion = "8.0"
+# Textual screen tests are async (driven by App.run_test()); "auto" mode runs
+# `async def test_*` functions without a per-test marker (keeps --strict-markers happy).
+asyncio_mode = "auto"
 addopts = [
     "--strict-markers",
     "--strict-config",

@@ -80,6 +80,12 @@ atlas list --status applied --profile 1 # filter by stage and/or profile
 atlas list --json                       # machine-readable, for scripting
 ```
 
+Or browse and track it all interactively:
+
+```bash
+atlas tui                               # launch the interactive TUI
+```
+
 `atlas add` scores a newly-saved posting automatically; if you haven't set an
 active profile or a master resume yet, it saves the posting and points you at
 `atlas score`. Scoring combines an AI fit assessment (score, verdict, rationale,
@@ -105,8 +111,13 @@ withdrawn / ghosted`). Each move is validated against the state machine — an
 illegal jump is refused with a hint (pass `--force` to override) — and recorded
 in a timestamped status history; reaching `applied` stamps the applied date and a
 terminal stage records the outcome. `atlas list` shows your tracked applications,
-newest-updated first, filterable by `--status` and `--profile`. (The interactive
-TUI for this is coming next.)
+newest-updated first, filterable by `--status` and `--profile`.
+
+`atlas tui` launches the interactive Textual app: a Dashboard (pipeline funnel,
+active profile, recent activity, upcoming deadlines), an Applications view (table
+or Kanban board, with in-app status changes), and drill-through to Application and
+Posting detail. (The Tailor workspace — editing and regenerating materials inside
+the TUI — is coming next.)
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /

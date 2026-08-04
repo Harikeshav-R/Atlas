@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Core TUI** (`atlas.tui`): the interactive Textual app (PROJECT.md §8) — the
+  second slice of Phase 1 item #6, on top of the tracking core. Four screens:
+  the **Dashboard** (pipeline funnel, active profile, recent activity, upcoming
+  deadlines), **Applications** (a table and a Kanban board grouped by status,
+  toggleable), **Application detail** (status timeline, prepared materials, fit,
+  notes), and **Posting detail** (normalized fields + latest fit). Applications
+  and Application detail can drive a status change through the state machine (a
+  picker → `set_application_status`; illegal moves surface an error toast). All
+  data logic lives in pure builders (`atlas.tui.data`) and the reused CLI
+  `build_*` functions, so the screens stay a thin presentation layer exercised
+  by Textual's `Pilot` harness; only the real `app.run()` is excluded from
+  coverage. The action-heavy Tailor workspace and wiring tailoring/cover/score
+  through background workers remain for the follow-up that completes item #6.
+- **`atlas tui` command** (PROJECT.md §9): launches the interactive TUI, opening
+  the Dashboard over your saved data. Console logging is quieted first (file
+  logging continues) so records don't corrupt the display. Bare `atlas` still
+  shows help; launching the TUI on bare invocation is a separate later decision.
+- **`count_applications_by_status`** (`atlas.tracking.repository`): a status-count
+  aggregate (`func.count` + `group_by`) backing the Dashboard funnel.
+- New dependencies: `textual` (the TUI runtime) and `pytest-asyncio` (dev, for
+  the first async `Pilot` tests); `asyncio_mode = "auto"` is set for pytest.
 - **Application-tracking core** (`atlas.tracking`): the first slice of Phase 1
   item #6 (PROJECT.md §5.12) — the behavior on top of the `application` table
   that landed with tailoring, so **no migration is needed** (the schema already
