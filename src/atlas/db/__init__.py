@@ -17,6 +17,7 @@ from atlas.db.migrate import alembic_config, initialize_database, upgrade_to_hea
 from atlas.db.models import (
     Application,
     Company,
+    CoverLetter,
     JobPosting,
     JobSource,
     MasterResume,
@@ -31,6 +32,7 @@ from atlas.db.session import session_scope
 __all__ = [
     "Application",
     "Company",
+    "CoverLetter",
     "DatabaseError",
     "JobPosting",
     "JobSource",

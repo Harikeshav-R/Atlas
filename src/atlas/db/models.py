@@ -25,6 +25,7 @@ from atlas.db.types import UtcDateTime
 __all__ = [
     "Application",
     "Company",
+    "CoverLetter",
     "JobPosting",
     "JobSource",
     "MasterResume",
@@ -398,5 +399,38 @@ class TailoredResume(SQLModel, table=True):
     rendered_pdf_ref: str | None = None
     decisions: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     edited_by_user: bool = False
+    version: int
+    created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
+
+
+class CoverLetter(SQLModel, table=True):
+    """One cover letter produced for an application (PROJECT.md §5.8, §6).
+
+    A cover letter is an AI-drafted, structured letter (greeting, hook, body
+    paragraphs, close) grounded in the application's tailored-resume selections
+    (or the master resume) and the posting, rendered to a PDF that matches the
+    resume styling and referenced by :attr:`rendered_pdf_ref` (on disk, never a
+    DB blob, §6). Cover letters are **append-only and versioned per application**:
+    re-generating inserts a new row with an incremented :attr:`version` rather
+    than mutating an earlier one.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        application_id: The owning :class:`Application`.
+        content: The structured letter (greeting / hook / body paragraphs /
+            close) as a JSON object, so it can be re-rendered without the AI.
+        tone: The tone the letter was written in (e.g. ``"professional"``).
+        rendered_pdf_ref: On-disk path to the rendered PDF, or ``None``.
+        version: 1-based version number within the owning application.
+        created_at: When this cover letter was created (timezone-aware UTC).
+    """
+
+    __tablename__ = "cover_letter"
+
+    id: int | None = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="application.id")
+    content: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    tone: str
+    rendered_pdf_ref: str | None = None
     version: int
     created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))

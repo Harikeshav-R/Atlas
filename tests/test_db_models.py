@@ -10,6 +10,7 @@ from sqlmodel import col, select
 from atlas.db import (
     Application,
     Company,
+    CoverLetter,
     JobPosting,
     JobSource,
     MasterResume,
@@ -378,3 +379,69 @@ def test_application_and_tailored_resume_round_trip(db_engine: Engine) -> None:
         assert tailored.decisions == [{"content_id": "blk_abc", "action": "reword"}]
         assert tailored.version == 1
         assert tailored.created_at.tzinfo is UTC
+
+
+def test_cover_letter_defaults() -> None:
+    created = datetime(2026, 8, 4, tzinfo=UTC)
+    letter = CoverLetter(application_id=1, tone="professional", version=1, created_at=created)
+    assert letter.id is None
+    assert letter.content == {}
+    assert letter.rendered_pdf_ref is None
+
+
+def test_cover_letter_round_trip(db_engine: Engine) -> None:
+    created = datetime(2026, 8, 4, 9, 0, tzinfo=UTC)
+    with session_scope(db_engine) as session:
+        company = Company(name="Acme")
+        source = JobSource(type="url")
+        profile = Profile(name="Backend Engineer")
+        session.add(company)
+        session.add(source)
+        session.add(profile)
+        session.flush()
+        assert company.id is not None
+        assert source.id is not None
+        assert profile.id is not None
+        posting = JobPosting(
+            source_id=source.id,
+            company_id=company.id,
+            title="Backend Engineer",
+            apply_url="https://jobs.acme.test/1",
+            fetched_at=created,
+            dedupe_hash="abc123",
+        )
+        session.add(posting)
+        session.flush()
+        assert posting.id is not None
+        application = Application(
+            job_posting_id=posting.id,
+            profile_id=profile.id,
+            created_at=created,
+            updated_at=created,
+        )
+        session.add(application)
+        session.flush()
+        assert application.id is not None
+        session.add(
+            CoverLetter(
+                application_id=application.id,
+                content={"greeting": "Dear Hiring Manager,", "body_paragraphs": ["I am writing…"]},
+                tone="professional",
+                rendered_pdf_ref="renders/sam__acme__cover.pdf",
+                version=1,
+                created_at=created,
+            )
+        )
+    with session_scope(db_engine) as session:
+        stored = session.exec(select(CoverLetter)).one()
+        application = session.exec(select(Application)).one()
+        assert stored.application_id == application.id
+        assert stored.content == {
+            "greeting": "Dear Hiring Manager,",
+            "body_paragraphs": ["I am writing…"],
+        }
+        assert stored.tone == "professional"
+        assert stored.rendered_pdf_ref == "renders/sam__acme__cover.pdf"
+        assert stored.version == 1
+        assert stored.created_at == created
+        assert stored.created_at.tzinfo is UTC
