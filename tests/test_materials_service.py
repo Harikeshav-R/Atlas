@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -23,7 +24,6 @@ from tests.conftest import FakeFileOpener, FakePdfRenderer
 
 if TYPE_CHECKING:
     from datetime import datetime as _dt
-    from pathlib import Path
 
     from sqlalchemy.engine import Engine
 
@@ -147,7 +147,9 @@ def test_open_opens_both_pdf_refs(db_engine: Engine) -> None:
     with session_scope(db_engine) as session:
         outcome = open_application(session, app_id, opener=opener)
     assert outcome.opened == ["renders/old_resume.pdf", "renders/old_cover.pdf"]
-    assert [str(p) for p in opener.opened] == ["renders/old_resume.pdf", "renders/old_cover.pdf"]
+    # The opener receives Path objects; compare as Paths so the separator matches
+    # the OS (Windows uses "\\", not "/").
+    assert opener.opened == [Path("renders/old_resume.pdf"), Path("renders/old_cover.pdf")]
 
 
 def test_open_skips_material_without_a_rendered_pdf(db_engine: Engine) -> None:
