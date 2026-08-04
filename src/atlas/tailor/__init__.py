@@ -23,6 +23,7 @@ from __future__ import annotations
 from atlas.tailor.ai_tailor import select_and_reword
 from atlas.tailor.blocks import render_blocks, tag_blocks_for_prompt
 from atlas.tailor.errors import (
+    ApplicationNotFoundError,
     NoActiveProfileError,
     NoMasterResumeError,
     TailoringError,
@@ -31,6 +32,7 @@ from atlas.tailor.errors import (
 from atlas.tailor.onepage import PackResult, pack_to_one_page
 from atlas.tailor.repository import (
     create_tailored_resume,
+    get_application,
     get_latest_tailored_resume,
     get_or_create_application,
 )
@@ -39,6 +41,7 @@ from atlas.tailor.service import TailorOutcome, tailor_posting
 from atlas.tailor.structure import TailoredItem, TailoredResume
 
 __all__ = [
+    "ApplicationNotFoundError",
     "NoActiveProfileError",
     "NoMasterResumeError",
     "PackResult",
@@ -49,6 +52,7 @@ __all__ = [
     "TailoringOutputError",
     "create_tailored_resume",
     "extract_dates",
+    "get_application",
     "get_latest_tailored_resume",
     "get_or_create_application",
     "pack_to_one_page",

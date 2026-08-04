@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pytest
+
 from atlas.db import session_scope
 from atlas.profiles.preferences import ProfilePreferences
 from atlas.profiles.repository import create_profile
@@ -13,8 +15,10 @@ from atlas.scrape.repository import (
     get_or_create_company,
     get_or_create_url_source,
 )
+from atlas.tailor.errors import ApplicationNotFoundError
 from atlas.tailor.repository import (
     create_tailored_resume,
+    get_application,
     get_latest_tailored_resume,
     get_or_create_application,
 )
@@ -92,3 +96,18 @@ def test_create_tailored_resume_versions_per_application(db_engine: Engine) -> N
 def test_get_latest_tailored_resume_none_when_absent(db_engine: Engine) -> None:
     with session_scope(db_engine) as session:
         assert get_latest_tailored_resume(session, 999) is None
+
+
+def test_get_application_returns_and_raises(db_engine: Engine) -> None:
+    posting_id, profile_id = _seed_refs(db_engine)
+    with session_scope(db_engine) as session:
+        created = get_or_create_application(
+            session, job_posting_id=posting_id, profile_id=profile_id, clock=_NOW
+        )
+        assert created.id is not None
+        app_id = created.id
+    with session_scope(db_engine) as session:
+        found = get_application(session, app_id)
+        assert found.id == app_id
+    with session_scope(db_engine) as session, pytest.raises(ApplicationNotFoundError):
+        get_application(session, 999)
