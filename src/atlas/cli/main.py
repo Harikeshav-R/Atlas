@@ -20,8 +20,10 @@ import typer
 
 from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
+from atlas.cli.coverletter import render_cover_letter_outcome
 from atlas.cli.doctor import render_report, run_doctor
 from atlas.cli.matching import render_score
+from atlas.cli.materials import render_open_outcome, render_rerender_outcome
 from atlas.cli.profile import (
     apply_profile_edit,
     build_profile_report,
@@ -48,10 +50,14 @@ from atlas.cli.tailor import render_tailor_outcome
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
+from atlas.coverletter.errors import CoverLetterError
+from atlas.coverletter.service import write_application_cover_letter
 from atlas.db import initialize_database, session_scope
 from atlas.logging import setup_logging
 from atlas.matching.errors import MatchingError
 from atlas.matching.service import ScoreOutcome, score_posting
+from atlas.materials.service import open_application, rerender_application
+from atlas.platform.opener import FileOpenError, default_file_opener
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
@@ -61,7 +67,7 @@ from atlas.render.service import render_master_resume
 from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
 from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
 from atlas.scrape.service import AddOutcome, add_posting
-from atlas.tailor.errors import TailoringError
+from atlas.tailor.errors import ApplicationNotFoundError, TailoringError
 from atlas.tailor.service import tailor_posting
 
 if TYPE_CHECKING:
@@ -571,6 +577,129 @@ def tailor(
         print_json_line(outcome.model_dump_json(indent=2))
     else:
         console.print(render_tailor_outcome(outcome))
+
+
+@app.command()
+def cover(
+    job_id: int = typer.Argument(..., help="The id of the saved posting to write a letter for."),
+    tone: str = typer.Option("professional", "--tone", help="The tone to write the letter in."),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the cover-letter outcome as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Write a cover letter for a saved posting and render it to a PDF.
+
+    An honesty-governed AI pass drafts a structured letter grounded in the
+    application's tailored resume (or the master resume) and the posting
+    (PROJECT.md §5.8), rendered to a PDF matching the resume styling. Exits ``1``
+    if the posting id is unknown, no profile is active, there is no resume to
+    ground the letter in, config/render engine is invalid, or the AI cannot
+    produce a letter.
+    """
+    try:
+        config = load_config()
+        store = default_secret_store()
+        provider = build_provider_chain(config.ai, store)
+        renderer = build_renderer(config.render)
+    except (ConfigError, RenderError) as exc:
+        error_console.print(f"[error]atlas cover:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = write_application_cover_letter(
+                session,
+                job_id,
+                provider=provider,
+                renderer=renderer,
+                honesty_level=config.tailoring.honesty_level.value,
+                theme=config.render.cover_theme,
+                tone=tone,
+            )
+    except (JobPostingNotFoundError, CoverLetterError) as exc:
+        error_console.print(f"[error]atlas cover:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_cover_letter_outcome(outcome))
+
+
+@app.command()
+def render(
+    application_id: int = typer.Argument(..., help="The id of the application to re-render."),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the re-render outcome as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Re-render an application's materials (tailored resume + cover letter) to PDFs.
+
+    Regenerates the PDFs deterministically from each material's stored content —
+    no AI call (PROJECT.md §9, §5.11). Whichever material the application does not
+    have yet is skipped. Exits ``1`` if the application id is unknown or the render
+    engine is unavailable.
+    """
+    try:
+        config = load_config()
+        renderer = build_renderer(config.render)
+    except (ConfigError, RenderError) as exc:
+        error_console.print(f"[error]atlas render:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = rerender_application(
+                session,
+                application_id,
+                renderer=renderer,
+                resume_theme=config.render.resume_theme,
+                cover_theme=config.render.cover_theme,
+            )
+    except (ApplicationNotFoundError, RenderError) as exc:
+        error_console.print(f"[error]atlas render:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_rerender_outcome(outcome))
+
+
+@app.command(name="open")
+def open_materials(
+    application_id: int = typer.Argument(..., help="The id of the application to open."),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the open outcome as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Open an application's exported PDFs in the OS default viewer.
+
+    Opens the latest rendered tailored-resume and cover-letter PDFs (PROJECT.md
+    §9). Exits ``1`` if the application id is unknown or a referenced PDF cannot be
+    opened.
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = open_application(session, application_id, opener=default_file_opener)
+    except (ApplicationNotFoundError, FileOpenError) as exc:
+        error_console.print(f"[error]atlas open:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_open_outcome(outcome))
 
 
 @postings_app.command("list")
