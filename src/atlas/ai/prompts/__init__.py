@@ -21,6 +21,7 @@ __all__ = [
     "PARSE_JOB_POSTING_PROMPT_VERSION",
     "SCORE_FIT_PROMPT_VERSION",
     "SELECT_AND_REWORD_PROMPT_VERSION",
+    "WRITE_COVER_LETTER_PROMPT_VERSION",
     "PromptError",
     "PromptNotFoundError",
     "RenderedPrompt",
@@ -35,3 +36,6 @@ SCORE_FIT_PROMPT_VERSION = 1
 
 #: The prompt-template version the ``select_and_reword`` task currently uses.
 SELECT_AND_REWORD_PROMPT_VERSION = 1
+
+#: The prompt-template version the ``write_cover_letter`` task currently uses.
+WRITE_COVER_LETTER_PROMPT_VERSION = 1

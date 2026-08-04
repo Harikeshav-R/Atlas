@@ -9,6 +9,7 @@ from atlas.ai.prompts import (
     PARSE_JOB_POSTING_PROMPT_VERSION,
     SCORE_FIT_PROMPT_VERSION,
     SELECT_AND_REWORD_PROMPT_VERSION,
+    WRITE_COVER_LETTER_PROMPT_VERSION,
     PromptNotFoundError,
     RenderedPrompt,
     render_prompt,
@@ -97,6 +98,33 @@ def test_render_select_and_reword_templates() -> None:
 def test_missing_select_and_reword_context_variable_raises() -> None:
     with pytest.raises(UndefinedError):
         render_prompt("select_and_reword", SELECT_AND_REWORD_PROMPT_VERSION, title="only-title")
+
+
+def test_render_write_cover_letter_templates() -> None:
+    rendered = render_prompt(
+        "write_cover_letter",
+        WRITE_COVER_LETTER_PROMPT_VERSION,
+        title="Backend Engineer",
+        company="Globex",
+        location="Remote",
+        keywords=["python"],
+        requirements={"must": ["Python"]},
+        description="Build reliable services.",
+        tone="professional",
+        honesty_level="light_inference",
+        material="- Led the platform team",
+    )
+    assert isinstance(rendered, RenderedPrompt)
+    assert rendered.task == "write_cover_letter"
+    assert "cover-letter writer" in rendered.system
+    assert "professional" in rendered.user
+    assert "light_inference" in rendered.user
+    assert "Led the platform team" in rendered.user
+
+
+def test_missing_write_cover_letter_context_variable_raises() -> None:
+    with pytest.raises(UndefinedError):
+        render_prompt("write_cover_letter", WRITE_COVER_LETTER_PROMPT_VERSION, title="only-title")
 
 
 def test_unknown_task_raises_prompt_not_found() -> None:
