@@ -66,11 +66,11 @@ def test_extra_keys_are_ignored() -> None:
     config = Config.model_validate(
         {
             "ai": {"default_backend": "claude_code", "unknown_key": 1},
-            "discovery": {"poll_interval_minutes": 120},
+            "integrations": {"calendar": {"type": "caldav"}},
         }
     )
     assert config.ai.default_backend == "claude_code"
-    assert not hasattr(config, "discovery")
+    assert not hasattr(config, "integrations")
 
 
 def test_render_defaults() -> None:
@@ -100,6 +100,20 @@ def test_tailoring_section_loads() -> None:
     )
     assert config.tailoring.honesty_level is HonestyLevel.STRICT
     assert config.tailoring.enforce_one_page is False
+
+
+def test_discovery_defaults() -> None:
+    discovery = Config().discovery
+    assert discovery.poll_interval_minutes == 120
+    assert discovery.enable_scraping is False
+
+
+def test_discovery_section_loads() -> None:
+    config = Config.model_validate(
+        {"discovery": {"poll_interval_minutes": 30, "enable_scraping": True}}
+    )
+    assert config.discovery.poll_interval_minutes == 30
+    assert config.discovery.enable_scraping is True
 
 
 def test_values_override_defaults() -> None:

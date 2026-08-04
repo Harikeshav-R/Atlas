@@ -17,11 +17,15 @@ __all__ = [
     "config_dir",
     "config_file",
     "data_dir",
+    "pid_file",
     "state_dir",
 ]
 
 #: The application name used for every platformdirs lookup.
 _APP_NAME = "atlas"
+
+#: The daemon's PID file name, under the state dir.
+_PID_FILENAME = "daemon.pid"
 
 
 def config_dir() -> Path:
@@ -47,3 +51,8 @@ def state_dir() -> Path:
 def config_file() -> Path:
     """Return the path to the main ``config.toml`` inside :func:`config_dir`."""
     return config_dir() / "config.toml"
+
+
+def pid_file() -> Path:
+    """Return the path to the daemon's PID file inside :func:`state_dir`."""
+    return state_dir() / _PID_FILENAME
