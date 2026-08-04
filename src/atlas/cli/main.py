@@ -13,6 +13,7 @@ re-exported :data:`app` Typer instance in :mod:`atlas.cli`.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -47,6 +48,11 @@ from atlas.cli.scrape import (
     render_postings,
 )
 from atlas.cli.tailor import render_tailor_outcome
+from atlas.cli.tracking import (
+    build_applications_report,
+    render_applications,
+    render_status_change,
+)
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
@@ -69,6 +75,9 @@ from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
 from atlas.scrape.service import AddOutcome, add_posting
 from atlas.tailor.errors import ApplicationNotFoundError, TailoringError
 from atlas.tailor.service import tailor_posting
+from atlas.tracking.errors import InvalidStatusTransitionError
+from atlas.tracking.service import mark_applied, set_application_status
+from atlas.tracking.status import ApplicationStatus
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -104,6 +113,20 @@ postings_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(postings_app)
+
+apply_app = typer.Typer(
+    name="apply",
+    help="Record application submissions.",
+    no_args_is_help=True,
+)
+app.add_typer(apply_app)
+
+status_app = typer.Typer(
+    name="status",
+    help="Move an application through its pipeline stages.",
+    no_args_is_help=True,
+)
+app.add_typer(status_app)
 
 
 @app.callback()
@@ -746,3 +769,116 @@ def postings_show(
         print_json_line(detail.model_dump_json(indent=2))
     else:
         console.print(render_posting_detail(detail))
+
+
+@apply_app.command("mark")
+def apply_mark(
+    application_id: int = typer.Argument(..., help="The id of the application to mark applied."),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Bypass the state machine and allow the transition from any stage.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the status change as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Mark an application submitted, recording the applied date (PROJECT.md §9).
+
+    Moves the application to the ``applied`` stage and stamps ``applied_at``.
+    Exits ``1`` if the application id is unknown, or if it cannot reach ``applied``
+    from its current stage (pass ``--force`` to override the state machine).
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = mark_applied(session, application_id, force=force)
+    except (ApplicationNotFoundError, InvalidStatusTransitionError) as exc:
+        error_console.print(f"[error]atlas apply mark:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_status_change(outcome))
+
+
+@status_app.command("set")
+def status_set(
+    application_id: int = typer.Argument(..., help="The id of the application to transition."),
+    stage: ApplicationStatus = typer.Argument(..., help="The pipeline stage to move to."),
+    due: datetime | None = typer.Option(
+        None,
+        "--due",
+        help="An advisory deadline to record with the transition (e.g. an OA/interview date).",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Bypass the state machine and allow the transition from any stage.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the status change as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Move an application to a pipeline stage (PROJECT.md §9, §5.12).
+
+    Records the transition in the application's status history (with the optional
+    ``--due`` deadline) and updates the derived fields — ``applied_at`` on reaching
+    ``applied``, ``outcome`` on reaching a terminal stage. Exits ``1`` if the
+    application id is unknown, or if the move is not a permitted transition (pass
+    ``--force`` to override the state machine).
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = set_application_status(session, application_id, stage, force=force, due=due)
+    except (ApplicationNotFoundError, InvalidStatusTransitionError) as exc:
+        error_console.print(f"[error]atlas status set:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_status_change(outcome))
+
+
+@app.command(name="list")
+def list_applications_command(
+    status: ApplicationStatus | None = typer.Option(
+        None,
+        "--status",
+        help="Show only applications currently in this stage.",
+    ),
+    profile_id: int | None = typer.Option(
+        None,
+        "--profile",
+        help="Show only applications prepared under this profile id.",
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the application list as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """List tracked applications, most recently updated first (PROJECT.md §9).
+
+    Optionally filter by ``--status`` (pipeline stage) or ``--profile`` (the
+    profile the application was prepared under).
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            report = build_applications_report(session, status=status, profile_id=profile_id)
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(report.model_dump_json(indent=2))
+    else:
+        console.print(render_applications(report))

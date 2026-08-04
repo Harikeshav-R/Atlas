@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Application-tracking core** (`atlas.tracking`): the first slice of Phase 1
+  item #6 (PROJECT.md §5.12) — the behavior on top of the `application` table
+  that landed with tailoring, so **no migration is needed** (the schema already
+  carries the full §6 column set). A pure status **state machine**
+  (`ApplicationStatus` covering `saved → preparing → ready → applied → oa →
+  interview → offer / rejected / withdrawn / ghosted`, with a forward-leaning
+  `ALLOWED_TRANSITIONS` graph and `can_transition`); a transition service that
+  records each change as a timestamped `StatusTransition` in `status_history`,
+  bumps `updated_at`, stamps `applied_at` when an application first reaches
+  `applied`, and records `outcome` on reaching a terminal stage; and a
+  `list_applications` query (filterable by status/profile, newest-updated first).
+  The clock is injected so persisted timestamps are deterministic in tests. The
+  first Textual TUI screens (PROJECT.md §8) remain for a follow-up — this PR is
+  the data foundation they read.
+- **`atlas status set <application_id> <stage>` command** (PROJECT.md §9): moves
+  an application to a pipeline stage, validating the transition against the state
+  machine and recording it in the status history (with an optional `--due`
+  advisory deadline). A `--force` flag overrides the machine for out-of-band
+  moves. Rich detail grid or `--json`; an unknown application id or an
+  illegal transition (without `--force`) exits `1`.
+- **`atlas apply mark <application_id>` command** (PROJECT.md §9): a convenience
+  that moves an application to `applied` and records the applied date, with the
+  same `--force`/`--json` behavior. An unknown id or an illegal move exits `1`.
+- **`atlas list` command** (PROJECT.md §9): lists tracked applications
+  (id, status, posting title/company, latest fit, applied date), most recently
+  updated first, filterable by `--status` (pipeline stage) and `--profile`. Rich
+  table or `--json`.
 - **Cover-letter generator** (`atlas.coverletter`): the final slice of Phase 1
   item #5 (PROJECT.md §5.8), which **completes the tailoring + rendering loop**. An
   honesty-governed AI pass (`write_cover_letter`) drafts a structured letter

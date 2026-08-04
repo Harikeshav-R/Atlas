@@ -68,6 +68,18 @@ atlas render <app_id>      # re-render an application's resume + cover PDFs (no 
 atlas open <app_id>        # open an application's exported PDFs in the default viewer
 ```
 
+Track each application through its pipeline:
+
+```bash
+atlas status set <app_id> <stage>       # move to a stage (saved…offer/rejected/…)
+atlas status set <app_id> oa --due 2026-08-15   # record an advisory deadline
+atlas status set <app_id> <stage> --force       # override the state machine
+atlas apply mark <app_id>               # mark applied (records the applied date)
+atlas list                              # list tracked applications, newest first
+atlas list --status applied --profile 1 # filter by stage and/or profile
+atlas list --json                       # machine-readable, for scripting
+```
+
 `atlas add` scores a newly-saved posting automatically; if you haven't set an
 active profile or a master resume yet, it saves the posting and points you at
 `atlas score`. Scoring combines an AI fit assessment (score, verdict, rationale,
@@ -86,6 +98,15 @@ resume) and the posting, rendered to a PDF matching the résumé styling. Tailor
 and the cover letter are collected under an **application** for the posting;
 `atlas render <app_id>` regenerates its PDFs from stored content (no AI), and
 `atlas open <app_id>` opens them in your default viewer.
+
+`atlas status set` / `atlas apply mark` move an application through its pipeline
+(`saved → preparing → ready → applied → oa → interview → offer / rejected /
+withdrawn / ghosted`). Each move is validated against the state machine — an
+illegal jump is refused with a hint (pass `--force` to override) — and recorded
+in a timestamped status history; reaching `applied` stamps the applied date and a
+terminal stage records the outcome. `atlas list` shows your tracked applications,
+newest-updated first, filterable by `--status` and `--profile`. (The interactive
+TUI for this is coming next.)
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
