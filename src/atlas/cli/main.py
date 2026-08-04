@@ -44,6 +44,7 @@ from atlas.cli.scrape import (
     render_posting_detail,
     render_postings,
 )
+from atlas.cli.tailor import render_tailor_outcome
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
 from atlas.config.secrets import default_secret_store
@@ -60,6 +61,8 @@ from atlas.render.service import render_master_resume
 from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
 from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
 from atlas.scrape.service import AddOutcome, add_posting
+from atlas.tailor.errors import TailoringError
+from atlas.tailor.service import tailor_posting
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -518,6 +521,56 @@ def score(
         print_json_line(outcome.model_dump_json(indent=2))
     else:
         console.print(render_score(outcome))
+
+
+@app.command()
+def tailor(
+    job_id: int = typer.Argument(..., help="The id of the saved posting to tailor for."),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the tailoring outcome as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Tailor your resume to a saved posting and render it to a one-page PDF.
+
+    An honesty-governed AI pass selects and rewords the most relevant master-resume
+    content for the posting (every item traceable to a source block), a
+    deterministic safety net restores dropped dates, and a render-measure-trim loop
+    packs the result to one page (PROJECT.md §5.7). The tailored resume is saved
+    under an application for the posting and rendered to a PDF. Exits ``1`` if the
+    posting id is unknown, no profile is active, no master resume is set, config or
+    the render engine is invalid, or the AI cannot produce a tailored resume.
+    """
+    try:
+        config = load_config()
+        store = default_secret_store()
+        provider = build_provider_chain(config.ai, store)
+        renderer = build_renderer(config.render)
+    except (ConfigError, RenderError) as exc:
+        error_console.print(f"[error]atlas tailor:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = tailor_posting(
+                session,
+                job_id,
+                provider=provider,
+                renderer=renderer,
+                honesty_level=config.tailoring.honesty_level.value,
+                theme=config.render.resume_theme,
+                enforce_one_page=config.tailoring.enforce_one_page,
+            )
+    except (JobPostingNotFoundError, TailoringError) as exc:
+        error_console.print(f"[error]atlas tailor:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_tailor_outcome(outcome))
 
 
 @postings_app.command("list")

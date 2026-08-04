@@ -28,7 +28,7 @@ def test_load_valid_config(tmp_path: Path) -> None:
 def test_load_ignores_unknown_sections(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        '[ai]\ndefault_backend = "claude_code"\n\n[tailoring]\nhonesty_level = "strict"\n',
+        '[ai]\ndefault_backend = "claude_code"\n\n[discovery]\npoll_interval_minutes = 120\n',
         encoding="utf-8",
     )
     config = load_config(path)
@@ -44,6 +44,17 @@ def test_load_render_section(tmp_path: Path) -> None:
     config = load_config(path)
     assert config.render.engine == "weasyprint"
     assert config.render.resume_theme == "compact"
+
+
+def test_load_tailoring_section(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[tailoring]\nhonesty_level = "reword_only"\nenforce_one_page = false\n',
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    assert config.tailoring.honesty_level == "reword_only"
+    assert config.tailoring.enforce_one_page is False
 
 
 def test_load_malformed_toml_raises(tmp_path: Path) -> None:

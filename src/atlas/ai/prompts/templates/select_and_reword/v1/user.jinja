@@ -1,0 +1,24 @@
+Tailor the candidate's resume for the posting below, returning the required JSON
+fields: items (each with content_id, block_type, final_text, reason, included),
+gaps, summary_rationale.
+
+Honesty level: {{ honesty_level }}
+
+--- JOB POSTING START ---
+Title: {{ title }}
+Company: {{ company }}
+Location: {{ location }}
+Seniority: {{ seniority }}
+Keywords: {{ keywords }}
+Requirements: {{ requirements }}
+
+{{ description }}
+--- JOB POSTING END ---
+
+--- TAILORING EMPHASIS START ---
+{{ emphasis }}
+--- TAILORING EMPHASIS END ---
+
+--- RESUME BLOCKS START ---
+{{ blocks }}
+--- RESUME BLOCKS END ---

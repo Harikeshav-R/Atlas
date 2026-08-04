@@ -1,18 +1,21 @@
 """Typed schema for Atlas's ``config.toml``.
 
 Only the sections Atlas consumes today are modelled — cross-platform behaviour
-plus the ``[ai]`` backend selection and the ``[render]`` pipeline. Unknown keys
-and the not-yet-built sections (the ``[tailoring]``, ``[discovery]``,
-``[integrations]``, and ``[notifications]`` blocks from PROJECT.md §10) are
-**ignored** rather than rejected, so a user's fuller config still loads while
-those features are built out in later phases. Every field is defaulted, so a
-missing or empty config file yields a valid default :class:`Config`.
+plus the ``[ai]`` backend selection, the ``[render]`` pipeline, and the
+``[tailoring]`` controls. Unknown keys and the not-yet-built sections (the
+``[discovery]``, ``[integrations]``, and ``[notifications]`` blocks from
+PROJECT.md §10) are **ignored** rather than rejected, so a user's fuller config
+still loads while those features are built out in later phases. Every field is
+defaulted, so a missing or empty config file yields a valid default
+:class:`Config`.
 
 Secrets never appear here: API keys and passwords live in the OS keychain and
 the config references them only by handle (see :mod:`atlas.config.secrets`).
 """
 
 from __future__ import annotations
+
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,9 +24,11 @@ __all__ = [
     "AiConfig",
     "ClaudeCodeBackend",
     "Config",
+    "HonestyLevel",
     "LoggingConfig",
     "OpenRouterBackend",
     "RenderConfig",
+    "TailoringConfig",
 ]
 
 
@@ -113,9 +118,43 @@ class RenderConfig(_Base):
     cover_theme: str = "matching"
 
 
+class HonestyLevel(StrEnum):
+    """How far tailoring may rephrase or infer beyond the master resume (§11).
+
+    - ``strict``: select/reorder/reword existing facts only; introduce no skills
+      or claims not present in the master resume.
+    - ``reword_only``: same facts, but freer rephrasing for impact and keyword
+      surfacing.
+    - ``light_inference`` *(default)*: may infer clearly-adjacent skills and
+      phrase aggressively for keyword match.
+    """
+
+    STRICT = "strict"
+    REWORD_ONLY = "reword_only"
+    LIGHT_INFERENCE = "light_inference"
+
+
+class TailoringConfig(_Base):
+    """The ``[tailoring]`` section: resume-tailoring controls (PROJECT.md §5.7, §11).
+
+    Attributes:
+        honesty_level: How far rewording/inference may go (see :class:`HonestyLevel`).
+            Ships as ``light_inference`` (PROJECT.md §11's selected default), one
+            setting away from ``strict``. Modelled here as global config; a
+            per-profile override is a later refinement (§11).
+        enforce_one_page: Whether to run the render-measure-trim loop that packs
+            the tailored resume onto a single page (PROJECT.md §5.7 step 2). When
+            ``False``, the resume is rendered once without trimming.
+    """
+
+    honesty_level: HonestyLevel = HonestyLevel.LIGHT_INFERENCE
+    enforce_one_page: bool = True
+
+
 class Config(_Base):
     """The top-level Atlas configuration."""
 
     ai: AiConfig = Field(default_factory=AiConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
+    tailoring: TailoringConfig = Field(default_factory=TailoringConfig)
