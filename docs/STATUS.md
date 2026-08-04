@@ -9,11 +9,13 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-04 (cover-letter generator + `atlas render`/`open`
-  landed — **Phase 1 item #5 DONE**; application tracking + core TUI (#6) is next)
+- **Last updated:** 2026-08-04 (application-tracking **core + CLI** landed —
+  `atlas.tracking` status state machine + `atlas status set` / `apply mark` /
+  `list`; **Phase 1 item #6 is in progress** — the core TUI screens are next)
 - **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
   paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅
-  **item #5 done**; application tracking + TUI next)
+  **item #5 done** · application-tracking core + CLI ✅; the core TUI screens
+  finish item #6 next)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -22,16 +24,15 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #5 is DONE** — the cover-letter generator + `atlas render`/`open` landed (see
-"What has landed"), closing tailoring + cover letter + HTML→PDF rendering. **Do #6 next:
-application tracking + the core TUI** (§5.12, §8). The `application` table already exists (it
-landed with tailoring); item #6 adds the **status state machine** (`Saved → Preparing → Ready →
-Applied → OA → Interview → Offer/Rejected/…`), status history, deadlines, and the Textual TUI
-screens (Dashboard, Posting detail, Tailor workspace, Applications/Kanban, Application detail).
-This is the first TUI work — it introduces `atlas.tui` (Textual) and the manual
-status-transition CLI (`atlas apply mark` / `atlas status set` / `atlas list`, §9), reading the
-posting/score/tailored-resume/cover-letter rows the earlier features persist. Remaining Phase 1
-order:
+**Phase 1 item #6 is in progress** — the **application-tracking core + CLI** landed (see "What
+has landed"): the `atlas.tracking` status state machine (`Saved → Preparing → Ready → Applied →
+OA → Interview → Offer/Rejected/Withdrawn/Ghosted`), timestamped status history, and the manual
+status-transition CLI (`atlas status set` / `atlas apply mark` / `atlas list`, §9). **Do the
+core TUI next to finish item #6** (§8): the first Textual work — introducing `atlas.tui`
+(Textual) plus its async test harness — with the Dashboard, Posting detail, Tailor workspace,
+Applications/Kanban, and Application-detail screens, reading the posting/score/tailored-resume/
+cover-letter/application rows the CLI features persist (the `list_applications` query and
+`StatusChangeOutcome` are the read/write primitives the screens call). Remaining Phase 1 order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
 2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
@@ -39,15 +40,20 @@ order:
 4. ✅ **Fit scoring** for a pasted job — `atlas.matching`.
 5. ✅ **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement — `atlas.render`
    + `atlas.tailor` + `atlas.coverletter` + `atlas.materials` (+ `atlas.platform` opener).
-6. **Application tracking** + the core TUI screens. ← **do this next**
+6. 🚧 **Application tracking** (core + CLI ✅ — `atlas.tracking`) + the **core TUI screens**
+   (← **do this next** to finish item #6).
 
-> **Reusable groundwork for #6 (application tracking + TUI):** the `application` table
-> (`atlas.db.models`) is in place with its full §6 column set (status, status_history,
-> applied_at, outcome, notes, timestamps) — item #6 fills in the behavior, not the schema. The
-> materials each row already carries (`match_score`, `tailored_resume`, `cover_letter`,
+> **Reusable groundwork for the #6 TUI:** the application-tracking behavior now exists —
+> `atlas.tracking.status` (the `ApplicationStatus` state machine + `can_transition`),
+> `atlas.tracking.service` (`set_application_status` / `mark_applied` →
+> `StatusChangeOutcome`, recording timestamped `status_history`), and
+> `atlas.tracking.repository.list_applications` (filter by status/profile, newest-updated
+> first) — so the TUI screens call those read/write primitives instead of re-implementing
+> them. The materials each row carries (`match_score`, `tailored_resume`, `cover_letter`,
 > referenced PDFs) are what the Applications/Kanban and Application-detail screens display; the
 > `atlas render`/`open` commands and the `atlas.platform` opener are the "act on an application"
-> primitives the TUI can call. Still unconsumed: `AiConfig.scoring_model_tier` /
+> primitives the TUI can call. `atlas.tui` (Textual) and its async (`Pilot`) test harness are
+> greenfield — the first TUI work introduces both. Still unconsumed: `AiConfig.scoring_model_tier` /
 > `daily_spend_cap_usd` (§5.6 cost controls); per-profile honesty override (§11). A **PR 2b** is
 > also queued: the deferred tailoring depth — `honesty_validate` traceability, AI-phrase scrub
 > (§5.7 step 5), keyword-gap suggestions (§5.7 step 4), diff-mode, and the editable/regenerate
@@ -95,6 +101,36 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 1 · Application-tracking core + CLI — `atlas.tracking` + `atlas status`/`apply`/`list`
+(item #6, PR 1 — the data foundation for the core TUI):
+
+- `atlas.tracking.status`: the **pure** state machine — `ApplicationStatus` (`StrEnum`
+  mirroring `matching.Verdict`, its `.value` persisting into the existing `application.status`
+  column), the forward-leaning `ALLOWED_TRANSITIONS` graph (with `Withdrawn` reachable from
+  every non-terminal stage and an `Interview` self-edge for successive rounds), `can_transition`,
+  `TERMINAL_STATUSES`, and the typed `StatusTransition` history-entry model.
+- `atlas.tracking.service`: `set_application_status` validates the move (unless `force=True`),
+  appends a timestamped `StatusTransition` to `status_history` (reassigning the list so the JSON
+  column is marked dirty), bumps `updated_at`, stamps `applied_at` when the application first
+  reaches `applied`, and records `outcome` on a terminal stage — returning a serializable
+  `StatusChangeOutcome`. `mark_applied` is the `→ applied` convenience. The clock is injected
+  (`utcnow` default) so timestamps are deterministic in tests; lookup reuses
+  `atlas.tailor.repository.get_application` (`ApplicationNotFoundError`), and an illegal move
+  raises `InvalidStatusTransitionError`.
+- `atlas.tracking.repository`: `list_applications(session, *, status=None, profile_id=None)` —
+  the net-new query the tracking views need, ordered newest-updated first.
+- CLI (`atlas.cli.tracking` + `main`): `atlas status set <id> <stage>` (`--due` / `--force` /
+  `--json`), `atlas apply mark <id>` (`--force` / `--json`), and `atlas list`
+  (`--status` / `--profile` / `--json`). Pure `build_applications_report` / `render_*` split
+  with a `_STATUS_STYLES` palette (mirroring `matching.verdict_style`); the `stage` argument is
+  typed `ApplicationStatus` so Typer validates and lists the choices. Unknown id or illegal
+  transition (without `--force`) → exit 1. **No migration** — the `application` table already
+  had its full §6 column set. 100% line+branch; `mypy --strict` incl. win32. Verified
+  end-to-end against a real temp DB: a `preparing` application moves `→ ready → applied`
+  (recording `applied_at`), an illegal `→ preparing` jump exits 1 with a clear message,
+  `--force` overrides it, and `list`/`--status`/`--json` behave. The first Textual TUI screens
+  (§8) finish item #6 in a follow-up PR.
 
 Phase 1 · Cover letter + render/open — `atlas.coverletter` + `atlas.materials` + `atlas.platform`
 (item #5, PR 3/3 — **completes item #5**):
@@ -534,7 +570,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅; application tracking + TUI next |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅ · application-tracking core + CLI ✅; the core TUI screens finish item #6 next |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

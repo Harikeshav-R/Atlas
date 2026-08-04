@@ -1080,8 +1080,13 @@ The document specs everything; build order is phased. Each phase is independentl
   scrub, keyword-gap suggestions, diff-mode, per-profile honesty, and the editable/regenerate
   loop.)*
 - [ ] **Application tracking** with manual status + the core TUI (Dashboard, Posting, Tailor
-  workspace, Applications, Application detail). *(The `application` table landed with tailoring;
-  this item adds the status state machine, history, and TUI on top.)*
+  workspace, Applications, Application detail). *(The `application` table landed with tailoring.
+  **Core + CLI ✅** `atlas.tracking` — the `ApplicationStatus` state machine + `can_transition`,
+  the transition service recording timestamped `status_history` / `applied_at` / `outcome`
+  (validated, with a `--force` override), `list_applications`, and the manual-transition CLI
+  `atlas status set` / `atlas apply mark` / `atlas list` (§9); no migration, the schema was
+  already in place. **Remaining:** the first Textual TUI screens — `atlas.tui` + its async test
+  harness — which read the rows these features persist.)*
 
 ### Phase 2 — Discovery & background
 - [ ] **Daemon** + scheduler + IPC.
