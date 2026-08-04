@@ -1085,8 +1085,12 @@ The document specs everything; build order is phased. Each phase is independentl
   the transition service recording timestamped `status_history` / `applied_at` / `outcome`
   (validated, with a `--force` override), `list_applications`, and the manual-transition CLI
   `atlas status set` / `atlas apply mark` / `atlas list` (§9); no migration, the schema was
-  already in place. **Remaining:** the first Textual TUI screens — `atlas.tui` + its async test
-  harness — which read the rows these features persist.)*
+  already in place. **Core TUI ✅** `atlas.tui` (Textual) + `atlas tui` — the Dashboard,
+  Applications (table + Kanban), Application-detail, and Posting-detail screens over pure data
+  builders (`atlas.tui.data` + reused CLI `build_*`), in-TUI status changes, the async `Pilot`
+  test harness (`textual` + `pytest-asyncio`), and `count_applications_by_status` for the funnel.
+  **Remaining:** the three-pane **Tailor workspace** (§5.7) + wiring tailoring/cover/score/
+  render/open through Textual **thread workers** (those services block).)*
 
 ### Phase 2 — Discovery & background
 - [ ] **Daemon** + scheduler + IPC.
