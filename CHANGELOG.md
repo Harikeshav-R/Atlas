@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Background daemon** (`atlas.daemon`): the first Phase 2 feature (PROJECT.md
+  §4.1) — a long-running scheduler process. It runs one scheduled job today, the
+  **scoring poll** (`run_scoring_poll`), which clears the fit-score backlog by
+  scoring every not-yet-scored posting against the active profile (best-effort per
+  posting, so one unscoreable posting never aborts the batch). The scheduler is
+  APScheduler behind an injectable `Scheduler` seam (`register_poll_job` wires the
+  job from the `[discovery]` interval; the real `BlockingScheduler` is built by a
+  pragma'd factory that imports APScheduler lazily, so the hermetic suite never
+  loads it). Lifecycle (`start_daemon` / `stop_daemon` / `daemon_status`) is
+  tracked by a PID file under the state dir, with the OS process operations behind
+  an injectable `ProcessControl` seam — everything but the real scheduler start and
+  OS signals is hermetically testable. The IPC surface for the TUI, desktop
+  notifications, and discovery-source polling are later Phase 2 work.
+- **`atlas daemon start|stop|status` commands** (PROJECT.md §9): `start` runs the
+  scheduler in the foreground (blocking; background it with your OS service
+  manager) and refuses to start if one is already running; `stop` signals the
+  running daemon and clears its PID file; `status` reports running/stopped (Rich
+  grid or `--json`). Unknown-config / already-running / not-running cases exit `1`.
+- **`[discovery]` config section** (`DiscoveryConfig`): `poll_interval_minutes`
+  (default `120`, drives the daemon's poll) and `enable_scraping` (default
+  `false`, reserved for the later opt-in scraping phase), per PROJECT.md §10.
+  Previously ignored-by-design; now loaded into `Config.discovery`.
+- **`list_unscored_postings`** (`atlas.matching.repository`): returns postings
+  with no `MatchScore` yet — the fit-score backlog the daemon's poll drains.
+- **`pid_file()`** (`atlas.config.paths`): the daemon's PID-file path under the
+  state dir.
+- New runtime dependency: `apscheduler` (the daemon's scheduler).
 - **Tailor workspace TUI screen** (`atlas.tui.screens.tailor_workspace`): the
   final slice of Phase 1 item #6 (PROJECT.md §8, screen #4), which **completes the
   core loop**. Opened from the Application-detail screen (press `t`), it shows the

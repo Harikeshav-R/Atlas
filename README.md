@@ -123,6 +123,21 @@ freeze the app. When no AI backend is configured the TUI still opens for browsin
 and those actions are disabled (run `atlas doctor` to set the backend up).
 Inline editing of selections and per-section regenerate are coming next.
 
+Run background work with the daemon:
+
+```bash
+atlas daemon start          # run the scheduler in the foreground (blocking)
+atlas daemon status         # report running/stopped (--json for scripting)
+atlas daemon stop           # stop a running daemon
+```
+
+`atlas daemon start` runs a scheduler that, on the `[discovery]`
+`poll_interval_minutes` interval, scores any not-yet-scored postings against your
+active profile — clearing the fit-score backlog in the background. (Discovery
+polling of ATS boards and aggregators, plus the daemon's IPC link to the TUI,
+arrive with the source adapters.) It blocks the terminal; background it with your
+OS service manager (`systemd --user`, `launchd`, Task Scheduler).
+
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
 the `ATLAS_LOG_LEVEL` env var / the `[logging]` config.
