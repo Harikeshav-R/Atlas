@@ -17,14 +17,15 @@ from typing import TYPE_CHECKING, Any
 
 from sqlmodel import col, desc, select
 
-from atlas.db.models import MatchScore
+from atlas.db.models import JobPosting, MatchScore
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import datetime
 
     from sqlmodel import Session
 
-__all__ = ["create_match_score", "get_latest_match_score"]
+__all__ = ["create_match_score", "get_latest_match_score", "list_unscored_postings"]
 
 
 def create_match_score(
@@ -95,3 +96,18 @@ def get_latest_match_score(session: Session, job_posting_id: int) -> MatchScore 
         .where(MatchScore.job_posting_id == job_posting_id)
         .order_by(desc(col(MatchScore.id)))
     ).first()
+
+
+def list_unscored_postings(session: Session) -> Sequence[JobPosting]:
+    """Return postings that have no :class:`~atlas.db.models.MatchScore` yet.
+
+    The background daemon's scoring poll (PROJECT.md §4.1, §5.6) uses this to find
+    the fit-score backlog. A posting counts as scored once it has at least one
+    (append-only) match-score row, so a posting drops out of this list after its
+    first successful score. Ordered by insertion (id) for a stable, oldest-first
+    poll order.
+    """
+    scored = select(MatchScore.job_posting_id)
+    return session.exec(
+        select(JobPosting).where(col(JobPosting.id).not_in(scored)).order_by(col(JobPosting.id))
+    ).all()
