@@ -16,10 +16,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 import typer
 
+from atlas.ai.base import LLMError
 from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.coverletter import render_cover_letter_outcome
@@ -84,6 +85,8 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
     from atlas.ai.base import LLMProvider
+    from atlas.config.schema import RenderConfig, TailoringConfig
+    from atlas.render.renderer import PdfRenderer
 
 __all__ = ["app"]
 
@@ -247,20 +250,65 @@ def _quiet_console_logging() -> None:
             atlas_logger.removeHandler(handler)
 
 
+class _TuiActions(NamedTuple):
+    """The Tailor-workspace action boundaries, or ``None`` when unavailable.
+
+    Built best-effort by :func:`_build_tui_actions`: when the AI backend or the
+    renderer can't be constructed (e.g. no key, bad config), the fields are
+    ``None`` and the TUI launches browse-only.
+    """
+
+    provider: LLMProvider | None
+    renderer: PdfRenderer | None
+    tailoring: TailoringConfig | None
+    render_config: RenderConfig | None
+
+
+def _build_tui_actions() -> _TuiActions:
+    """Build the Tailor-workspace boundaries, or all-``None`` if they can't be built.
+
+    Replicates the ``atlas tailor`` construction (config → secret store → provider
+    chain + renderer). Any configuration/AI/render failure is swallowed to a hint
+    on the stderr console so the TUI still opens for browsing (the read/track
+    screens need no AI); the Tailor actions are disabled until the backend works.
+    """
+    try:
+        config = load_config()
+        store = default_secret_store()
+        provider = build_provider_chain(config.ai, store)
+        renderer = build_renderer(config.render)
+    except (ConfigError, RenderError, LLMError) as exc:
+        error_console.print(
+            f"[warning]atlas tui:[/warning] AI actions disabled ({exc}); "
+            "run [accent]atlas doctor[/accent] to fix your backend."
+        )
+        return _TuiActions(None, None, None, None)
+    return _TuiActions(provider, renderer, config.tailoring, config.render)
+
+
 @app.command()
 def tui() -> None:
     """Launch the interactive Atlas TUI (PROJECT.md §8).
 
-    Opens the Dashboard, Applications (table + Kanban), Application-detail, and
-    Posting-detail screens over your saved data. The app owns the database for its
-    session; console logging is quieted first so log records don't corrupt the
-    display (file logging continues).
+    Opens the Dashboard, Applications (table + Kanban), Application-detail,
+    Posting-detail, and Tailor-workspace screens over your saved data. The AI/render
+    boundaries the Tailor workspace needs are built best-effort — if they can't be
+    (e.g. no key configured) the TUI still opens for browsing and those actions are
+    disabled. The app owns the database for its session; console logging is quieted
+    first so log records don't corrupt the display (file logging continues).
     """
     engine = _open_database()
+    actions = _build_tui_actions()
     _quiet_console_logging()
     from atlas.tui.app import AtlasApp
 
-    app_instance = AtlasApp(engine=engine)
+    app_instance = AtlasApp(
+        engine=engine,
+        provider=actions.provider,
+        renderer=actions.renderer,
+        tailoring=actions.tailoring,
+        render_config=actions.render_config,
+    )
     try:
         app_instance.run()  # pragma: no cover - launches the interactive Textual app
     finally:

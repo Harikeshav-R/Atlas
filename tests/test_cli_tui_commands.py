@@ -16,11 +16,15 @@ from sqlmodel import SQLModel
 from typer.testing import CliRunner
 
 import atlas.cli.main as app_module
+from atlas.ai.base import LLMError
 from atlas.cli.main import _quiet_console_logging, app
+from atlas.config.errors import ConfigError
+from atlas.config.schema import Config
 from atlas.db import create_db_engine
 
 if TYPE_CHECKING:
     from pathlib import Path
+    from typing import Any
 
     from sqlalchemy.engine import Engine
 
@@ -48,8 +52,8 @@ class _FakeApp:
 
     instances: ClassVar[list[_FakeApp]] = []
 
-    def __init__(self, *, engine: Engine) -> None:
-        self.engine = engine
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
         self.ran = False
         _FakeApp.instances.append(self)
 
@@ -57,18 +61,75 @@ class _FakeApp:
         self.ran = True
 
 
-def test_tui_builds_app_and_runs(shared_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture
+def _fake_app(monkeypatch: pytest.MonkeyPatch) -> type[_FakeApp]:
+    """Replace the real AtlasApp (lazy-imported by the command) with the recorder."""
     _FakeApp.instances.clear()
-    # The command lazy-imports AtlasApp from atlas.tui.app; patch it there.
     import atlas.tui.app as tui_app_module
 
     monkeypatch.setattr(tui_app_module, "AtlasApp", _FakeApp)
+    return _FakeApp
+
+
+def _stub_action_builders(monkeypatch: pytest.MonkeyPatch, *, sentinel: object) -> None:
+    """Make the boundary builders succeed, returning sentinels for provider/renderer."""
+    monkeypatch.setattr(app_module, "load_config", Config)
+    monkeypatch.setattr(app_module, "default_secret_store", lambda: object())
+    monkeypatch.setattr(app_module, "build_provider_chain", lambda ai, store: sentinel)
+    monkeypatch.setattr(app_module, "build_renderer", lambda render: sentinel)
+
+
+def test_tui_builds_app_with_actions_and_runs(
+    shared_engine: Engine, _fake_app: type[_FakeApp], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sentinel = object()
+    _stub_action_builders(monkeypatch, sentinel=sentinel)
     result = runner.invoke(app, ["tui"])
     assert result.exit_code == 0
     assert len(_FakeApp.instances) == 1
     instance = _FakeApp.instances[0]
-    assert instance.engine is shared_engine
+    assert instance.kwargs["engine"] is shared_engine
+    # Action-capable: the built provider/renderer + config blocks were passed.
+    assert instance.kwargs["provider"] is sentinel
+    assert instance.kwargs["renderer"] is sentinel
+    assert instance.kwargs["tailoring"] is not None
+    assert instance.kwargs["render_config"] is not None
     assert instance.ran is True
+
+
+def test_tui_falls_back_to_browse_only_on_config_error(
+    shared_engine: Engine, _fake_app: type[_FakeApp], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _bad_config() -> Config:
+        raise ConfigError("no config")
+
+    monkeypatch.setattr(app_module, "load_config", _bad_config)
+    result = runner.invoke(app, ["tui"])
+    assert result.exit_code == 0
+    assert "atlas tui" in result.output  # the disabled hint printed
+    instance = _FakeApp.instances[0]
+    # Browse-only: no provider/renderer/config were passed.
+    assert instance.kwargs["provider"] is None
+    assert instance.kwargs["renderer"] is None
+    assert instance.kwargs["tailoring"] is None
+    assert instance.kwargs["render_config"] is None
+    assert instance.ran is True
+
+
+def test_tui_falls_back_to_browse_only_on_llm_error(
+    shared_engine: Engine, _fake_app: type[_FakeApp], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(app_module, "load_config", Config)
+    monkeypatch.setattr(app_module, "default_secret_store", lambda: object())
+
+    def _bad_provider(ai: object, store: object) -> object:
+        raise LLMError("no backend")
+
+    monkeypatch.setattr(app_module, "build_provider_chain", _bad_provider)
+    result = runner.invoke(app, ["tui"])
+    assert result.exit_code == 0
+    assert _FakeApp.instances[0].kwargs["provider"] is None
+    assert _FakeApp.instances[0].ran is True
 
 
 def test_quiet_console_logging_keeps_file_handler(tmp_path: Path) -> None:
