@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cover-letter generator** (`atlas.coverletter`): the final slice of Phase 1
+  item #5 (PROJECT.md §5.8), which **completes the tailoring + rendering loop**. An
+  honesty-governed AI pass (`write_cover_letter`) drafts a structured letter
+  (greeting, hook, body paragraphs, close) grounded in the application's tailored
+  resume selections — or, when none exists, the master resume — plus the posting,
+  and renders it to a PDF matching the résumé styling via a new `matching`
+  cover-letter theme. Truth-anchored (claims must trace to real material) and
+  persisted as a versioned, append-only `cover_letter` row so it can be
+  re-rendered without the AI. Every boundary (provider, renderer, clock, renders
+  dir) is injected, so the flow is hermetic.
+- **`atlas cover <job_id>` command** (PROJECT.md §9): writes a cover letter for a
+  saved posting (with `--tone`) and renders it to a PDF, reporting the path, what
+  it was grounded on, and any unsupported-keyword gaps (Rich detail grid or
+  `--json`). Unknown posting id, no active profile, no material to ground in,
+  invalid config/engine, or unusable AI output exit `1`.
+- **`atlas render <application_id>` and `atlas open <application_id>` commands**
+  (PROJECT.md §9): `render` re-renders an application's materials — the latest
+  tailored resume and cover letter — to fresh PDFs **deterministically from their
+  stored content, with no AI call**, skipping whichever material doesn't exist;
+  `open` opens the exported PDFs in the OS default viewer. Both `--json`-capable;
+  an unknown application id exits `1`.
+- **`atlas.platform` package** with a `FileOpener` seam (PROJECT.md §12.1): an
+  injectable file-open boundary (`default_file_opener` dispatches by `sys.platform`
+  — `os.startfile` / `open` / `xdg-open`), so `atlas open` works cross-platform and
+  the suite stays hermetic (a fake opener is injected). The first piece of the
+  planned platform-abstraction layer.
+- **`cover_letter` table** (`atlas.db.models`, PROJECT.md §6) with an Alembic
+  migration; append-only and versioned per application, referencing the rendered
+  PDF by path (never a DB blob, §6). The `matching` cover-letter theme and the
+  `write_cover_letter` v1 prompt (`WRITE_COVER_LETTER_PROMPT_VERSION`) ship
+  alongside it, and `get_application` / `ApplicationNotFoundError` were added to
+  `atlas.tailor` for the application-keyed commands. The previously-unconsumed
+  `[render] cover_theme` config is now used.
 - **Resume tailoring engine** (`atlas.tailor`): the second slice of Phase 1 item
   #5 (PROJECT.md §5.7). Produces a truth-anchored, one-page tailored resume PDF
   for a stored posting: an honesty-governed AI pass (`select_and_reword`) selects

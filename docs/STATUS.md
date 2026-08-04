@@ -9,11 +9,11 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-03 (resume-tailoring engine landed — **Phase 1 item
-  #5, PR 2 of 3**; cover letter + application-keyed render/open is next)
+- **Last updated:** 2026-08-04 (cover-letter generator + `atlas render`/`open`
+  landed — **Phase 1 item #5 DONE**; application tracking + core TUI (#6) is next)
 - **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
-  paste-URL scrape ✅ · fit scoring ✅ · **item #5 in progress**: render
-  foundation ✅, tailoring engine ✅, cover letter next)
+  paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅
+  **item #5 done**; application tracking + TUI next)
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -22,36 +22,36 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #5, PR 2 of 3 (resume-tailoring engine) has landed** — see "What has landed".
-`atlas.tailor` turns a stored posting + the master resume into a truth-anchored, one-page
-tailored resume PDF: an honesty-governed `select_and_reword` AI pass selects/rewords relevant
-blocks by `content_id`, a deterministic date-restore safety net runs, and a
-render-measure-**trim** loop (built on PR 1's page-count signal) packs it to one page. It ships
-the `[tailoring]` config, the `application` + `tailored_resume` tables, and `atlas tailor
-<job_id>`. Item #5 has one PR left — **do PR 3 next: the cover-letter generator**
-(`atlas.coverletter`, §5.8) + the application-keyed `atlas render` / `atlas open` commands. A
-**PR 2b** is also queued: the deferred tailoring depth — the separate `honesty_validate`
-traceability pass, the AI-phrase scrub (§5.7 step 5), keyword-gap suggestions (§5.7 step 4),
-diff-mode (skill-target plan → diffs → apply → verify), and per-profile honesty override.
-Remaining Phase 1 order:
+**Phase 1 item #5 is DONE** — the cover-letter generator + `atlas render`/`open` landed (see
+"What has landed"), closing tailoring + cover letter + HTML→PDF rendering. **Do #6 next:
+application tracking + the core TUI** (§5.12, §8). The `application` table already exists (it
+landed with tailoring); item #6 adds the **status state machine** (`Saved → Preparing → Ready →
+Applied → OA → Interview → Offer/Rejected/…`), status history, deadlines, and the Textual TUI
+screens (Dashboard, Posting detail, Tailor workspace, Applications/Kanban, Application detail).
+This is the first TUI work — it introduces `atlas.tui` (Textual) and the manual
+status-transition CLI (`atlas apply mark` / `atlas status set` / `atlas list`, §9), reading the
+posting/score/tailored-resume/cover-letter rows the earlier features persist. Remaining Phase 1
+order:
 
 1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
 2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
 3. ✅ **Paste-URL scrape + parse** — `atlas.scrape`.
 4. ✅ **Fit scoring** for a pasted job — `atlas.matching`.
-5. **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement (3 PRs).
-   ← **in progress**: render foundation ✅ (`atlas.render`) · tailoring engine ✅ (`atlas.tailor`);
-   cover letter + application-keyed render/open next.
-6. **Application tracking** + the core TUI screens (builds on the `application` table this PR added).
+5. ✅ **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement — `atlas.render`
+   + `atlas.tailor` + `atlas.coverletter` + `atlas.materials` (+ `atlas.platform` opener).
+6. **Application tracking** + the core TUI screens. ← **do this next**
 
-> **Reusable groundwork for #5 PR 3 (cover letter):** `atlas.tailor` establishes the full
-> shape to mirror — an AI pass via `complete_json` + a versioned prompt (`write_cover_letter`,
-> §7), rendered to PDF through `atlas.render` (add a cover-letter theme + the `cover_theme`
-> config, already modelled), persisted on the **existing `application`** row as a `cover_letter`
-> table (a new migration). The application-keyed `atlas render` / `atlas open` commands read the
-> latest `tailored_resume` / `cover_letter` `rendered_pdf_ref`. Still unconsumed:
-> `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` (§5.6 cost controls); per-profile
-> honesty override (§11); the deferred PR 2b tailoring passes noted above.
+> **Reusable groundwork for #6 (application tracking + TUI):** the `application` table
+> (`atlas.db.models`) is in place with its full §6 column set (status, status_history,
+> applied_at, outcome, notes, timestamps) — item #6 fills in the behavior, not the schema. The
+> materials each row already carries (`match_score`, `tailored_resume`, `cover_letter`,
+> referenced PDFs) are what the Applications/Kanban and Application-detail screens display; the
+> `atlas render`/`open` commands and the `atlas.platform` opener are the "act on an application"
+> primitives the TUI can call. Still unconsumed: `AiConfig.scoring_model_tier` /
+> `daily_spend_cap_usd` (§5.6 cost controls); per-profile honesty override (§11). A **PR 2b** is
+> also queued: the deferred tailoring depth — `honesty_validate` traceability, AI-phrase scrub
+> (§5.7 step 5), keyword-gap suggestions (§5.7 step 4), diff-mode, and the editable/regenerate
+> loop (§5.7, §5.8).
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -95,6 +95,40 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 1 · Cover letter + render/open — `atlas.coverletter` + `atlas.materials` + `atlas.platform`
+(item #5, PR 3/3 — **completes item #5**):
+
+- `atlas.coverletter`: mirrors the `atlas.tailor` shape — `CoverLetterDraft` model, the
+  honesty-governed `write_cover_letter` AI pass (renders the `write_cover_letter/v1` prompt via
+  `complete_json`; propagates `LLMOutputError`), `build_cover_letter_context`, append-only
+  versioned `create_cover_letter`/`get_latest_cover_letter`, and the
+  `write_application_cover_letter` service. The letter is grounded in the application's latest
+  tailored-resume selections if present, else a master-resume summary (`NoMasterResumeError` when
+  neither exists); rendered once (a letter is one page) through the new `matching` cover theme;
+  `LLMOutputError` → `CoverLetterOutputError`.
+- `atlas.render` additions: `CoverLetterContext` view model + `render_cover_letter_html` (a shared
+  `_render_theme` helper backs both resume and cover rendering) + the `matching` theme
+  (`cover.html.jinja` + `cover.css`, sharing the `jakes-resume` visual language). The
+  previously-unconsumed `[render] cover_theme` config is now used.
+- `atlas.materials`: `rerender_application` re-renders the latest tailored resume (from stored
+  `final_content`) and cover letter (from stored `content`) to fresh PDFs **with no AI**,
+  skipping missing materials; `open_application` opens the rendered PDFs via an injected opener.
+- `atlas.platform` (new): the `FileOpener` seam — `default_file_opener` dispatches by
+  `sys.platform` (`os.startfile` / `open` / `xdg-open`), `# pragma: no cover`; `FileOpenError`
+  for missing/failed opens. The first piece of the §12.1 platform-abstraction layer; a
+  `FakeFileOpener` keeps the suite hermetic.
+- `cover_letter` table + Alembic migration (`down_revision` on the tailoring head);
+  `get_application` + `ApplicationNotFoundError` added to `atlas.tailor` for the
+  application-keyed commands.
+- CLI: `atlas cover <job_id>` (`--tone`), `atlas render <application_id>`, `atlas open
+  <application_id>` (top-level commands; `atlas open` needs no AI/renderer). Pure display split in
+  `atlas.cli.coverletter` / `atlas.cli.materials`; `--json` throughout; each error → exit 1.
+  100% line+branch; `mypy --strict` incl. win32 (the opener's `os.startfile` ignore is
+  `unused-ignore`-tolerant). Verified end-to-end with a fake provider + real WeasyPrint: a cover
+  letter renders to a valid 1-page PDF, `render` re-renders from stored content, and `open`
+  launches the PDFs; the suite injects `FakePdfRenderer`/`FakeFileOpener` so CI never renders or
+  opens for real.
 
 Phase 1 · Resume-tailoring engine — `atlas.tailor` + `atlas tailor` (item #5, PR 2/3):
 
@@ -500,7 +534,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅ · fit scoring ✅; tailoring next |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅; application tracking + TUI next |
 | 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

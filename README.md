@@ -60,6 +60,12 @@ atlas score <id> --json    # machine-readable, for scripting
 
 atlas tailor <id>          # tailor your resume to a saved posting → one-page PDF
 atlas tailor <id> --json   # machine-readable, for scripting
+
+atlas cover <id>           # write a cover letter for a saved posting → PDF
+atlas cover <id> --tone warm  # pick the tone
+
+atlas render <app_id>      # re-render an application's resume + cover PDFs (no AI)
+atlas open <app_id>        # open an application's exported PDFs in the default viewer
 ```
 
 `atlas add` scores a newly-saved posting automatically; if you haven't set an
@@ -74,6 +80,12 @@ an AI pass selects and rewords the most relevant master-resume content (governed
 by the `[tailoring] honesty_level`), a safety net restores any dropped dates, and
 a render-measure-trim loop packs it onto one page. It reports the PDF path and any
 posting keywords it couldn't truthfully support; re-tailoring keeps a new version.
+
+`atlas cover` writes a cover letter grounded in your tailored resume (or master
+resume) and the posting, rendered to a PDF matching the résumé styling. Tailoring
+and the cover letter are collected under an **application** for the posting;
+`atlas render <app_id>` regenerates its PDFs from stored content (no AI), and
+`atlas open <app_id>` opens them in your default viewer.
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
