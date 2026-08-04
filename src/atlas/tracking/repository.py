@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlmodel import col, desc, select
+from sqlmodel import col, desc, func, select
 
 from atlas.db.models import Application
 
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
     from atlas.tracking.status import ApplicationStatus
 
-__all__ = ["list_applications"]
+__all__ = ["count_applications_by_status", "list_applications"]
 
 
 def list_applications(
@@ -52,3 +52,27 @@ def list_applications(
         statement = statement.where(Application.profile_id == profile_id)
     statement = statement.order_by(desc(col(Application.updated_at)))
     return session.exec(statement).all()
+
+
+def count_applications_by_status(
+    session: Session,
+    *,
+    profile_id: int | None = None,
+) -> dict[str, int]:
+    """Return how many applications sit in each status, keyed by status value.
+
+    The Dashboard's pipeline funnel (PROJECT.md §8) reads this. Only statuses with
+    at least one application appear (a stage with none is simply absent), so the
+    caller supplies zeros for the stages it wants to show.
+
+    Args:
+        session: The open session to read within.
+        profile_id: If given, count only applications for that profile.
+
+    Returns:
+        A mapping of ``status`` value → count.
+    """
+    statement = select(Application.status, func.count()).group_by(col(Application.status))
+    if profile_id is not None:
+        statement = statement.where(Application.profile_id == profile_id)
+    return dict(session.exec(statement).all())
