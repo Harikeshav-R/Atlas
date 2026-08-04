@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "ApplicationNotFoundError",
     "NoActiveProfileError",
     "NoMasterResumeError",
     "TailoringError",
@@ -12,6 +13,19 @@ __all__ = [
 
 class TailoringError(Exception):
     """Base class for every error raised by :mod:`atlas.tailor`."""
+
+
+class ApplicationNotFoundError(TailoringError):
+    """Raised when an application is looked up by an id that does not exist.
+
+    Carries the missing :attr:`application_id` so the CLI (e.g. ``atlas render`` /
+    ``atlas open``) can render a specific, secret-free message.
+    """
+
+    def __init__(self, application_id: int) -> None:
+        """Store the missing application id and build a human-readable message."""
+        self.application_id = application_id
+        super().__init__(f"No application with id {application_id}.")
 
 
 class NoActiveProfileError(TailoringError):

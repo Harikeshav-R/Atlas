@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import col, desc, func, select
 
 from atlas.db.models import Application, TailoredResume
+from atlas.tailor.errors import ApplicationNotFoundError
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -26,9 +27,22 @@ if TYPE_CHECKING:
 
 __all__ = [
     "create_tailored_resume",
+    "get_application",
     "get_latest_tailored_resume",
     "get_or_create_application",
 ]
+
+
+def get_application(session: Session, application_id: int) -> Application:
+    """Return the application with ``application_id``.
+
+    Raises:
+        ApplicationNotFoundError: If no application has that id.
+    """
+    application = session.get(Application, application_id)
+    if application is None:
+        raise ApplicationNotFoundError(application_id)
+    return application
 
 
 def get_or_create_application(

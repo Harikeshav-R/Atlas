@@ -321,6 +321,26 @@ class SequencedPdfRenderer:
         return RenderResult(pdf_bytes=self._pdf_bytes, page_count=page_count)
 
 
+class FakeFileOpener:
+    """A scripted, offline :class:`~atlas.platform.opener.FileOpener` for tests.
+
+    Records every path it is asked to open on :attr:`opened` (instead of launching
+    a real GUI application), so ``atlas open`` is testable without side effects
+    (AGENTS.md §6.2). Optionally raises ``raises`` to exercise error paths.
+    """
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        """Store an optional exception to raise, and start an empty record."""
+        self._raises = raises
+        self.opened: list[Path] = []
+
+    def __call__(self, path: Path) -> None:
+        """Record ``path`` (and raise the scripted exception, if any)."""
+        self.opened.append(path)
+        if self._raises is not None:
+            raise self._raises
+
+
 @dataclass
 class FakeMessage:
     """The ``choices[i].message`` shape the API provider reads via ``getattr``."""
