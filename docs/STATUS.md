@@ -9,14 +9,14 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-04 (the **core TUI** landed — `atlas.tui` (Textual) +
-  `atlas tui`, with the Dashboard, Applications/Kanban, Application-detail, and
-  Posting-detail screens; **Phase 1 item #6 is in progress** — the Tailor
-  workspace + background-worker action wiring finish it next)
-- **Current phase:** Phase 1 — Core loop 🚧 (onboarding ✅ · master resume ✅ ·
-  paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅
-  **item #5 done** · application-tracking core + CLI ✅ · core TUI (4 screens) ✅;
-  the Tailor workspace + action workers finish item #6 next)
+- **Last updated:** 2026-08-04 (the **Tailor workspace** + background-worker action
+  wiring landed — `atlas tui`'s tailor/cover/re-render/open run in Textual thread
+  workers; **Phase 1 item #6 is DONE — the core loop is complete**. Phase 2
+  (discovery daemon) is next)
+- **Current phase:** Phase 1 — Core loop ✅ **complete** (onboarding · master resume
+  · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · app
+  tracking + full TUI all landed). **Phase 2 — Discovery & background** is next
+  (daemon + scheduler + IPC).
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -25,44 +25,26 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 item #6 is in progress** — the **application-tracking core + CLI** and now the
-**core TUI** landed (see "What has landed"): `atlas.tui` (Textual) + `atlas tui`, with the
-Dashboard, Applications (table + Kanban), Application-detail, and Posting-detail screens over
-the data the CLI features persist, plus in-TUI status changes through the state machine. **Do
-the Tailor workspace + action wiring next to finish item #6** (§8, §5.7): the three-pane Tailor
-workspace (master resume · tailored selections/diff · live PDF preview with a page-count meter),
-per-section regenerate, and wiring `tailor_posting` / `write_application_cover_letter` /
-`score_posting` / `rerender_application` / `open_application` through **Textual thread workers**
-(every Atlas service is synchronous and blocks — subprocess AI, network, WeasyPrint — so those
-must run off the event loop, unlike the cheap status-change writes this PR added). Remaining
-Phase 1 order:
+**Phase 1 (the core loop) is complete** — item #6 landed in full: the tracking state machine +
+CLI, the four browse/track TUI screens, and now the **Tailor workspace** with its background
+thread-worker actions (tailor / cover / re-render / open). Atlas can now, end to end: onboard →
+ingest a master resume → scrape a posting → score it → tailor a resume + cover letter → render
+PDFs → track the application through its pipeline, all from the CLI **or** the TUI.
 
-1. ✅ **Onboarding Q&A + preferences** (single profile; schema is already multi-profile) — `atlas.profiles`.
-2. ✅ **Master resume ingest + parse + versioning** — `atlas.resume`.
-3. ✅ **Paste-URL scrape + parse** — `atlas.scrape`.
-4. ✅ **Fit scoring** for a pasted job — `atlas.matching`.
-5. ✅ **Resume tailoring + cover letter + HTML→PDF** with one-page enforcement — `atlas.render`
-   + `atlas.tailor` + `atlas.coverletter` + `atlas.materials` (+ `atlas.platform` opener).
-6. 🚧 **Application tracking** (core + CLI ✅ — `atlas.tracking`) + the **core TUI** (4 screens ✅
-   — `atlas.tui`); the **Tailor workspace + action workers** finish item #6 (← **do this next**).
+**Do Phase 2 next: Discovery & background** ([PROJECT.md §15](./PROJECT.md#15-phased-roadmap),
+§5.4). The first item is the **daemon + scheduler + IPC** (`atlas.daemon`, PROJECT.md §4.1) — a
+long-running APScheduler process that polls job sources, AI-scores new postings, and exposes a
+local IPC surface to the TUI. Then the **company watchlist + ATS adapters** (Greenhouse, Lever,
+Ashby, Workday), the **aggregator adapters** + saved searches, the scored **Discover** queue in
+the TUI, and **multiple profiles** fully wired.
 
-> **Reusable groundwork for the remaining #6 TUI (Tailor workspace + workers):** the TUI shell
-> is in place — `atlas.tui.app.AtlasApp` (injected engine, `read()`/`change_status()` helpers,
-> nav), the four screens, `app.tcss`, and the async `Pilot` harness (`asyncio_mode = "auto"`).
-> The Tailor-workspace panes reuse `atlas.resume` getters, `atlas.tailor.repository`
-> (`get_latest_tailored_resume`, the `TailoredItem`/`TailoredResume` structure), and
-> `atlas.materials.rerender_application`. The **critical constraint** for wiring actions:
-> `tailor_posting` / `write_application_cover_letter` / `score_posting` / `rerender_application`
-> / `open_application` are all **synchronous and blocking** (subprocess AI, network, WeasyPrint,
-> `xdg-open`), so they must run in a Textual thread worker (`@work(thread=True)`), building the
-> boundaries the CLI way (`build_provider_chain` / `build_renderer` / `default_file_opener`).
-> Errors to catch mirror the CLI (`TailoringError`, `CoverLetterError`, `MatchingError`,
-> `RenderError`, `FileOpenError`, `ApplicationNotFoundError`). Still unconsumed:
-> `AiConfig.scoring_model_tier` /
-> `daily_spend_cap_usd` (§5.6 cost controls); per-profile honesty override (§11). A **PR 2b** is
-> also queued: the deferred tailoring depth — `honesty_validate` traceability, AI-phrase scrub
-> (§5.7 step 5), keyword-gap suggestions (§5.7 step 4), diff-mode, and the editable/regenerate
-> loop (§5.7, §5.8).
+> **Deferred Phase-1 depth (optional, revisit as needed — not blockers for Phase 2):**
+> **PR 2b — tailoring depth**: `honesty_validate` traceability (§11), AI-phrase scrub (§5.7
+> step 5), keyword-gap suggestions (§5.7 step 4), diff-mode (§5.7), and the TUI's interactive
+> editing loop — include/exclude/pin + per-section regenerate + the Questions tab (§5.7, §5.8).
+> Still-unconsumed config: `AiConfig.scoring_model_tier` / `daily_spend_cap_usd` (§5.6 cost
+> controls) and the per-profile honesty override (§11). The Phase-1 core loop works without
+> these; they raise its quality and are picked up when Phase 2 stabilizes or on demand.
 
 The Phase-0 AI-provider checklist below is retained as historical reference.
 
@@ -106,6 +88,34 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 1 · Tailor workspace + action workers — `atlas.tui` (item #6, PR 3 — **completes item #6
+and the Phase 1 core loop**):
+
+- `TailorWorkspaceScreen` (`atlas.tui.screens.tailor_workspace`): opened from Application detail
+  (`t`), it shows the master-resume blocks, the latest tailored selections (content_id · included
+  · reason · text), and a materials summary, and runs four actions — **Tailor** (`t`), **Cover
+  letter** (`c`), **Re-render** (`r`), **Open** (`o`). Its data comes from the pure
+  `build_tailor_workspace` builder (`atlas.tui.data`), reusing the resume/tailor/coverletter
+  getters; the panes are read-only (interactive editing is the deferred PR-2b).
+- **The first thread workers in the codebase**: each action is
+  `@work(thread=True, exclusive=True, exit_on_error=False)` so the blocking service (subprocess
+  AI, network, WeasyPrint) runs off the event loop and the UI never freezes (PROJECT.md §8).
+  `on_worker_state_changed` handles completion — success refreshes the view + toasts; the
+  service's typed errors (`TailoringError`/`CoverLetterError`/`RenderError`/`FileOpenError`/…)
+  surface as an error toast without tearing down the app.
+- `AtlasApp` gained injected `provider`/`renderer`/`opener`/`tailoring`/`render_config`
+  boundaries + `run_tailor`/`run_cover_letter`/`run_rerender`/`run_open` (each a short
+  `session_scope` + the service, mirroring the CLI construction) and an `actions_enabled`
+  property. `atlas tui` builds the provider chain + renderer **best-effort**: on
+  `ConfigError`/`RenderError`/`LLMError` it launches **browse-only** (read/track screens need no
+  AI) with the Tailor actions disabled + an `atlas doctor` hint.
+- Tests stay hermetic (AGENTS.md §6.2) by injecting `FakeLLMProvider`/`FakePdfRenderer`/
+  `FakeFileOpener` and a `tmp_path` renders dir at the app boundary; the `Pilot` tests drive each
+  worker to completion via `await app.workers.wait_for_complete()` and assert the DB result
+  (success), that nothing persisted (worker error handled), and that browse-only disables the
+  actions. 100% line+branch; `mypy --strict` incl. win32; `uv build` confirms the wheel is
+  unchanged in shape. **This closes item #6 — the Phase 1 core loop is complete.**
 
 Phase 1 · Core TUI — `atlas.tui` (Textual) + `atlas tui` (item #6, PR 2 — the browse/track screens):
 
@@ -599,7 +609,7 @@ high-level state.
 | Phase | Title | State |
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
-| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | 🚧 in progress — onboarding ✅ · master resume ✅ · paste-URL scrape ✅ · fit scoring ✅ · tailoring + cover letter + rendering ✅ · application-tracking core + CLI ✅ · core TUI (4 screens) ✅; the Tailor workspace + action workers finish item #6 next |
-| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ⬜ not started |
+| 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ✅ **complete** — onboarding · master resume · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · application tracking (state machine + CLI) · full TUI (Dashboard · Applications/Kanban · Application detail · Posting detail · Tailor workspace with background action workers). Optional depth (PR-2b tailoring / interactive editing) deferred |
+| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 **next** — not started |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

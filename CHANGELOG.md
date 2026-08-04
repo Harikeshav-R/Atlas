@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tailor workspace TUI screen** (`atlas.tui.screens.tailor_workspace`): the
+  final slice of Phase 1 item #6 (PROJECT.md §8, screen #4), which **completes the
+  core loop**. Opened from the Application-detail screen (press `t`), it shows the
+  master-resume blocks, the latest tailored selections (each with its reason), and
+  a materials summary, and runs the four actions that produce them — **Tailor**,
+  **Cover letter**, **Re-render**, **Open**. Because every Atlas service is
+  synchronous and blocks (subprocess AI, network, WeasyPrint), each action runs in
+  a **Textual thread worker** (`@work(thread=True)`) so the UI never freezes; the
+  first worker in the codebase. Completion is handled in `on_worker_state_changed`
+  (success → refresh + toast; the service's typed errors → an error toast, with
+  `exit_on_error=False` so a failure never tears down the app). Interactive editing
+  (include/exclude/pin) and per-section regenerate remain a follow-up (§5.7).
+- **`AtlasApp` action boundaries**: the app now accepts injected
+  `provider` / `renderer` / `opener` / `tailoring` / `render_config` (all optional)
+  plus `run_tailor` / `run_cover_letter` / `run_rerender` / `run_open` methods that
+  the workspace's workers call. An `actions_enabled` property gates the AI/render
+  actions. `atlas tui` builds the provider chain + renderer **best-effort**: if they
+  can't be built (e.g. no key configured) the TUI still launches **browse-only** —
+  the read/track screens need no AI — and the Tailor actions are disabled with a
+  hint to run `atlas doctor`.
 - **Core TUI** (`atlas.tui`): the interactive Textual app (PROJECT.md §8) — the
   second slice of Phase 1 item #6, on top of the tracking core. Four screens:
   the **Dashboard** (pipeline funnel, active profile, recent activity, upcoming

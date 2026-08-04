@@ -115,9 +115,13 @@ newest-updated first, filterable by `--status` and `--profile`.
 
 `atlas tui` launches the interactive Textual app: a Dashboard (pipeline funnel,
 active profile, recent activity, upcoming deadlines), an Applications view (table
-or Kanban board, with in-app status changes), and drill-through to Application and
-Posting detail. (The Tailor workspace — editing and regenerating materials inside
-the TUI — is coming next.)
+or Kanban board, with in-app status changes), drill-through to Application and
+Posting detail, and a **Tailor workspace** (press `t` on an application) that shows
+your master resume and tailored selections and runs Tailor / Cover letter /
+Re-render / Open — each off the UI thread so long AI and rendering calls never
+freeze the app. When no AI backend is configured the TUI still opens for browsing
+and those actions are disabled (run `atlas doctor` to set the backend up).
+Inline editing of selections and per-section regenerate are coming next.
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
