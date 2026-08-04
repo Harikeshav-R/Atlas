@@ -27,7 +27,9 @@ from atlas.coverletter.repository import get_latest_cover_letter
 from atlas.db.models import Company, JobPosting
 from atlas.matching.repository import get_latest_match_score
 from atlas.profiles.repository import get_active_profile
+from atlas.resume.repository import get_blocks, get_latest_master_resume
 from atlas.tailor.repository import get_application, get_latest_tailored_resume
+from atlas.tailor.structure import TailoredItem
 from atlas.tracking.repository import count_applications_by_status, list_applications
 from atlas.tracking.status import ApplicationStatus
 
@@ -40,10 +42,14 @@ __all__ = [
     "DeadlineEntry",
     "MaterialSummary",
     "RecentApplication",
+    "ResumeBlockView",
     "StatusCount",
+    "TailorWorkspaceView",
+    "TailoredSelection",
     "TimelineEntry",
     "build_application_detail",
     "build_dashboard_report",
+    "build_tailor_workspace",
 ]
 
 
@@ -312,3 +318,118 @@ def _latest_due(status_history: list[dict[str, object]]) -> datetime | None:
         if parsed.due is not None:
             latest = parsed.due
     return latest
+
+
+class ResumeBlockView(BaseModel):
+    """One master-resume block, for the Tailor workspace's master-resume pane.
+
+    Attributes:
+        content_id: The stable content id (the join key to a tailored selection).
+        type: The block type (experience / project / skill / …).
+        text: The block's text.
+    """
+
+    content_id: str
+    type: str
+    text: str
+
+
+class TailoredSelection(BaseModel):
+    """One selected/reworded item from the latest tailored resume.
+
+    Attributes:
+        content_id: The source block's content id.
+        included: Whether the item appears in the tailored resume.
+        reason: Why it was selected/reworded.
+        final_text: The tailored text.
+    """
+
+    content_id: str
+    included: bool
+    reason: str
+    final_text: str
+
+
+class TailorWorkspaceView(BaseModel):
+    """The Tailor-workspace screen's view model (PROJECT.md §8, screen #4).
+
+    Attributes:
+        application_id: The application being worked on.
+        job_posting_id: The posting the application is for (fed to the AI actions).
+        title: The posting's role title.
+        company: The hiring company's name.
+        master_blocks: The latest master-resume blocks (the source content).
+        selections: The latest tailored-resume selections, or empty if none yet.
+        resume_version: The latest tailored-resume version, or ``None`` if none yet.
+        resume_path: The latest tailored-resume PDF path, or ``None``.
+        cover_version: The latest cover-letter version, or ``None`` if none yet.
+        cover_path: The latest cover-letter PDF path, or ``None``.
+    """
+
+    application_id: int
+    job_posting_id: int
+    title: str
+    company: str
+    master_blocks: list[ResumeBlockView]
+    selections: list[TailoredSelection]
+    resume_version: int | None
+    resume_path: str | None
+    cover_version: int | None
+    cover_path: str | None
+
+
+def build_tailor_workspace(session: Session, application_id: int) -> TailorWorkspaceView:
+    """Build the :class:`TailorWorkspaceView` for one application.
+
+    Pure over the session: resolves the application (raising if unknown) and its
+    posting, reads the latest master-resume blocks
+    (:func:`atlas.resume.repository.get_latest_master_resume` +
+    :func:`~atlas.resume.repository.get_blocks`), and decodes the latest tailored
+    resume's ``selections`` into typed :class:`TailoredSelection` items plus the
+    latest cover letter's version/path — the material the workspace displays and
+    the ``job_posting_id`` its AI actions target.
+
+    Raises:
+        ApplicationNotFoundError: If no application has ``application_id``.
+    """
+    application = get_application(session, application_id)
+    assert application.id is not None  # persisted rows always have an id
+    posting, company = _posting_and_company(session, application.job_posting_id)
+
+    master = get_latest_master_resume(session)
+    master_blocks: list[ResumeBlockView] = []
+    if master is not None:
+        assert master.id is not None  # persisted rows always have an id
+        master_blocks = [
+            ResumeBlockView(content_id=block.content_id, type=block.type, text=block.text)
+            for block in get_blocks(session, master.id)
+        ]
+
+    tailored = get_latest_tailored_resume(session, application.id)
+    selections: list[TailoredSelection] = []
+    if tailored is not None:
+        for raw in tailored.selections:
+            item = TailoredItem.model_validate(raw)
+            selections.append(
+                TailoredSelection(
+                    content_id=item.content_id,
+                    included=item.included,
+                    reason=item.reason,
+                    final_text=item.final_text,
+                )
+            )
+
+    letter = get_latest_cover_letter(session, application.id)
+
+    return TailorWorkspaceView(
+        application_id=application.id,
+        job_posting_id=application.job_posting_id,
+        title=posting.title,
+        company=company,
+        master_blocks=master_blocks,
+        selections=selections,
+        resume_version=tailored.version if tailored is not None else None,
+        resume_path=tailored.rendered_pdf_ref if tailored is not None else None,
+        cover_version=letter.version if letter is not None else None,
+        cover_path=letter.rendered_pdf_ref if letter is not None else None,
+    )
