@@ -17,6 +17,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
+from urllib.parse import urlsplit
 
 import typer
 
@@ -25,6 +26,11 @@ from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.coverletter import render_cover_letter_outcome
 from atlas.cli.daemon import render_daemon_status
+from atlas.cli.discovery import (
+    build_watchlist_report,
+    render_discovery_outcome,
+    render_watchlist,
+)
 from atlas.cli.doctor import render_report, run_doctor
 from atlas.cli.matching import render_score
 from atlas.cli.materials import render_open_outcome, render_rerender_outcome
@@ -67,6 +73,9 @@ from atlas.daemon.poll import run_scoring_poll
 from atlas.daemon.scheduler import default_scheduler
 from atlas.daemon.service import daemon_status, start_daemon, stop_daemon
 from atlas.db import initialize_database, session_scope
+from atlas.discovery.ats import ATS_TYPES, detect_ats
+from atlas.discovery.poller import run_discovery_poll
+from atlas.discovery.service import add_watchlist_company
 from atlas.logging import setup_logging
 from atlas.matching.errors import MatchingError
 from atlas.matching.service import ScoreOutcome, score_posting
@@ -80,6 +89,7 @@ from atlas.render.renderer import build_renderer
 from atlas.render.service import render_master_resume
 from atlas.resume.errors import MasterResumeNotFoundError, ResumeSourceError
 from atlas.scrape.errors import JobPostingNotFoundError, ScrapeError
+from atlas.scrape.fetcher import default_fetcher
 from atlas.scrape.service import AddOutcome, add_posting
 from atlas.tailor.errors import ApplicationNotFoundError, TailoringError
 from atlas.tailor.service import tailor_posting
@@ -144,6 +154,13 @@ daemon_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(daemon_app)
+
+company_app = typer.Typer(
+    name="company",
+    help="Manage the ATS company watchlist.",
+    no_args_is_help=True,
+)
+app.add_typer(company_app)
 
 
 @app.callback()
@@ -1047,3 +1064,117 @@ def daemon_status_command(
         print_json_line(status.model_dump_json(indent=2))
     else:
         console.print(render_daemon_status(status))
+
+
+def _display_name_from_token(token: str) -> str:
+    """Derive a human-ish company name from a board token (``"acme-corp"`` → ``"Acme Corp"``)."""
+    return token.replace("-", " ").replace("_", " ").title()
+
+
+@company_app.command("add")
+def company_add(
+    url: str = typer.Argument(..., help="A careers/board URL (the ATS is auto-detected)."),
+    name: str | None = typer.Option(
+        None, "--name", help="Company display name (defaults to the board token)."
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the added company as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Add a company's ATS board to the discovery watchlist (PROJECT.md §5.4, §9).
+
+    Auto-detects the ATS provider and board token from ``url`` (no ``--ats`` flag),
+    then records the company and its board so the daemon's discovery poll (and
+    ``atlas discover``) fetch it. Re-adding the same board is a no-op. Exits ``1``
+    if the URL is not a recognized ATS board.
+    """
+    detected = detect_ats(url)
+    if detected is None:
+        supported = ", ".join(ATS_TYPES)
+        error_console.print(
+            f"[error]atlas company add:[/error] unrecognized ATS URL. "
+            f"Supported providers: {supported}."
+        )
+        raise typer.Exit(code=1)
+    ats_type, board_token = detected
+    display_name = name or _display_name_from_token(board_token)
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = add_watchlist_company(
+                session,
+                name=display_name,
+                ats_type=ats_type,
+                board_token=board_token,
+                domain=urlsplit(url).hostname,
+            )
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    elif outcome.created:
+        console.print(
+            f"[success]Watchlisted[/success] [accent]{outcome.name}[/accent] "
+            f"({outcome.ats_type}: {outcome.board_token}). "
+            "Run [accent]atlas discover[/accent] to poll it now."
+        )
+    else:
+        console.print(
+            f"[muted]Already watchlisted — [/muted][accent]{outcome.name}[/accent]"
+            f"[muted] ({outcome.ats_type}: {outcome.board_token}).[/muted]"
+        )
+
+
+@company_app.command("list")
+def company_list(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the watchlist as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """List watchlisted ATS boards, newest last (PROJECT.md §9)."""
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            report = build_watchlist_report(session)
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(report.model_dump_json(indent=2))
+    else:
+        console.print(render_watchlist(report))
+
+
+@app.command()
+def discover(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the discovery outcome as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Run one discovery poll now over the watchlist (PROJECT.md §5.4, §9).
+
+    Fetches every enabled ATS board, normalizes and persists the new postings
+    (deduplicated), and reports the counts. Discovery is AI-free — it does not
+    score; run [accent]atlas score[/accent] or the daemon (which chains
+    discovery → scoring) to score the newly-found postings.
+    """
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            outcome = run_discovery_poll(session, fetcher=default_fetcher)
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    else:
+        console.print(render_discovery_outcome(outcome))
+        if outcome.discovered:
+            console.print(
+                "[muted]Run [/muted][accent]atlas score <id>[/accent]"
+                "[muted] (or the daemon) to score the new postings.[/muted]"
+            )
