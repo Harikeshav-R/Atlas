@@ -17,7 +17,7 @@ from atlas.db import session_scope
 from atlas.matching.repository import create_match_score
 from atlas.matching.structure import QueueStatus
 from atlas.profiles.preferences import ProfilePreferences
-from atlas.profiles.repository import create_profile
+from atlas.profiles.repository import create_profile, get_active_profile
 from atlas.resume.repository import create_version
 from atlas.resume.structure import BlockType, ParsedBlock, ParsedResume
 from atlas.scrape.repository import (
@@ -302,8 +302,26 @@ def test_tailor_workspace_unknown_raises(db_engine: Engine) -> None:
 # --- build_discover_queue --------------------------------------------------------
 
 
+def _active_profile_id(engine: Engine) -> int:
+    """Return the active profile's id, creating one once if none exists.
+
+    The discover-queue tests seed several postings under one shared active
+    profile (the queue is scored per active profile), so profile creation is
+    idempotent here rather than per-posting.
+    """
+    with session_scope(engine) as session:
+        existing = get_active_profile(session)
+        if existing is not None:
+            assert existing.id is not None
+            return existing.id
+        profile = create_profile(session, name="BE", preferences=ProfilePreferences(), active=True)
+        assert profile.id is not None
+        return profile.id
+
+
 def _seed_scored(engine: Engine, *, dedupe: str, score: int, salary: dict[str, object]) -> int:
-    """Create a scored bare posting with the given salary; return the posting id."""
+    """Create a scored bare posting (under the shared active profile); return its id."""
+    profile_id = _active_profile_id(engine)
     with session_scope(engine) as session:
         company = get_or_create_company(session, name="Acme")
         source = get_or_create_url_source(session)
@@ -321,12 +339,10 @@ def _seed_scored(engine: Engine, *, dedupe: str, score: int, salary: dict[str, o
             salary=salary,
         )
         assert posting.id is not None
-        profile = create_profile(session, name="BE", preferences=ProfilePreferences(), active=True)
-        assert profile.id is not None
         create_match_score(
             session,
             job_posting_id=posting.id,
-            profile_id=profile.id,
+            profile_id=profile_id,
             score=score,
             verdict="strong",
             rationale=f"Fit {dedupe}.",

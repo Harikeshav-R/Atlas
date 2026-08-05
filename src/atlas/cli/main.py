@@ -87,14 +87,14 @@ from atlas.discovery.errors import UnknownAggregatorError
 from atlas.discovery.poller import DiscoveryOutcome, run_aggregator_poll, run_discovery_poll
 from atlas.discovery.service import add_saved_search, add_watchlist_company
 from atlas.logging import setup_logging
-from atlas.matching.errors import MatchingError
+from atlas.matching.errors import MatchingError, NoActiveProfileError
 from atlas.matching.service import ScoreOutcome, score_posting
 from atlas.materials.service import open_application, rerender_application
 from atlas.platform.opener import FileOpenError, default_file_opener
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
-from atlas.profiles.repository import get_active_profile
+from atlas.profiles.repository import get_active_profile, get_profile
 from atlas.render.errors import RenderError
 from atlas.render.renderer import build_renderer
 from atlas.render.service import render_master_resume
@@ -628,7 +628,7 @@ def add(
 def _score_after_add(
     engine: Engine, outcome: AddOutcome, *, provider: LLMProvider
 ) -> ScoreOutcome | None:
-    """Score a freshly-added posting best-effort, in its own transaction.
+    """Score a freshly-added posting against the active profile, best-effort.
 
     Returns the :class:`~atlas.matching.service.ScoreOutcome` on success, or
     ``None`` when scoring can't run yet (no active profile / no master resume) or
@@ -637,7 +637,10 @@ def _score_after_add(
     """
     try:
         with session_scope(engine) as session:
-            return score_posting(session, outcome.posting_id, provider=provider)
+            profile = get_active_profile(session)
+            if profile is None:
+                raise NoActiveProfileError
+            return score_posting(session, outcome.posting_id, profile=profile, provider=provider)
     except MatchingError as exc:
         console.print(
             f"[muted]Saved, but not scored — {exc} Run `atlas score {outcome.posting_id}`.[/muted]"
@@ -648,19 +651,24 @@ def _score_after_add(
 @app.command()
 def score(
     posting_id: int = typer.Argument(..., help="The id of the saved posting to score."),
+    profile_id: int | None = typer.Option(
+        None, "--profile", help="Score against this profile id (defaults to the active profile)."
+    ),
     as_json: bool = typer.Option(
         False,
         "--json",
         help="Emit the fit assessment as JSON for scripting instead of text.",
     ),
 ) -> None:
-    """Score a saved posting for fit against the active profile.
+    """Score a saved posting for fit against a profile (the active one by default).
 
-    Sends the posting, the active profile's preferences, a compact master-resume
-    summary, and Atlas's deterministic signals to the AI and records a fit
-    assessment (PROJECT.md §5.6). Re-scoring appends a new assessment rather than
-    replacing the last one. Exits ``1`` if the posting id is unknown, no profile is
-    active, no master resume is set, or the AI cannot produce an assessment.
+    Sends the posting, the profile's preferences, a compact master-resume summary,
+    and Atlas's deterministic signals to the AI and records a fit assessment
+    (PROJECT.md §5.6). Pass ``--profile`` to score against a specific profile rather
+    than the active one (each profile keeps its own score history). Re-scoring
+    appends a new assessment rather than replacing the last one. Exits ``1`` if the
+    posting or profile id is unknown, no profile is active, no master resume is set,
+    or the AI cannot produce an assessment.
     """
     try:
         config = load_config()
@@ -672,8 +680,15 @@ def score(
     engine = _open_database()
     try:
         with session_scope(engine) as session:
-            outcome = score_posting(session, posting_id, provider=provider)
-    except (JobPostingNotFoundError, MatchingError) as exc:
+            if profile_id is not None:
+                profile = get_profile(session, profile_id)
+            else:
+                active = get_active_profile(session)
+                if active is None:
+                    raise NoActiveProfileError
+                profile = active
+            outcome = score_posting(session, posting_id, profile=profile, provider=provider)
+    except (JobPostingNotFoundError, ProfileNotFoundError, MatchingError) as exc:
         error_console.print(f"[error]atlas score:[/error] {exc}")
         raise typer.Exit(code=1) from exc
     finally:

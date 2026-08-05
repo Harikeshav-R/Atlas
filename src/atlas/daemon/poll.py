@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from atlas.matching.errors import MatchingError
 from atlas.matching.repository import list_unscored_postings
 from atlas.matching.service import score_posting
+from atlas.profiles.repository import get_active_profile
 from atlas.resume.service import utcnow
 
 if TYPE_CHECKING:
@@ -67,13 +68,19 @@ def run_scoring_poll(
     """
     scored = 0
     skipped = 0
-    for posting in list_unscored_postings(session):
+    profile = get_active_profile(session)
+    if profile is None:
+        # Nothing to score against yet — a benign empty poll, not an error, since
+        # the daemon runs unattended (mirrors the empty-backlog case).
+        return PollOutcome(scored=0, skipped=0)
+    assert profile.id is not None
+    for posting in list_unscored_postings(session, profile.id):
         assert posting.id is not None  # persisted rows always have an id
         try:
-            score_posting(session, posting.id, provider=provider, clock=clock)
+            score_posting(session, posting.id, profile=profile, provider=provider, clock=clock)
         except MatchingError:
-            # No active profile / no master resume / AI failure — leave this
-            # posting for a later poll rather than aborting the whole batch.
+            # No master resume / AI failure — leave this posting for a later poll
+            # rather than aborting the whole batch.
             skipped += 1
         else:
             scored += 1

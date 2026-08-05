@@ -269,8 +269,9 @@ def build_application_detail(session: Session, application_id: int) -> Applicati
     :func:`atlas.tailor.repository.get_latest_tailored_resume`,
     :func:`atlas.coverletter.repository.get_latest_cover_letter`, and
     :func:`atlas.matching.repository.get_latest_match_score` (keyed on the
-    application's posting), and decodes the ``status_history`` JSON into a typed
-    timeline (oldest first).
+    application's posting **and its profile**, so the fit shown is the one this
+    application was prepared under), and decodes the ``status_history`` JSON into a
+    typed timeline (oldest first).
 
     Raises:
         ApplicationNotFoundError: If no application has ``application_id``.
@@ -279,7 +280,9 @@ def build_application_detail(session: Session, application_id: int) -> Applicati
     assert application.id is not None  # persisted rows always have an id
     posting, company = _posting_and_company(session, application.job_posting_id)
 
-    latest_score = get_latest_match_score(session, application.job_posting_id)
+    latest_score = get_latest_match_score(
+        session, application.job_posting_id, profile_id=application.profile_id
+    )
     tailored = get_latest_tailored_resume(session, application.id)
     letter = get_latest_cover_letter(session, application.id)
 
@@ -496,15 +499,19 @@ def _salary_display(salary: dict[str, object]) -> str:
 
 
 def build_discover_queue(session: Session) -> DiscoverQueue:
-    """Build the :class:`DiscoverQueue` from the ranked scored postings.
+    """Build the :class:`DiscoverQueue` for the active profile's ranked scores.
 
     Pure over the session: maps
-    :func:`atlas.matching.repository.list_scored_postings` (already ranked by fit,
-    excluding dismissed) into rows, resolving each posting's company name, its
-    source type, and a salary display string.
+    :func:`atlas.matching.repository.list_scored_postings` for the **active
+    profile** (already ranked by fit, excluding dismissed) into rows, resolving each
+    posting's company name, its source type, and a salary display string. With no
+    active profile the queue is empty.
     """
+    profile = get_active_profile(session)
+    if profile is None or profile.id is None:
+        return DiscoverQueue(rows=[])
     rows: list[DiscoverRow] = []
-    for posting, score in list_scored_postings(session):
+    for posting, score in list_scored_postings(session, profile.id):
         assert posting.id is not None  # persisted rows always have an id
         company = session.get(Company, posting.company_id)
         assert company is not None  # a non-null foreign key never misses

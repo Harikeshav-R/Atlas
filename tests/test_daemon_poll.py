@@ -130,15 +130,28 @@ def test_poll_skips_already_scored(db_engine: Engine) -> None:
 
 
 def test_poll_best_effort_skips_unscoreable(db_engine: Engine) -> None:
-    # No active profile → score_posting raises NoActiveProfileError (a MatchingError);
-    # the poll counts it as skipped rather than aborting.
-    _seed_resume(db_engine)
+    # An active profile but no master resume → score_posting raises
+    # NoMasterResumeError (a MatchingError); the poll counts it as skipped rather
+    # than aborting the batch.
+    _seed_profile(db_engine)
     _seed_posting(db_engine, title="A", dedupe_hash="h1")
     provider = FakeLLMProvider([make_response(structured=_assessment())])
     with session_scope(db_engine) as session:
         outcome = run_scoring_poll(session, provider=provider, clock=_fixed_clock)
     assert outcome.scored == 0
     assert outcome.skipped == 1
+
+
+def test_poll_no_active_profile_is_a_benign_empty_poll(db_engine: Engine) -> None:
+    # With no active profile there is nothing to score against; the unattended
+    # daemon poll returns an empty outcome rather than raising.
+    _seed_resume(db_engine)
+    _seed_posting(db_engine, title="A", dedupe_hash="h1")
+    provider = FakeLLMProvider([])
+    with session_scope(db_engine) as session:
+        outcome = run_scoring_poll(session, provider=provider, clock=_fixed_clock)
+    assert outcome.scored == 0
+    assert outcome.skipped == 0
 
 
 def test_poll_empty_backlog(db_engine: Engine) -> None:

@@ -702,13 +702,9 @@ async def test_discover_tailor_browse_only_disabled(db_engine: Engine) -> None:
 
 
 async def test_discover_tailor_worker_error_is_handled(db_engine: Engine, tmp_path: Path) -> None:
+    # A scored posting (so the queue is populated) but no master resume → tailoring
+    # raises in the worker; the app stays on the Discover screen and toasts.
     _seed_scored_posting(db_engine)
-    # Deactivate the profile so tailoring raises NoActiveProfileError in the worker.
-    with session_scope(db_engine) as session:
-        active = get_active_profile(session)
-        assert active is not None
-        active.active = False
-        session.add(active)
     provider = FakeLLMProvider([make_response(structured=_TAILORED)])
     app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
     async with app.run_test() as pilot:
@@ -769,12 +765,10 @@ async def test_posting_detail_tailor_browse_only_disabled(db_engine: Engine) -> 
 async def test_posting_detail_tailor_worker_error_is_handled(
     db_engine: Engine, tmp_path: Path
 ) -> None:
+    # Seed a scored posting (so the active profile's queue is populated) but no
+    # master resume, so tailoring raises inside the worker; the app stays on the
+    # Posting-detail screen and toasts rather than tearing down.
     _seed_scored_posting(db_engine)
-    with session_scope(db_engine) as session:
-        active = get_active_profile(session)
-        assert active is not None
-        active.active = False
-        session.add(active)
     provider = FakeLLMProvider([make_response(structured=_TAILORED)])
     app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
     async with app.run_test() as pilot:
