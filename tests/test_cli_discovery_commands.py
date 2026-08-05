@@ -17,13 +17,14 @@ from typer.testing import CliRunner
 
 import atlas.cli.main as app_module
 from atlas.cli.main import app
+from atlas.config.secrets import SecretStore
 from atlas.db import create_db_engine, session_scope
 from atlas.discovery.repository import get_or_create_ats_source
 from atlas.profiles.preferences import ProfilePreferences
 from atlas.profiles.repository import create_profile
 from atlas.scrape.fetcher import FetchResult
 from atlas.scrape.repository import get_or_create_company, list_postings
-from tests.conftest import FakeFetcher
+from tests.conftest import FakeFetcher, FakeKeyring
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -41,6 +42,18 @@ def _seed_profile(engine: Engine) -> None:
 def _stub_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the callback's logging setup so no test writes a real log file."""
     monkeypatch.setattr(app_module, "setup_logging", lambda **kwargs: 0)
+
+
+@pytest.fixture(autouse=True)
+def fake_store(monkeypatch: pytest.MonkeyPatch) -> SecretStore:
+    """Back ``default_secret_store`` with an in-memory keyring (no real keychain).
+
+    ``discover`` and ``source key`` build a store; the returned store is shared so
+    a test can assert on secrets ``source key`` wrote.
+    """
+    store = SecretStore(FakeKeyring())
+    monkeypatch.setattr(app_module, "default_secret_store", lambda: store)
+    return store
 
 
 @pytest.fixture
@@ -158,6 +171,7 @@ def test_discover_empty_watchlist_json(
         "discovered": 0,
         "skipped": 0,
         "failed_sources": 0,
+        "inactive": 0,
     }
     assert fetcher.calls == []
 
@@ -268,3 +282,21 @@ def test_discover_polls_aggregator_searches(
     assert "Discovered" in result.output
     with session_scope(shared_engine) as session:
         assert [p.external_id for p in list_postings(session)] == ["42"]
+
+
+def test_discover_reports_key_gated_source_as_inactive(
+    shared_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An Adzuna search with no configured key is inactive — surfaced, never fetched.
+    _seed_profile(shared_engine)
+    runner.invoke(app, ["source", "add", "adzuna", "--query", "python"])
+    fetcher = FakeFetcher(
+        FetchResult(url="x", status_code=200, content_type="application/json", body=_FEED)
+    )
+    monkeypatch.setattr(app_module, "default_fetcher", fetcher)
+    result = runner.invoke(app, ["discover", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["inactive"] == 1
+    assert payload["sources_polled"] == 0
+    assert fetcher.calls == []

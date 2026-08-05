@@ -139,6 +139,11 @@ def render_discovery_outcome(outcome: DiscoveryOutcome) -> RenderableType:
     grid.add_row("Skipped (duplicates)", str(outcome.skipped))
     failed_style = "error" if outcome.failed_sources else "muted"
     grid.add_row("Failed sources", Text(str(outcome.failed_sources), style=failed_style))
+    if outcome.inactive:
+        grid.add_row(
+            "Needs API key",
+            Text(f"{outcome.inactive} (run atlas source key)", style="warning"),
+        )
     return grid
 
 

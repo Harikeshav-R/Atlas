@@ -44,6 +44,7 @@ class RemotiveAdapter:
     """Adapter for Remotive's public remote-jobs API."""
 
     aggregator_type = "remotive"
+    requires_key = False
 
     def search(
         self, spec: SavedSearch, *, fetcher: Fetcher, timeout_s: int

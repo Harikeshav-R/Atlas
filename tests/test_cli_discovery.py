@@ -115,6 +115,18 @@ def test_render_discovery_outcome_with_failures() -> None:
     assert "2" in text
 
 
+def test_render_discovery_outcome_with_inactive() -> None:
+    text = _render(
+        render_discovery_outcome(
+            DiscoveryOutcome(
+                sources_polled=0, discovered=0, skipped=0, failed_sources=0, inactive=1
+            )
+        )
+    )
+    assert "Needs API key" in text
+    assert "atlas source key" in text
+
+
 def test_build_saved_search_report_maps_sources(db_engine: Engine) -> None:
     profile_id = _profile(db_engine)
     with session_scope(db_engine) as session:

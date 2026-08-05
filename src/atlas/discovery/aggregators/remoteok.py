@@ -41,6 +41,7 @@ class RemoteOKAdapter:
     """Adapter for RemoteOK's public JSON feed."""
 
     aggregator_type = "remoteok"
+    requires_key = False
 
     def search(
         self, spec: SavedSearch, *, fetcher: Fetcher, timeout_s: int
