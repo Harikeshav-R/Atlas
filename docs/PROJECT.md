@@ -1115,7 +1115,11 @@ The document specs everything; build order is phased. Each phase is independentl
   `atlas discover`. **Remaining:** the Lever/Ashby/Workday adapters (drop into the same
   registry) and URL auto-detection for them.)*
 - [ ] **Aggregator** adapters + saved keyword searches.
-- [ ] Dedup + scored **Discover** queue in the TUI.
+- [x] Dedup + scored **Discover** queue in the TUI. *(✅ `DiscoverScreen` — a ranked queue of
+  scored postings (`matching.repository.list_scored_postings`) with tailor / dismiss / save /
+  open-URL actions and drill-in to Posting detail; dismiss/save persist via a new
+  `JobPosting.queue_status` (migration), and opening the apply URL uses a new
+  `atlas.platform.browser` `UrlOpener` seam. Cross-strategy dedup already lands with discovery.)*
 - [ ] **Multiple profiles** fully wired.
 
 ### Phase 3 — Scheduling & status intelligence
