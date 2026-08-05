@@ -1001,11 +1001,13 @@ def list_applications_command(
 def daemon_start() -> None:
     """Start the background scheduler (foreground, blocking) (PROJECT.md §4.1, §9).
 
-    Runs Atlas's scheduled work — currently the scoring poll, which clears the
-    fit-score backlog against the active profile on the ``[discovery]``
-    ``poll_interval_minutes`` interval. This blocks the terminal until stopped
-    (``atlas daemon stop`` or Ctrl-C); background it with your OS service manager.
-    Exits ``1`` if config/secrets can't load or a daemon is already running.
+    Runs Atlas's scheduled work on the ``[discovery]`` ``poll_interval_minutes``
+    interval: first a **discovery poll** over the enabled ATS watchlist (fetching
+    and persisting new postings), then a **scoring poll** that clears the fit-score
+    backlog — including whatever discovery just added — against the active profile.
+    This blocks the terminal until stopped (``atlas daemon stop`` or Ctrl-C);
+    background it with your OS service manager. Exits ``1`` if config/secrets can't
+    load or a daemon is already running.
     """
     try:
         config = load_config()
@@ -1017,7 +1019,13 @@ def daemon_start() -> None:
     engine = _open_database()
 
     def run() -> None:
-        """Run one scoring poll in its own short transaction."""
+        """Run one discovery poll, then score the backlog, in short transactions.
+
+        Discovery commits its new postings first so the scoring poll's
+        ``list_unscored_postings`` picks them up on the same tick.
+        """
+        with session_scope(engine) as session:
+            run_discovery_poll(session, fetcher=default_fetcher)
         with session_scope(engine) as session:
             run_scoring_poll(session, provider=provider)
 
