@@ -21,7 +21,7 @@ from rich.text import Text
 from sqlmodel import col, select
 
 from atlas.db.models import Company, JobSource
-from atlas.discovery.repository import ATS_SOURCE_TYPE
+from atlas.discovery.repository import AGGREGATOR_SOURCE_TYPE, ATS_SOURCE_TYPE
 
 if TYPE_CHECKING:
     from rich.console import RenderableType
@@ -30,10 +30,14 @@ if TYPE_CHECKING:
     from atlas.discovery.poller import DiscoveryOutcome
 
 __all__ = [
+    "SavedSearchEntry",
+    "SavedSearchReport",
     "WatchlistEntry",
     "WatchlistReport",
+    "build_saved_search_report",
     "build_watchlist_report",
     "render_discovery_outcome",
+    "render_saved_searches",
     "render_watchlist",
 ]
 
@@ -136,3 +140,105 @@ def render_discovery_outcome(outcome: DiscoveryOutcome) -> RenderableType:
     failed_style = "error" if outcome.failed_sources else "muted"
     grid.add_row("Failed sources", Text(str(outcome.failed_sources), style=failed_style))
     return grid
+
+
+class SavedSearchEntry(BaseModel):
+    """A compact, serializable view of one aggregator saved search.
+
+    Attributes:
+        source_id: The aggregator :class:`~atlas.db.models.JobSource`'s id.
+        aggregator: The aggregator provider (e.g. ``"remoteok"``).
+        query: The search's query text.
+        location: The search's location filter, if any.
+        profile: The owning profile's display name, or ``None`` if unresolved.
+        enabled: Whether the discovery poll includes this search.
+        last_polled_at: When the search was last polled, or ``None`` if never.
+    """
+
+    source_id: int
+    aggregator: str
+    query: str
+    location: str | None = None
+    profile: str | None = None
+    enabled: bool
+    last_polled_at: datetime | None = None
+
+
+class SavedSearchReport(BaseModel):
+    """The result of ``atlas source list``.
+
+    Attributes:
+        entries: One :class:`SavedSearchEntry` per aggregator saved search, in
+            insertion order.
+    """
+
+    entries: list[SavedSearchEntry]
+
+
+def build_saved_search_report(session: Session) -> SavedSearchReport:
+    """Build a :class:`SavedSearchReport` from every aggregator source.
+
+    Pure over the session: reads the ``type="aggregator"`` sources and maps each
+    into a :class:`SavedSearchEntry`, resolving the owning profile's name for
+    display when set.
+    """
+    from atlas.db.models import Profile
+
+    entries: list[SavedSearchEntry] = []
+    sources = session.exec(
+        select(JobSource)
+        .where(JobSource.type == AGGREGATOR_SOURCE_TYPE)
+        .order_by(col(JobSource.id))
+    ).all()
+    for source in sources:
+        assert source.id is not None  # persisted rows always have an id
+        search = source.config.get("search", {})
+        profile_name: str | None = None
+        if source.profile_id is not None:
+            profile = session.get(Profile, source.profile_id)
+            profile_name = profile.name if profile is not None else None
+        entries.append(
+            SavedSearchEntry(
+                source_id=source.id,
+                aggregator=str(source.config.get("aggregator", "")),
+                query=str(search.get("query", "")),
+                location=search.get("location"),
+                profile=profile_name,
+                enabled=source.enabled,
+                last_polled_at=source.last_polled_at,
+            )
+        )
+    return SavedSearchReport(entries=entries)
+
+
+def render_saved_searches(report: SavedSearchReport) -> RenderableType:
+    """Render a :class:`SavedSearchReport` as a styled Rich renderable.
+
+    Produces a table of saved searches (aggregator, query, location, profile,
+    enabled, last polled) using the shared semantic theme. An empty report renders
+    a muted hint pointing at ``atlas source add``.
+    """
+    if not report.entries:
+        return Text(
+            "No saved searches — run `atlas source add <aggregator> --query ...`.",
+            style="muted",
+        )
+    table = Table(title="Saved searches", title_style="heading", title_justify="left")
+    table.add_column("ID", justify="right", no_wrap=True)
+    table.add_column("Aggregator", style="accent")
+    table.add_column("Query")
+    table.add_column("Location")
+    table.add_column("Profile", style="muted")
+    table.add_column("Enabled", no_wrap=True)
+    table.add_column("Last polled", style="muted")
+    for entry in report.entries:
+        table.add_row(
+            str(entry.source_id),
+            entry.aggregator,
+            entry.query,
+            entry.location or "any",
+            entry.profile or "—",
+            Text("yes", style="success") if entry.enabled else Text("no", style="muted"),
+            entry.last_polled_at.isoformat() if entry.last_polled_at is not None else "never",
+        )
+    return table

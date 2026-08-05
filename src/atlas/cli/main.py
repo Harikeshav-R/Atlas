@@ -27,8 +27,10 @@ from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.coverletter import render_cover_letter_outcome
 from atlas.cli.daemon import render_daemon_status
 from atlas.cli.discovery import (
+    build_saved_search_report,
     build_watchlist_report,
     render_discovery_outcome,
+    render_saved_searches,
     render_watchlist,
 )
 from atlas.cli.doctor import render_report, run_doctor
@@ -73,9 +75,11 @@ from atlas.daemon.poll import run_scoring_poll
 from atlas.daemon.scheduler import default_scheduler
 from atlas.daemon.service import daemon_status, start_daemon, stop_daemon
 from atlas.db import initialize_database, session_scope
+from atlas.discovery.aggregators import AGGREGATOR_TYPES, SavedSearch, get_aggregator
 from atlas.discovery.ats import ATS_TYPES, detect_ats
-from atlas.discovery.poller import run_discovery_poll
-from atlas.discovery.service import add_watchlist_company
+from atlas.discovery.errors import UnknownAggregatorError
+from atlas.discovery.poller import DiscoveryOutcome, run_aggregator_poll, run_discovery_poll
+from atlas.discovery.service import add_saved_search, add_watchlist_company
 from atlas.logging import setup_logging
 from atlas.matching.errors import MatchingError
 from atlas.matching.service import ScoreOutcome, score_posting
@@ -84,6 +88,7 @@ from atlas.platform.opener import FileOpenError, default_file_opener
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
+from atlas.profiles.repository import get_active_profile
 from atlas.render.errors import RenderError
 from atlas.render.renderer import build_renderer
 from atlas.render.service import render_master_resume
@@ -161,6 +166,13 @@ company_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(company_app)
+
+source_app = typer.Typer(
+    name="source",
+    help="Manage aggregator saved keyword searches.",
+    no_args_is_help=True,
+)
+app.add_typer(source_app)
 
 
 @app.callback()
@@ -1019,13 +1031,16 @@ def daemon_start() -> None:
     engine = _open_database()
 
     def run() -> None:
-        """Run one discovery poll, then score the backlog, in short transactions.
+        """Run discovery + aggregator polls, then score the backlog.
 
-        Discovery commits its new postings first so the scoring poll's
-        ``list_unscored_postings`` picks them up on the same tick.
+        Each poll runs in its own short transaction and commits its new postings
+        first, so the scoring poll's ``list_unscored_postings`` picks them all up on
+        the same tick.
         """
         with session_scope(engine) as session:
             run_discovery_poll(session, fetcher=default_fetcher)
+        with session_scope(engine) as session:
+            run_aggregator_poll(session, fetcher=default_fetcher)
         with session_scope(engine) as session:
             run_scoring_poll(session, provider=provider)
 
@@ -1164,19 +1179,27 @@ def discover(
         help="Emit the discovery outcome as JSON for scripting instead of text.",
     ),
 ) -> None:
-    """Run one discovery poll now over the watchlist (PROJECT.md §5.4, §9).
+    """Run one discovery poll now over every source (PROJECT.md §5.4, §9).
 
-    Fetches every enabled ATS board, normalizes and persists the new postings
-    (deduplicated), and reports the counts. Discovery is AI-free — it does not
-    score; run [accent]atlas score[/accent] or the daemon (which chains
-    discovery → scoring) to score the newly-found postings.
+    Fetches every enabled ATS board **and** aggregator saved search, normalizes and
+    persists the new postings (deduplicated), and reports the combined counts.
+    Discovery is AI-free — it does not score; run [accent]atlas score[/accent] or the
+    daemon (which chains discovery → scoring) to score the newly-found postings.
     """
     engine = _open_database()
     try:
         with session_scope(engine) as session:
-            outcome = run_discovery_poll(session, fetcher=default_fetcher)
+            ats_outcome = run_discovery_poll(session, fetcher=default_fetcher)
+        with session_scope(engine) as session:
+            aggregator_outcome = run_aggregator_poll(session, fetcher=default_fetcher)
     finally:
         engine.dispose()
+    outcome = DiscoveryOutcome(
+        sources_polled=ats_outcome.sources_polled + aggregator_outcome.sources_polled,
+        discovered=ats_outcome.discovered + aggregator_outcome.discovered,
+        skipped=ats_outcome.skipped + aggregator_outcome.skipped,
+        failed_sources=ats_outcome.failed_sources + aggregator_outcome.failed_sources,
+    )
     if as_json:
         print_json_line(outcome.model_dump_json(indent=2))
     else:
@@ -1186,3 +1209,83 @@ def discover(
                 "[muted]Run [/muted][accent]atlas score <id>[/accent]"
                 "[muted] (or the daemon) to score the new postings.[/muted]"
             )
+
+
+@source_app.command("add")
+def source_add(
+    aggregator: str = typer.Argument(..., help=f"The aggregator ({', '.join(AGGREGATOR_TYPES)})."),
+    query: str = typer.Option(..., "--query", "-q", help="Keywords to search for."),
+    location: str | None = typer.Option(
+        None, "--location", help="Filter results to a location (free text)."
+    ),
+    remote: bool | None = typer.Option(
+        None, "--remote/--onsite", help="Keep only remote (or only on-site) roles."
+    ),
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the saved search as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Add an aggregator saved keyword search for the active profile (PROJECT.md §5.4-B, §9).
+
+    Validates ``aggregator`` against the registered providers, then records the
+    search (query + optional location / remote filters) for the active profile so
+    the daemon's discovery poll (and ``atlas discover``) run it. Re-adding the same
+    search is a no-op. Exits ``1`` if the aggregator is unknown or no profile is
+    active yet.
+    """
+    try:
+        get_aggregator(aggregator)
+    except UnknownAggregatorError as exc:
+        error_console.print(f"[error]atlas source add:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    spec = SavedSearch(query=query, location=location, remote=remote)
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            profile = get_active_profile(session)
+            if profile is None or profile.id is None:
+                error_console.print(
+                    "[error]atlas source add:[/error] no active profile. "
+                    "Run [accent]atlas init[/accent] first."
+                )
+                raise typer.Exit(code=1)
+            outcome = add_saved_search(
+                session, aggregator=aggregator, spec=spec, profile_id=profile.id
+            )
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(outcome.model_dump_json(indent=2))
+    elif outcome.created:
+        console.print(
+            f"[success]Saved search[/success] [accent]{outcome.aggregator}[/accent] "
+            f"({outcome.query!r}). Run [accent]atlas discover[/accent] to poll it now."
+        )
+    else:
+        console.print(
+            f"[muted]Already saved — [/muted][accent]{outcome.aggregator}[/accent]"
+            f"[muted] ({outcome.query!r}).[/muted]"
+        )
+
+
+@source_app.command("list")
+def source_list(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the saved searches as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """List aggregator saved searches, newest last (PROJECT.md §9)."""
+    engine = _open_database()
+    try:
+        with session_scope(engine) as session:
+            report = build_saved_search_report(session)
+    finally:
+        engine.dispose()
+    if as_json:
+        print_json_line(report.model_dump_json(indent=2))
+    else:
+        console.print(render_saved_searches(report))
