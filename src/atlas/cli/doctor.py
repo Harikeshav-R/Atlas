@@ -29,6 +29,11 @@ from atlas.ai.cli.runner import SubprocessRunner, default_subprocess_runner
 from atlas.ai.probe import BackendCapabilities, ProbeResult, probe_backend
 from atlas.ai.probe_cache import load_probe_cache, save_probe_cache
 from atlas.ai.router import build_named_provider
+from atlas.discovery.aggregators import (
+    AGGREGATOR_TYPES,
+    aggregator_requires_key,
+    build_aggregator,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -36,10 +41,17 @@ if TYPE_CHECKING:
     from rich.console import RenderableType
 
     from atlas.ai.base import LLMProvider
-    from atlas.config.schema import AiConfig
+    from atlas.config.schema import AggregatorsConfig, AiConfig
     from atlas.config.secrets import SecretStore
 
-__all__ = ["BackendStatus", "DoctorReport", "render_report", "run_doctor"]
+__all__ = [
+    "AggregatorHealth",
+    "BackendStatus",
+    "DoctorReport",
+    "build_aggregator_health",
+    "render_report",
+    "run_doctor",
+]
 
 
 class _ProbeFn(Protocol):
@@ -89,6 +101,24 @@ class BackendStatus(BaseModel):
     capabilities_cached: bool = False
 
 
+class AggregatorHealth(BaseModel):
+    """The configuration health of one aggregator job source (PROJECT.md §5.4-B).
+
+    Attributes:
+        name: The aggregator name (e.g. ``"adzuna"``).
+        requires_key: Whether the provider is key-gated.
+        active: Whether the provider is usable now — a free feed, or a key-gated
+            provider that is enabled with its credential present.
+        detail: A short status line (``"active"`` / ``"needs API key"`` /
+            ``"disabled"``); never leaks the secret.
+    """
+
+    name: str
+    requires_key: bool
+    active: bool
+    detail: str
+
+
 class DoctorReport(BaseModel):
     """The full ``atlas doctor`` result.
 
@@ -96,11 +126,14 @@ class DoctorReport(BaseModel):
         backends: One :class:`BackendStatus` per configured backend, in chain
             order (default first, then failover).
         healthy: ``True`` iff at least one backend is available (so Atlas can run
-            at all).
+            at all). Aggregators do not affect it — they are optional job sources.
+        aggregators: One :class:`AggregatorHealth` per registered aggregator, in
+            name order.
     """
 
     backends: list[BackendStatus]
     healthy: bool
+    aggregators: list[AggregatorHealth] = []
 
 
 def _ordered_backends(config: AiConfig) -> list[tuple[str, str]]:
@@ -172,6 +205,46 @@ def run_doctor(
         cache_save(updated)
     healthy = any(status.available for status in statuses)
     return DoctorReport(backends=statuses, healthy=healthy)
+
+
+def build_aggregator_health(
+    config: AggregatorsConfig, store: SecretStore
+) -> list[AggregatorHealth]:
+    """Report each registered aggregator's configuration health.
+
+    Free feeds are always ``active``. A key-gated provider is ``active`` when it
+    builds (enabled + credential present), ``"disabled"`` when turned off in
+    config, and ``"needs API key"`` when enabled but its credential is missing —
+    mirroring the backend build→availability→detail shape, and never leaking the
+    secret. Aggregators are optional, so this never affects ``DoctorReport.healthy``.
+    """
+    health: list[AggregatorHealth] = []
+    for name in AGGREGATOR_TYPES:
+        requires_key = aggregator_requires_key(name)
+        if not requires_key:
+            health.append(
+                AggregatorHealth(name=name, requires_key=False, active=True, detail="active")
+            )
+            continue
+        adapter = build_aggregator(name, config=config, store=store)
+        if adapter is not None:
+            detail = "active"
+        elif _aggregator_enabled(config, name):
+            detail = "needs API key"
+        else:
+            detail = "disabled"
+        health.append(
+            AggregatorHealth(
+                name=name, requires_key=True, active=adapter is not None, detail=detail
+            )
+        )
+    return health
+
+
+def _aggregator_enabled(config: AggregatorsConfig, name: str) -> bool:
+    """Return whether the aggregator ``name`` is enabled in ``config``."""
+    section = getattr(config, name)
+    return bool(section.enabled)
 
 
 def _probe_backend(
@@ -327,4 +400,26 @@ def render_report(report: DoctorReport) -> RenderableType:
         summary = Text("✓ At least one backend is usable.", style="success")
     else:
         summary = Text("✗ No usable backend configured.", style="error")
-    return Group(table, Text(), summary)
+    renderables: list[RenderableType] = [table, Text(), summary]
+    if report.aggregators:
+        renderables.extend([Text(), _render_aggregators(report.aggregators)])
+    return Group(*renderables)
+
+
+def _render_aggregators(aggregators: list[AggregatorHealth]) -> RenderableType:
+    """Render the aggregator job sources as a styled Rich table."""
+    table = Table(title="Aggregator sources", title_style="heading", title_justify="left")
+    table.add_column("", no_wrap=True)  # status glyph
+    table.add_column("Aggregator", style="accent", no_wrap=True)
+    table.add_column("Key", no_wrap=True)
+    table.add_column("Status")
+    for item in aggregators:
+        glyph = Text("●", style="ok") if item.active else Text("●", style="bad")
+        detail_style = "success" if item.active else ("warning" if item.requires_key else "muted")
+        table.add_row(
+            glyph,
+            item.name,
+            Text("required" if item.requires_key else "free", style="muted"),
+            Text(item.detail, style=detail_style),
+        )
+    return table

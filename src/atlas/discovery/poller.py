@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from atlas.discovery.aggregators import get_aggregator
+from atlas.discovery.aggregators import build_aggregator
 from atlas.discovery.aggregators.structure import SavedSearch
 from atlas.discovery.ats import get_adapter
 from atlas.discovery.errors import DiscoveryError
@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
     from sqlmodel import Session
 
+    from atlas.config.schema import AggregatorsConfig
+    from atlas.config.secrets import SecretStore
     from atlas.scrape.fetcher import Fetcher
 
 __all__ = ["DiscoveryOutcome", "run_aggregator_poll", "run_discovery_poll"]
@@ -56,17 +58,22 @@ class DiscoveryOutcome(BaseModel):
     """The result of one discovery poll.
 
     Attributes:
-        sources_polled: How many enabled ATS sources were polled successfully.
+        sources_polled: How many enabled sources were polled successfully.
         discovered: How many new postings were inserted across all sources.
         skipped: How many discovered postings were duplicates and skipped.
         failed_sources: How many sources could not be polled (unknown provider,
             unusable response, or fetch failure) and were left for a later run.
+        inactive: How many enabled sources were skipped because they are not yet
+            usable — a key-gated aggregator whose credential is not configured.
+            Reported (never silently dropped) but distinct from a failure. Always
+            ``0`` for the ATS poll, which has no key-gated sources.
     """
 
     sources_polled: int
     discovered: int
     skipped: int
     failed_sources: int
+    inactive: int = 0
 
 
 def run_discovery_poll(
@@ -125,22 +132,32 @@ def run_discovery_poll(
 def run_aggregator_poll(
     session: Session,
     *,
+    config: AggregatorsConfig,
+    store: SecretStore,
     fetcher: Fetcher = default_fetcher,
     clock: Callable[[], datetime] = utcnow,
 ) -> DiscoveryOutcome:
     """Poll every enabled aggregator saved search and persist new postings.
 
     The aggregator counterpart to :func:`run_discovery_poll`: for each enabled
-    aggregator source it resolves the provider's adapter, rebuilds the saved search
-    from the source config, runs it through the injected fetcher, and persists the
-    new postings (dedup + per-posting company handled by
+    aggregator source it **builds** the provider's adapter (resolving any key-gated
+    credentials from ``store`` via ``config``), rebuilds the saved search from the
+    source config, runs it through the injected fetcher, and persists the new
+    postings (dedup + per-posting company handled by
     :func:`~atlas.discovery.service.persist_aggregated`), then stamps
-    ``last_polled_at``. **Best-effort per source** — an unknown provider, an unusable
-    response, or a fetch failure is counted in ``failed_sources`` and skipped rather
-    than aborting the batch.
+    ``last_polled_at``.
+
+    A key-gated provider that is disabled or missing its credential builds to
+    ``None`` and is skipped as **inactive** — reported in ``DiscoveryOutcome.inactive``
+    (so the user learns a source needs a key), distinct from a failure. Polling is
+    otherwise **best-effort per source** — an unknown provider, an unusable response,
+    or a fetch failure is counted in ``failed_sources`` and skipped rather than
+    aborting the batch.
 
     Args:
         session: The open session/transaction to work within.
+        config: The ``[aggregators]`` settings (enable flags + key handles).
+        store: The secret store key-gated adapters resolve their credentials from.
         fetcher: The HTTP boundary the adapters fetch through (injectable for tests).
         clock: The clock for ``fetched_at`` / ``last_polled_at`` (injectable).
 
@@ -151,10 +168,16 @@ def run_aggregator_poll(
     discovered = 0
     skipped = 0
     failed_sources = 0
+    inactive = 0
     for source in list_enabled_aggregator_sources(session):
         aggregator = str(source.config.get("aggregator", ""))
         try:
-            adapter = get_aggregator(aggregator)
+            adapter = build_aggregator(aggregator, config=config, store=store)
+            if adapter is None:
+                # Key-gated + unconfigured/keyless — inactive, not a failure.
+                _LOGGER.info("Aggregator source needs an API key (aggregator=%s).", aggregator)
+                inactive += 1
+                continue
             spec = SavedSearch.model_validate(source.config.get("search", {}))
             postings = adapter.search(spec, fetcher=fetcher, timeout_s=_TIMEOUT_S)
             outcome = persist_aggregated(
@@ -178,4 +201,5 @@ def run_aggregator_poll(
         discovered=discovered,
         skipped=skipped,
         failed_sources=failed_sources,
+        inactive=inactive,
     )

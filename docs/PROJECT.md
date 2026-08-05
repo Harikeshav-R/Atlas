@@ -829,6 +829,17 @@ enforce_one_page = true
 poll_interval_minutes = 120
 enable_scraping = false              # ToS-risky sources off by default
 
+[aggregators.adzuna]                 # key-gated; inactive until keys are stored
+enabled = false
+country = "us"
+# app id/key -> keyring handles "adzuna_app_id" / "adzuna_app_key"
+# store them with: atlas source key adzuna
+
+[aggregators.usajobs]                # key-gated (header auth); email is non-secret
+enabled = false
+email = ""                           # sent as the User-Agent
+# api key -> keyring handle "usajobs" (atlas source key usajobs)
+
 [integrations.calendar]
 type = "caldav"
 url  = "https://caldav.example.com/user/calendar"
@@ -1122,9 +1133,14 @@ The document specs everything; build order is phased. Each phase is independentl
   filter, per-profile `SavedSearch` sources on the existing `job_source` table (no
   migration), `run_aggregator_poll` (best-effort per source, get-or-creates a company
   per posting), `atlas source add|list`, and the poll wired into `atlas discover` +
-  the daemon after the ATS poll. **Follow-ups:** key-gated aggregators (Adzuna app
-  id + key, USAJOBS email + key) and the HN "Who is hiring" / arbeitnow sources drop
-  into the same registry, key-gated ones inactive until a key is pasted.)*
+  the daemon after the ATS poll. **Key-gated aggregators** now land too — **Adzuna**
+  (query-string auth) and **USAJOBS** (header auth) via a `requires_key` seam + a
+  `build_aggregator(config, store)` builder that resolves credentials from the OS
+  keychain and returns an inactive source when unconfigured (surfaced in
+  `DiscoveryOutcome.inactive` and `atlas doctor`); a `[aggregators]` config section
+  (enable flags + key handles, never the secret); and `atlas source key` to store a
+  credential via hidden prompts. **Follow-ups:** the HN "Who is hiring" / arbeitnow
+  free sources drop into the same registry.)*
 - [x] Dedup + scored **Discover** queue in the TUI. *(✅ `DiscoverScreen` — a ranked queue of
   scored postings (`matching.repository.list_scored_postings`) with tailor / dismiss / save /
   open-URL actions and drill-in to Posting detail; dismiss/save persist via a new

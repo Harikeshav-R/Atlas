@@ -23,6 +23,8 @@ from atlas.config.paths import (
     state_dir,
 )
 from atlas.config.schema import (
+    AdzunaConfig,
+    AggregatorsConfig,
     AiBackends,
     AiConfig,
     ClaudeCodeBackend,
@@ -30,6 +32,7 @@ from atlas.config.schema import (
     DiscoveryConfig,
     LoggingConfig,
     OpenRouterBackend,
+    UsajobsConfig,
 )
 from atlas.config.secrets import (
     KEYRING_PASSPHRASE_ENV,
@@ -41,6 +44,8 @@ from atlas.config.secrets import (
 
 __all__ = [
     "KEYRING_PASSPHRASE_ENV",
+    "AdzunaConfig",
+    "AggregatorsConfig",
     "AiBackends",
     "AiConfig",
     "ClaudeCodeBackend",
@@ -52,6 +57,7 @@ __all__ = [
     "LoggingConfig",
     "OpenRouterBackend",
     "SecretStore",
+    "UsajobsConfig",
     "cache_dir",
     "config_dir",
     "config_file",

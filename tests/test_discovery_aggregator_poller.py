@@ -11,6 +11,8 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from atlas.config.schema import AggregatorsConfig
+from atlas.config.secrets import SecretStore
 from atlas.db import session_scope
 from atlas.db.models import JobSource
 from atlas.discovery.aggregators.structure import SavedSearch
@@ -24,7 +26,7 @@ from atlas.profiles.repository import create_profile
 from atlas.scrape.errors import FetchError
 from atlas.scrape.fetcher import FetchResult
 from atlas.scrape.repository import list_postings
-from tests.conftest import FakeFetcher
+from tests.conftest import FakeFetcher, FakeKeyring
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -32,6 +34,13 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
 _POLLED = datetime(2026, 8, 4, 9, 0, tzinfo=UTC)
+
+#: Free-provider poll defaults (no keys needed); key-gated tests build their own.
+_CONFIG = AggregatorsConfig()
+
+
+def _store() -> SecretStore:
+    return SecretStore(FakeKeyring())
 
 
 def _fixed_clock() -> datetime:
@@ -91,7 +100,9 @@ def test_poll_discovers_and_persists(db_engine: Engine) -> None:
     _saved_search(db_engine, profile_id)
     fetcher = FakeFetcher(_result(_feed(1, 2)))
     with session_scope(db_engine) as session:
-        outcome = run_aggregator_poll(session, fetcher=fetcher, clock=_fixed_clock)
+        outcome = run_aggregator_poll(
+            session, config=_CONFIG, store=_store(), fetcher=fetcher, clock=_fixed_clock
+        )
     assert outcome.sources_polled == 1
     assert outcome.discovered == 2
     assert outcome.skipped == 0
@@ -123,7 +134,13 @@ def test_poll_falls_back_to_placeholder_company(db_engine: Engine) -> None:
         ]
     )
     with session_scope(db_engine) as session:
-        run_aggregator_poll(session, fetcher=FakeFetcher(_result(feed)), clock=_fixed_clock)
+        run_aggregator_poll(
+            session,
+            config=_CONFIG,
+            store=_store(),
+            fetcher=FakeFetcher(_result(feed)),
+            clock=_fixed_clock,
+        )
     with session_scope(db_engine) as session:
         from atlas.db.models import Company
 
@@ -137,10 +154,20 @@ def test_poll_falls_back_to_placeholder_company(db_engine: Engine) -> None:
 def test_poll_re_poll_is_a_no_op(db_engine: Engine) -> None:
     _saved_search(db_engine, _profile(db_engine))
     with session_scope(db_engine) as session:
-        run_aggregator_poll(session, fetcher=FakeFetcher(_result(_feed(1, 2))), clock=_fixed_clock)
+        run_aggregator_poll(
+            session,
+            config=_CONFIG,
+            store=_store(),
+            fetcher=FakeFetcher(_result(_feed(1, 2))),
+            clock=_fixed_clock,
+        )
     with session_scope(db_engine) as session:
         outcome = run_aggregator_poll(
-            session, fetcher=FakeFetcher(_result(_feed(1, 2))), clock=_fixed_clock
+            session,
+            config=_CONFIG,
+            store=_store(),
+            fetcher=FakeFetcher(_result(_feed(1, 2))),
+            clock=_fixed_clock,
         )
     assert outcome.discovered == 0
     assert outcome.skipped == 2
@@ -193,7 +220,9 @@ def test_poll_best_effort_skips_a_failing_source(db_engine: Engine) -> None:
             )
 
     with session_scope(db_engine) as session:
-        outcome = run_aggregator_poll(session, fetcher=_SequencedFetcher(), clock=_fixed_clock)
+        outcome = run_aggregator_poll(
+            session, config=_CONFIG, store=_store(), fetcher=_SequencedFetcher(), clock=_fixed_clock
+        )
     assert outcome.failed_sources == 1
     assert outcome.sources_polled == 1
     assert outcome.discovered == 1
@@ -214,7 +243,9 @@ def test_poll_skips_unknown_provider(db_engine: Engine) -> None:
         session.flush()
     fetcher = FakeFetcher(_result(_feed(1)))
     with session_scope(db_engine) as session:
-        outcome = run_aggregator_poll(session, fetcher=fetcher, clock=_fixed_clock)
+        outcome = run_aggregator_poll(
+            session, config=_CONFIG, store=_store(), fetcher=fetcher, clock=_fixed_clock
+        )
     assert outcome.failed_sources == 1
     assert outcome.sources_polled == 0
     assert fetcher.calls == []
@@ -223,9 +254,68 @@ def test_poll_skips_unknown_provider(db_engine: Engine) -> None:
 def test_poll_empty_watchlist_makes_no_fetch(db_engine: Engine) -> None:
     fetcher = FakeFetcher(_result(_feed(1)))
     with session_scope(db_engine) as session:
-        outcome = run_aggregator_poll(session, fetcher=fetcher, clock=_fixed_clock)
+        outcome = run_aggregator_poll(
+            session, config=_CONFIG, store=_store(), fetcher=fetcher, clock=_fixed_clock
+        )
     assert outcome.sources_polled == 0
     assert outcome.discovered == 0
     assert outcome.skipped == 0
     assert outcome.failed_sources == 0
     assert fetcher.calls == []
+
+
+def test_poll_skips_key_gated_source_without_key(db_engine: Engine) -> None:
+    # A key-gated Adzuna source with no configured key is inactive — counted in
+    # `inactive`, never fetched, and not a failure.
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        get_or_create_aggregator_source(
+            session, aggregator="adzuna", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+    fetcher = FakeFetcher(_result(_feed(1)))
+    with session_scope(db_engine) as session:
+        # Adzuna is disabled by default in _CONFIG → build returns None.
+        outcome = run_aggregator_poll(
+            session, config=_CONFIG, store=_store(), fetcher=fetcher, clock=_fixed_clock
+        )
+    assert outcome.inactive == 1
+    assert outcome.sources_polled == 0
+    assert outcome.failed_sources == 0
+    assert fetcher.calls == []
+
+
+def test_poll_polls_key_gated_source_once_configured(db_engine: Engine) -> None:
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        get_or_create_aggregator_source(
+            session, aggregator="adzuna", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+    store = SecretStore(FakeKeyring())
+    store.set("adzuna_app_id", "id")
+    store.set("adzuna_app_key", "key")
+    config = AggregatorsConfig.model_validate({"adzuna": {"enabled": True}})
+    body = json.dumps(
+        {
+            "results": [
+                {
+                    "id": "500",
+                    "title": "Python Engineer",
+                    "company": {"display_name": "Acme"},
+                    "redirect_url": "https://www.adzuna.com/jobs/land/ad/500",
+                    "description": "Work.",
+                }
+            ]
+        }
+    )
+    fetcher = FakeFetcher(
+        FetchResult(url="x", status_code=200, content_type="application/json", body=body)
+    )
+    with session_scope(db_engine) as session:
+        outcome = run_aggregator_poll(
+            session, config=config, store=store, fetcher=fetcher, clock=_fixed_clock
+        )
+    assert outcome.inactive == 0
+    assert outcome.sources_polled == 1
+    assert outcome.discovered == 1
+    with session_scope(db_engine) as session:
+        assert [p.external_id for p in list_postings(session)] == ["500"]

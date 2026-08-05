@@ -33,7 +33,7 @@ from atlas.cli.discovery import (
     render_saved_searches,
     render_watchlist,
 )
-from atlas.cli.doctor import render_report, run_doctor
+from atlas.cli.doctor import build_aggregator_health, render_report, run_doctor
 from atlas.cli.matching import render_score
 from atlas.cli.materials import render_open_outcome, render_rerender_outcome
 from atlas.cli.profile import (
@@ -75,7 +75,13 @@ from atlas.daemon.poll import run_scoring_poll
 from atlas.daemon.scheduler import default_scheduler
 from atlas.daemon.service import daemon_status, start_daemon, stop_daemon
 from atlas.db import initialize_database, session_scope
-from atlas.discovery.aggregators import AGGREGATOR_TYPES, SavedSearch, get_aggregator
+from atlas.discovery.aggregators import (
+    AGGREGATOR_TYPES,
+    SavedSearch,
+    aggregator_requires_key,
+    credential_prompts,
+    validate_aggregator,
+)
 from atlas.discovery.ats import ATS_TYPES, detect_ats
 from atlas.discovery.errors import UnknownAggregatorError
 from atlas.discovery.poller import DiscoveryOutcome, run_aggregator_poll, run_discovery_poll
@@ -253,6 +259,7 @@ def doctor(
         raise typer.Exit(code=1) from exc
 
     report = run_doctor(config.ai, store, probe=probe or refresh, refresh=refresh)
+    report.aggregators = build_aggregator_health(config.aggregators, store)
     if as_json:
         print_json_line(report.model_dump_json(indent=2))
     else:
@@ -1040,7 +1047,9 @@ def daemon_start() -> None:
         with session_scope(engine) as session:
             run_discovery_poll(session, fetcher=default_fetcher)
         with session_scope(engine) as session:
-            run_aggregator_poll(session, fetcher=default_fetcher)
+            run_aggregator_poll(
+                session, config=config.aggregators, store=store, fetcher=default_fetcher
+            )
         with session_scope(engine) as session:
             run_scoring_poll(session, provider=provider)
 
@@ -1186,12 +1195,20 @@ def discover(
     Discovery is AI-free — it does not score; run [accent]atlas score[/accent] or the
     daemon (which chains discovery → scoring) to score the newly-found postings.
     """
+    try:
+        config = load_config()
+        store = default_secret_store()
+    except ConfigError as exc:
+        error_console.print(f"[error]atlas discover:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
     engine = _open_database()
     try:
         with session_scope(engine) as session:
             ats_outcome = run_discovery_poll(session, fetcher=default_fetcher)
         with session_scope(engine) as session:
-            aggregator_outcome = run_aggregator_poll(session, fetcher=default_fetcher)
+            aggregator_outcome = run_aggregator_poll(
+                session, config=config.aggregators, store=store, fetcher=default_fetcher
+            )
     finally:
         engine.dispose()
     outcome = DiscoveryOutcome(
@@ -1199,6 +1216,7 @@ def discover(
         discovered=ats_outcome.discovered + aggregator_outcome.discovered,
         skipped=ats_outcome.skipped + aggregator_outcome.skipped,
         failed_sources=ats_outcome.failed_sources + aggregator_outcome.failed_sources,
+        inactive=ats_outcome.inactive + aggregator_outcome.inactive,
     )
     if as_json:
         print_json_line(outcome.model_dump_json(indent=2))
@@ -1236,7 +1254,7 @@ def source_add(
     active yet.
     """
     try:
-        get_aggregator(aggregator)
+        validate_aggregator(aggregator)
     except UnknownAggregatorError as exc:
         error_console.print(f"[error]atlas source add:[/error] {exc}")
         raise typer.Exit(code=1) from exc
@@ -1259,15 +1277,64 @@ def source_add(
     if as_json:
         print_json_line(outcome.model_dump_json(indent=2))
     elif outcome.created:
+        # A key-gated provider stays inactive until its credential is stored.
+        next_step = (
+            f"Run [accent]atlas source key {outcome.aggregator}[/accent] to add its API key, "
+            "then [accent]atlas discover[/accent]."
+            if aggregator_requires_key(aggregator)
+            else "Run [accent]atlas discover[/accent] to poll it now."
+        )
         console.print(
             f"[success]Saved search[/success] [accent]{outcome.aggregator}[/accent] "
-            f"({outcome.query!r}). Run [accent]atlas discover[/accent] to poll it now."
+            f"({outcome.query!r}). {next_step}"
         )
     else:
         console.print(
             f"[muted]Already saved — [/muted][accent]{outcome.aggregator}[/accent]"
             f"[muted] ({outcome.query!r}).[/muted]"
         )
+
+
+@source_app.command("key")
+def source_key(
+    aggregator: str = typer.Argument(
+        ..., help="The key-gated aggregator whose credential(s) to store."
+    ),
+) -> None:
+    """Store a key-gated aggregator's API credential(s) in the OS keychain (§5.4-B).
+
+    Prompts for each credential with hidden input (never echoed, never in shell
+    history) and writes it to the OS keychain under the handle from config, so the
+    daemon and ``atlas discover`` can activate the source. The secret is never
+    printed, logged, or stored in config. Exits ``1`` if the aggregator is unknown
+    or is a free (no-key) source, or if the keychain is unavailable.
+    """
+    try:
+        validate_aggregator(aggregator)
+    except UnknownAggregatorError as exc:
+        error_console.print(f"[error]atlas source key:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    if not aggregator_requires_key(aggregator):
+        keyed = ", ".join(name for name in AGGREGATOR_TYPES if aggregator_requires_key(name))
+        error_console.print(
+            f"[error]atlas source key:[/error] [accent]{aggregator}[/accent] needs no API key. "
+            f"Key-gated aggregators: {keyed}."
+        )
+        raise typer.Exit(code=1)
+    try:
+        config = load_config()
+        store = default_secret_store()
+    except ConfigError as exc:
+        error_console.print(f"[error]atlas source key:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    for prompt in credential_prompts(aggregator, config.aggregators):
+        value = typer.prompt(prompt.label, hide_input=True)
+        store.set(prompt.handle, value)
+    console.print(
+        f"[success]Stored credentials[/success] for [accent]{aggregator}[/accent]. "
+        f"Enable it in your config's [accent][aggregators.{aggregator}][/accent] section, "
+        "then run [accent]atlas discover[/accent]."
+    )
 
 
 @source_app.command("list")

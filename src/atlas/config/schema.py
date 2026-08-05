@@ -2,10 +2,11 @@
 
 Only the sections Atlas consumes today are modelled — cross-platform behaviour
 plus the ``[ai]`` backend selection, the ``[render]`` pipeline, the
-``[tailoring]`` controls, and the ``[discovery]`` daemon settings. Unknown keys
-and the not-yet-built sections (the ``[integrations]`` and ``[notifications]``
-blocks from PROJECT.md §10) are **ignored** rather than rejected, so a user's
-fuller config still loads while those features are built out in later phases.
+``[tailoring]`` controls, the ``[discovery]`` daemon settings, and the
+``[aggregators]`` key-gated job sources. Unknown keys and the not-yet-built
+sections (the ``[integrations]`` and ``[notifications]`` blocks from PROJECT.md
+§10) are **ignored** rather than rejected, so a user's fuller config still loads
+while those features are built out in later phases.
 Every field is defaulted, so a missing or empty config file yields a valid
 default :class:`Config`.
 
@@ -20,6 +21,8 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 __all__ = [
+    "AdzunaConfig",
+    "AggregatorsConfig",
     "AiBackends",
     "AiConfig",
     "ClaudeCodeBackend",
@@ -30,6 +33,7 @@ __all__ = [
     "OpenRouterBackend",
     "RenderConfig",
     "TailoringConfig",
+    "UsajobsConfig",
 ]
 
 
@@ -169,6 +173,54 @@ class DiscoveryConfig(_Base):
     enable_scraping: bool = False
 
 
+class AdzunaConfig(_Base):
+    """The ``[aggregators.adzuna]`` section: the Adzuna job-search API (§5.4-B).
+
+    Adzuna is a **key-gated** aggregator: it needs a free ``app_id`` + ``app_key``,
+    kept in the OS keychain and referenced here only by handle (never the key
+    itself). The source stays inactive — shown as "needs API key" in
+    ``atlas doctor`` — until both keys are stored (``atlas source key adzuna``).
+
+    Attributes:
+        enabled: Whether the discovery poll includes Adzuna searches.
+        app_id_handle: Keyring handle for the Adzuna application id.
+        app_key_handle: Keyring handle for the Adzuna application key.
+        country: The Adzuna country code to search (e.g. ``"us"``, ``"gb"``).
+    """
+
+    enabled: bool = False
+    app_id_handle: str = "adzuna_app_id"
+    app_key_handle: str = "adzuna_app_key"
+    country: str = "us"
+
+
+class UsajobsConfig(_Base):
+    """The ``[aggregators.usajobs]`` section: the USAJOBS API (§5.4-B).
+
+    USAJOBS is a **key-gated** aggregator using header auth: a free API key
+    (``Authorization-Key``) plus the registering email as the ``User-Agent``. The
+    key lives in the OS keychain (handle only here); the non-secret email lives in
+    config. Inactive until both are set.
+
+    Attributes:
+        enabled: Whether the discovery poll includes USAJOBS searches.
+        email: The email registered with USAJOBS, sent as the ``User-Agent``
+            (non-secret, so it lives in config rather than the keychain).
+        api_key_handle: Keyring handle for the USAJOBS API key.
+    """
+
+    enabled: bool = False
+    email: str = ""
+    api_key_handle: str = "usajobs"
+
+
+class AggregatorsConfig(_Base):
+    """The ``[aggregators]`` table: per-provider key-gated aggregator settings."""
+
+    adzuna: AdzunaConfig = Field(default_factory=AdzunaConfig)
+    usajobs: UsajobsConfig = Field(default_factory=UsajobsConfig)
+
+
 class Config(_Base):
     """The top-level Atlas configuration."""
 
@@ -177,3 +229,4 @@ class Config(_Base):
     render: RenderConfig = Field(default_factory=RenderConfig)
     tailoring: TailoringConfig = Field(default_factory=TailoringConfig)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
+    aggregators: AggregatorsConfig = Field(default_factory=AggregatorsConfig)

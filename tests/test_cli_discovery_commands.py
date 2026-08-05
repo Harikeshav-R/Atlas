@@ -17,13 +17,15 @@ from typer.testing import CliRunner
 
 import atlas.cli.main as app_module
 from atlas.cli.main import app
+from atlas.config.errors import ConfigError
+from atlas.config.secrets import SecretStore
 from atlas.db import create_db_engine, session_scope
 from atlas.discovery.repository import get_or_create_ats_source
 from atlas.profiles.preferences import ProfilePreferences
 from atlas.profiles.repository import create_profile
 from atlas.scrape.fetcher import FetchResult
 from atlas.scrape.repository import get_or_create_company, list_postings
-from tests.conftest import FakeFetcher
+from tests.conftest import FakeFetcher, FakeKeyring
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
@@ -41,6 +43,18 @@ def _seed_profile(engine: Engine) -> None:
 def _stub_logging(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the callback's logging setup so no test writes a real log file."""
     monkeypatch.setattr(app_module, "setup_logging", lambda **kwargs: 0)
+
+
+@pytest.fixture(autouse=True)
+def fake_store(monkeypatch: pytest.MonkeyPatch) -> SecretStore:
+    """Back ``default_secret_store`` with an in-memory keyring (no real keychain).
+
+    ``discover`` and ``source key`` build a store; the returned store is shared so
+    a test can assert on secrets ``source key`` wrote.
+    """
+    store = SecretStore(FakeKeyring())
+    monkeypatch.setattr(app_module, "default_secret_store", lambda: store)
+    return store
 
 
 @pytest.fixture
@@ -158,6 +172,7 @@ def test_discover_empty_watchlist_json(
         "discovered": 0,
         "skipped": 0,
         "failed_sources": 0,
+        "inactive": 0,
     }
     assert fetcher.calls == []
 
@@ -231,6 +246,56 @@ def test_source_add_requires_active_profile(shared_engine: Engine) -> None:
     assert "no active profile" in result.output
 
 
+# --- atlas source key -----------------------------------------------------------
+
+
+def test_source_key_stores_adzuna_credentials(
+    shared_engine: Engine, fake_store: SecretStore
+) -> None:
+    # Two hidden prompts (app id, then app key) → two keyring entries.
+    result = runner.invoke(app, ["source", "key", "adzuna"], input="my-id\nmy-key\n")
+    assert result.exit_code == 0
+    assert "Stored credentials" in result.output
+    assert fake_store.get("adzuna_app_id") == "my-id"
+    assert fake_store.get("adzuna_app_key") == "my-key"
+    # The secret is never echoed back.
+    assert "my-key" not in result.output
+
+
+def test_source_key_stores_usajobs_credential(
+    shared_engine: Engine, fake_store: SecretStore
+) -> None:
+    result = runner.invoke(app, ["source", "key", "usajobs"], input="usa-key\n")
+    assert result.exit_code == 0
+    assert fake_store.get("usajobs") == "usa-key"
+
+
+def test_source_key_rejects_unknown_aggregator(shared_engine: Engine) -> None:
+    result = runner.invoke(app, ["source", "key", "linkedin"])
+    assert result.exit_code == 1
+    assert "Unknown aggregator" in result.output
+
+
+def test_source_key_rejects_free_aggregator(shared_engine: Engine) -> None:
+    result = runner.invoke(app, ["source", "key", "remoteok"])
+    assert result.exit_code == 1
+    assert "needs no API key" in result.output
+    # Names the key-gated providers instead.
+    assert "adzuna" in result.output
+
+
+def test_source_key_exits_on_config_error(
+    shared_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom() -> object:
+        raise ConfigError("keychain unavailable")
+
+    monkeypatch.setattr(app_module, "load_config", _boom)
+    result = runner.invoke(app, ["source", "key", "adzuna"])
+    assert result.exit_code == 1
+    assert "atlas source key:" in result.output
+
+
 # --- atlas source list ----------------------------------------------------------
 
 
@@ -268,3 +333,33 @@ def test_discover_polls_aggregator_searches(
     assert "Discovered" in result.output
     with session_scope(shared_engine) as session:
         assert [p.external_id for p in list_postings(session)] == ["42"]
+
+
+def test_discover_exits_on_config_error(
+    shared_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom() -> object:
+        raise ConfigError("keychain unavailable")
+
+    monkeypatch.setattr(app_module, "load_config", _boom)
+    result = runner.invoke(app, ["discover"])
+    assert result.exit_code == 1
+    assert "atlas discover:" in result.output
+
+
+def test_discover_reports_key_gated_source_as_inactive(
+    shared_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An Adzuna search with no configured key is inactive — surfaced, never fetched.
+    _seed_profile(shared_engine)
+    runner.invoke(app, ["source", "add", "adzuna", "--query", "python"])
+    fetcher = FakeFetcher(
+        FetchResult(url="x", status_code=200, content_type="application/json", body=_FEED)
+    )
+    monkeypatch.setattr(app_module, "default_fetcher", fetcher)
+    result = runner.invoke(app, ["discover", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["inactive"] == 1
+    assert payload["sources_polled"] == 0
+    assert fetcher.calls == []

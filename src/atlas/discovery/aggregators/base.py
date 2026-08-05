@@ -55,6 +55,13 @@ class AggregatorAdapter(Protocol):
     #: the aggregator source's config.
     aggregator_type: str
 
+    #: Whether the provider needs an API credential. Free feeds (RemoteOK,
+    #: Remotive) set ``False`` and are always active; key-gated providers (Adzuna,
+    #: USAJOBS) set ``True`` and are built with resolved credentials by
+    #: :func:`atlas.discovery.aggregators.build_aggregator`, which returns ``None``
+    #: (an inactive source) when the key is absent.
+    requires_key: bool
+
     def search(
         self, spec: SavedSearch, *, fetcher: Fetcher, timeout_s: int
     ) -> list[DiscoveredPosting]:
