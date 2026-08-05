@@ -22,10 +22,16 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from atlas.discovery.aggregators import get_aggregator
+from atlas.discovery.aggregators.structure import SavedSearch
 from atlas.discovery.ats import get_adapter
 from atlas.discovery.errors import DiscoveryError
-from atlas.discovery.repository import list_enabled_ats_sources, stamp_last_polled_at
-from atlas.discovery.service import persist_discovered
+from atlas.discovery.repository import (
+    list_enabled_aggregator_sources,
+    list_enabled_ats_sources,
+    stamp_last_polled_at,
+)
+from atlas.discovery.service import persist_aggregated, persist_discovered
 from atlas.resume.service import utcnow
 from atlas.scrape.errors import FetchError
 from atlas.scrape.fetcher import default_fetcher
@@ -38,7 +44,7 @@ if TYPE_CHECKING:
 
     from atlas.scrape.fetcher import Fetcher
 
-__all__ = ["DiscoveryOutcome", "run_discovery_poll"]
+__all__ = ["DiscoveryOutcome", "run_aggregator_poll", "run_discovery_poll"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -102,6 +108,65 @@ def run_discovery_poll(
             # Unknown provider / unusable board / fetch failure — skip this source
             # best-effort rather than aborting the whole poll.
             _LOGGER.warning("Discovery poll skipped a source (type=%s).", ats_type)
+            failed_sources += 1
+            continue
+        stamp_last_polled_at(session, source, clock())
+        sources_polled += 1
+        discovered += outcome.discovered
+        skipped += outcome.skipped
+    return DiscoveryOutcome(
+        sources_polled=sources_polled,
+        discovered=discovered,
+        skipped=skipped,
+        failed_sources=failed_sources,
+    )
+
+
+def run_aggregator_poll(
+    session: Session,
+    *,
+    fetcher: Fetcher = default_fetcher,
+    clock: Callable[[], datetime] = utcnow,
+) -> DiscoveryOutcome:
+    """Poll every enabled aggregator saved search and persist new postings.
+
+    The aggregator counterpart to :func:`run_discovery_poll`: for each enabled
+    aggregator source it resolves the provider's adapter, rebuilds the saved search
+    from the source config, runs it through the injected fetcher, and persists the
+    new postings (dedup + per-posting company handled by
+    :func:`~atlas.discovery.service.persist_aggregated`), then stamps
+    ``last_polled_at``. **Best-effort per source** — an unknown provider, an unusable
+    response, or a fetch failure is counted in ``failed_sources`` and skipped rather
+    than aborting the batch.
+
+    Args:
+        session: The open session/transaction to work within.
+        fetcher: The HTTP boundary the adapters fetch through (injectable for tests).
+        clock: The clock for ``fetched_at`` / ``last_polled_at`` (injectable).
+
+    Returns:
+        A :class:`DiscoveryOutcome` summarizing the poll.
+    """
+    sources_polled = 0
+    discovered = 0
+    skipped = 0
+    failed_sources = 0
+    for source in list_enabled_aggregator_sources(session):
+        aggregator = str(source.config.get("aggregator", ""))
+        try:
+            adapter = get_aggregator(aggregator)
+            spec = SavedSearch.model_validate(source.config.get("search", {}))
+            postings = adapter.search(spec, fetcher=fetcher, timeout_s=_TIMEOUT_S)
+            outcome = persist_aggregated(
+                session,
+                source=source,
+                discovered=postings,
+                clock=clock,
+            )
+        except (DiscoveryError, FetchError):
+            # Unknown provider / unusable response / fetch failure — skip this source
+            # best-effort rather than aborting the whole poll.
+            _LOGGER.warning("Aggregator poll skipped a source (aggregator=%s).", aggregator)
             failed_sources += 1
             continue
         stamp_last_polled_at(session, source, clock())
