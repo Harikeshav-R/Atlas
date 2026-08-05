@@ -9,8 +9,16 @@ import pytest
 from atlas.ai.base import LLMProvider
 from atlas.ai.cli import RunResult
 from atlas.ai.probe import BackendCapabilities, ProbeResult
-from atlas.cli.doctor import BackendStatus, DoctorReport, render_report, run_doctor
+from atlas.cli.doctor import (
+    AggregatorHealth,
+    BackendStatus,
+    DoctorReport,
+    build_aggregator_health,
+    render_report,
+    run_doctor,
+)
 from atlas.config import AiConfig, SecretStore
+from atlas.config.schema import AggregatorsConfig
 from tests.conftest import FakeKeyring, FakeSubprocessRunner
 
 
@@ -346,5 +354,67 @@ def test_report_json_round_trips() -> None:
     report = DoctorReport(
         backends=[BackendStatus(name="x", role="default", available=True, detail="ok")],
         healthy=True,
+        aggregators=[
+            AggregatorHealth(name="adzuna", requires_key=True, active=False, detail="needs API key")
+        ],
     )
     assert DoctorReport.model_validate_json(report.model_dump_json()) == report
+
+
+# --- aggregator health ----------------------------------------------------------
+
+
+def test_build_aggregator_health_free_and_disabled_and_needs_key(fake_keyring: FakeKeyring) -> None:
+    store = _store(fake_keyring)
+    # Default config: free feeds active; key-gated ones disabled.
+    health = {h.name: h for h in build_aggregator_health(AggregatorsConfig(), store)}
+    assert set(health) == {"adzuna", "remoteok", "remotive", "usajobs"}
+    assert health["remoteok"].active is True
+    assert health["remoteok"].detail == "active"
+    assert health["remoteok"].requires_key is False
+    # Disabled key-gated provider.
+    assert health["adzuna"].active is False
+    assert health["adzuna"].detail == "disabled"
+    # Enabled but keyless → needs API key.
+    config = AggregatorsConfig.model_validate({"adzuna": {"enabled": True}})
+    needs = {h.name: h for h in build_aggregator_health(config, store)}
+    assert needs["adzuna"].detail == "needs API key"
+    assert needs["adzuna"].active is False
+
+
+def test_build_aggregator_health_active_when_keyed(fake_keyring: FakeKeyring) -> None:
+    store = _store(fake_keyring)
+    store.set("adzuna_app_id", "id")
+    store.set("adzuna_app_key", "key")
+    config = AggregatorsConfig.model_validate({"adzuna": {"enabled": True}})
+    health = {h.name: h for h in build_aggregator_health(config, store)}
+    assert health["adzuna"].active is True
+    assert health["adzuna"].detail == "active"
+
+
+def test_render_report_shows_aggregators() -> None:
+    report = DoctorReport(
+        backends=[BackendStatus(name="claude_code", role="default", available=True, detail="ok")],
+        healthy=True,
+        aggregators=[
+            AggregatorHealth(name="remoteok", requires_key=False, active=True, detail="active"),
+            AggregatorHealth(
+                name="adzuna", requires_key=True, active=False, detail="needs API key"
+            ),
+        ],
+    )
+    text = _rendered(report)
+    assert "Aggregator sources" in text
+    assert "remoteok" in text
+    assert "adzuna" in text
+    assert "needs API key" in text
+    assert "free" in text
+    assert "required" in text
+
+
+def test_render_report_omits_aggregator_table_when_empty() -> None:
+    report = DoctorReport(
+        backends=[BackendStatus(name="claude_code", role="default", available=True, detail="ok")],
+        healthy=True,
+    )
+    assert "Aggregator sources" not in _rendered(report)

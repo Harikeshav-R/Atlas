@@ -33,7 +33,7 @@ from atlas.cli.discovery import (
     render_saved_searches,
     render_watchlist,
 )
-from atlas.cli.doctor import render_report, run_doctor
+from atlas.cli.doctor import build_aggregator_health, render_report, run_doctor
 from atlas.cli.matching import render_score
 from atlas.cli.materials import render_open_outcome, render_rerender_outcome
 from atlas.cli.profile import (
@@ -259,6 +259,7 @@ def doctor(
         raise typer.Exit(code=1) from exc
 
     report = run_doctor(config.ai, store, probe=probe or refresh, refresh=refresh)
+    report.aggregators = build_aggregator_health(config.aggregators, store)
     if as_json:
         print_json_line(report.model_dump_json(indent=2))
     else:

@@ -10,8 +10,9 @@ from typer.testing import CliRunner
 import atlas.cli.main as app_module
 from atlas.cli.doctor import BackendStatus, DoctorReport
 from atlas.cli.main import app
-from atlas.config import Config
+from atlas.config import Config, SecretStore
 from atlas.config.errors import KeyringUnavailableError
+from tests.conftest import FakeKeyring
 
 runner = CliRunner()
 
@@ -49,9 +50,13 @@ def stub_setup_logging(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object
 
 @pytest.fixture
 def stub_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub config + secret store so the command touches no real config/keyring."""
+    """Stub config + secret store so the command touches no real config/keyring.
+
+    The store is a real :class:`SecretStore` over an in-memory keyring so
+    ``build_aggregator_health`` (which reads credential handles) works offline.
+    """
     monkeypatch.setattr(app_module, "load_config", lambda: Config())
-    monkeypatch.setattr(app_module, "default_secret_store", lambda: object())
+    monkeypatch.setattr(app_module, "default_secret_store", lambda: SecretStore(FakeKeyring()))
 
 
 def test_no_args_shows_help_and_exits_nonzero() -> None:
