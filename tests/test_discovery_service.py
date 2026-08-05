@@ -7,9 +7,22 @@ from typing import TYPE_CHECKING
 
 from atlas.db import session_scope
 from atlas.db.models import Company
-from atlas.discovery.repository import get_ats_source, get_or_create_ats_source
-from atlas.discovery.service import add_watchlist_company, persist_discovered
+from atlas.discovery.aggregators.structure import SavedSearch
+from atlas.discovery.repository import (
+    get_aggregator_source,
+    get_ats_source,
+    get_or_create_aggregator_source,
+    get_or_create_ats_source,
+)
+from atlas.discovery.service import (
+    add_saved_search,
+    add_watchlist_company,
+    persist_aggregated,
+    persist_discovered,
+)
 from atlas.discovery.structure import DiscoveredPosting
+from atlas.profiles.preferences import ProfilePreferences
+from atlas.profiles.repository import create_profile
 from atlas.scrape.repository import get_or_create_company, list_postings
 from atlas.scrape.service import dedupe_hash_for
 from atlas.scrape.structure import ScrapedPosting
@@ -29,6 +42,22 @@ def _discovered(external_id: str, apply_url: str, *, title: str = "Engineer") ->
         external_id=external_id,
         posting=ScrapedPosting(title=title, apply_url=apply_url),
     )
+
+
+def _aggregated(
+    external_id: str, apply_url: str, *, company: str = "Acme", title: str = "Engineer"
+) -> DiscoveredPosting:
+    return DiscoveredPosting(
+        external_id=external_id,
+        posting=ScrapedPosting(title=title, company=company, apply_url=apply_url),
+    )
+
+
+def _profile(engine: Engine) -> int:
+    with session_scope(engine) as session:
+        profile = create_profile(session, name="Backend", preferences=ProfilePreferences())
+        assert profile.id is not None
+        return profile.id
 
 
 def test_add_watchlist_company_creates_company_and_source(db_engine: Engine) -> None:
@@ -153,3 +182,114 @@ def test_persist_discovered_skips_cross_source_dedupe_hash(db_engine: Engine) ->
         )
         assert outcome.discovered == 0
         assert outcome.skipped == 1
+
+
+def test_add_saved_search_creates_source(db_engine: Engine) -> None:
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        outcome = add_saved_search(
+            session,
+            aggregator="remoteok",
+            spec=SavedSearch(query="python backend", location="remote"),
+            profile_id=profile_id,
+        )
+        assert outcome.created is True
+        assert outcome.aggregator == "remoteok"
+        assert outcome.query == "python backend"
+        assert outcome.profile_id == profile_id
+    with session_scope(db_engine) as session:
+        source = get_aggregator_source(
+            session,
+            aggregator="remoteok",
+            spec=SavedSearch(query="python backend", location="remote"),
+            profile_id=profile_id,
+        )
+        assert source is not None
+        assert source.config["aggregator"] == "remoteok"
+
+
+def test_add_saved_search_is_idempotent(db_engine: Engine) -> None:
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        first = add_saved_search(
+            session, aggregator="remoteok", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+    with session_scope(db_engine) as session:
+        again = add_saved_search(
+            session, aggregator="remoteok", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+        assert again.created is False
+        assert again.source_id == first.source_id
+
+
+def test_persist_aggregated_creates_a_company_per_posting(db_engine: Engine) -> None:
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        source = get_or_create_aggregator_source(
+            session, aggregator="remoteok", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+        outcome = persist_aggregated(
+            session,
+            source=source,
+            discovered=[
+                _aggregated("1", "https://x.test/1", company="Acme"),
+                _aggregated("2", "https://x.test/2", company="Globex"),
+            ],
+            clock=_fixed_clock,
+        )
+        assert outcome.discovered == 2
+    with session_scope(db_engine) as session:
+        postings = list_postings(session)
+        assert {p.external_id for p in postings} == {"1", "2"}
+        assert len({p.company_id for p in postings}) == 2
+
+
+def test_persist_aggregated_falls_back_to_placeholder_company(db_engine: Engine) -> None:
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        source = get_or_create_aggregator_source(
+            session, aggregator="remoteok", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+        persist_aggregated(
+            session,
+            source=source,
+            discovered=[_aggregated("1", "https://x.test/1", company="")],
+            clock=_fixed_clock,
+        )
+    with session_scope(db_engine) as session:
+        postings = list_postings(session)
+        company = session.get(Company, postings[0].company_id)
+        assert company is not None
+        assert company.name == "Unknown company"
+
+
+def test_persist_aggregated_skips_duplicates(db_engine: Engine) -> None:
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        source = get_or_create_aggregator_source(
+            session, aggregator="remoteok", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+        persist_aggregated(
+            session,
+            source=source,
+            discovered=[_aggregated("1", "https://x.test/1")],
+            clock=_fixed_clock,
+        )
+    with session_scope(db_engine) as session:
+        reloaded = get_aggregator_source(
+            session, aggregator="remoteok", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+        assert reloaded is not None
+        # Same external id → skipped; and a different id with the same normalized
+        # apply URL is skipped by the cross-source dedupe hash.
+        outcome = persist_aggregated(
+            session,
+            source=reloaded,
+            discovered=[
+                _aggregated("1", "https://x.test/1"),
+                _aggregated("other", "https://x.test/1/"),
+            ],
+            clock=_fixed_clock,
+        )
+        assert outcome.discovered == 0
+        assert outcome.skipped == 2

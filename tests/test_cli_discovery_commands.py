@@ -19,6 +19,8 @@ import atlas.cli.main as app_module
 from atlas.cli.main import app
 from atlas.db import create_db_engine, session_scope
 from atlas.discovery.repository import get_or_create_ats_source
+from atlas.profiles.preferences import ProfilePreferences
+from atlas.profiles.repository import create_profile
 from atlas.scrape.fetcher import FetchResult
 from atlas.scrape.repository import get_or_create_company, list_postings
 from tests.conftest import FakeFetcher
@@ -27,6 +29,12 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
 runner = CliRunner()
+
+
+def _seed_profile(engine: Engine) -> None:
+    """Create an active profile so ``source add`` has one to attach searches to."""
+    with session_scope(engine) as session:
+        create_profile(session, name="Backend", preferences=ProfilePreferences())
 
 
 @pytest.fixture(autouse=True)
@@ -166,3 +174,97 @@ def test_discover_text_no_new_postings_omits_hint(
     assert result.exit_code == 0
     assert "Discovered" in result.output
     assert "atlas score" not in result.output
+
+
+# --- atlas source add -----------------------------------------------------------
+
+
+_FEED = json.dumps(
+    [
+        {"legal": "notice"},
+        {
+            "id": 42,
+            "company": "Acme",
+            "position": "Python Backend Engineer",
+            "url": "https://remoteok.com/remote-jobs/42",
+            "tags": ["python"],
+            "description": "Build.",
+        },
+    ]
+)
+
+
+def test_source_add_saves_search(shared_engine: Engine) -> None:
+    _seed_profile(shared_engine)
+    result = runner.invoke(app, ["source", "add", "remoteok", "--query", "python"])
+    assert result.exit_code == 0
+    assert "Saved search" in result.output
+    again = runner.invoke(app, ["source", "add", "remoteok", "--query", "python"])
+    assert again.exit_code == 0
+    assert "Already saved" in again.output
+
+
+def test_source_add_json(shared_engine: Engine) -> None:
+    _seed_profile(shared_engine)
+    result = runner.invoke(
+        app,
+        ["source", "add", "remoteok", "--query", "python", "--location", "remote", "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["aggregator"] == "remoteok"
+    assert payload["query"] == "python"
+    assert payload["created"] is True
+
+
+def test_source_add_rejects_unknown_aggregator(shared_engine: Engine) -> None:
+    _seed_profile(shared_engine)
+    result = runner.invoke(app, ["source", "add", "linkedin", "--query", "python"])
+    assert result.exit_code == 1
+    assert "Unknown aggregator" in result.output
+    assert "remoteok" in result.output
+
+
+def test_source_add_requires_active_profile(shared_engine: Engine) -> None:
+    result = runner.invoke(app, ["source", "add", "remoteok", "--query", "python"])
+    assert result.exit_code == 1
+    assert "no active profile" in result.output
+
+
+# --- atlas source list ----------------------------------------------------------
+
+
+def test_source_list_empty_and_populated(shared_engine: Engine) -> None:
+    empty = runner.invoke(app, ["source", "list"])
+    assert empty.exit_code == 0
+    assert "atlas source add" in empty.output
+    _seed_profile(shared_engine)
+    runner.invoke(app, ["source", "add", "remoteok", "--query", "python"])
+    populated = runner.invoke(app, ["source", "list", "--json"])
+    assert populated.exit_code == 0
+    entries = json.loads(populated.output)["entries"]
+    assert entries[0]["aggregator"] == "remoteok"
+    assert entries[0]["query"] == "python"
+    assert entries[0]["profile"] == "Backend"
+
+
+# --- atlas discover (aggregator) ------------------------------------------------
+
+
+def test_discover_polls_aggregator_searches(
+    shared_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_profile(shared_engine)
+    runner.invoke(app, ["source", "add", "remoteok", "--query", "python"])
+    monkeypatch.setattr(
+        app_module,
+        "default_fetcher",
+        FakeFetcher(
+            FetchResult(url="x", status_code=200, content_type="application/json", body=_FEED)
+        ),
+    )
+    result = runner.invoke(app, ["discover"])
+    assert result.exit_code == 0
+    assert "Discovered" in result.output
+    with session_scope(shared_engine) as session:
+        assert [p.external_id for p in list_postings(session)] == ["42"]

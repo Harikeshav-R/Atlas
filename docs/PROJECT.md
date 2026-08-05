@@ -1115,7 +1115,16 @@ The document specs everything; build order is phased. Each phase is independentl
   Ashby (job-board API, id derived from the job URL) over GET; Workday (per-tenant CxS API) over
   a POST-with-pagination extension of the `Fetcher` seam, with a compound `<tenant>:<wd>:<site>`
   board reference. Follow-ups: Lever EU region and Workday apply-URL locale.)*
-- [ ] **Aggregator** adapters + saved keyword searches.
+- [x] **Aggregator** adapters + saved keyword searches. *(✅ an `AggregatorAdapter`
+  Protocol + registry (`atlas.discovery.aggregators`) paralleling the ATS adapters,
+  with two free/no-key reference implementations — **RemoteOK** (raw-array feed) and
+  **Remotive** (`?search=` API) — a shared `matches_search` query/location/remote
+  filter, per-profile `SavedSearch` sources on the existing `job_source` table (no
+  migration), `run_aggregator_poll` (best-effort per source, get-or-creates a company
+  per posting), `atlas source add|list`, and the poll wired into `atlas discover` +
+  the daemon after the ATS poll. **Follow-ups:** key-gated aggregators (Adzuna app
+  id + key, USAJOBS email + key) and the HN "Who is hiring" / arbeitnow sources drop
+  into the same registry, key-gated ones inactive until a key is pasted.)*
 - [x] Dedup + scored **Discover** queue in the TUI. *(✅ `DiscoverScreen` — a ranked queue of
   scored postings (`matching.repository.list_scored_postings`) with tailor / dismiss / save /
   open-URL actions and drill-in to Posting detail; dismiss/save persist via a new
