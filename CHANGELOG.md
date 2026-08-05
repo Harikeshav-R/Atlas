@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multiple profiles fully wired** (`atlas.matching`, `atlas.daemon`, `atlas.tui`):
+  scoring and the Discover queue are now **per-profile** rather than
+  single-active. The daemon's poll scores **every** profile's backlog each tick
+  (PROJECT.md §2.1, §5.6), so each profile has a complete ranked queue the instant
+  the user switches to it. The queue and `atlas score` read `match_score.profile_id`
+  as a filter (it was written but never read): `list_unscored_postings` /
+  `list_scored_postings` are keyed by profile, and `score_posting` takes the profile
+  from its caller instead of resolving the active one internally. Includes a **TUI
+  profile switcher** on the Discover screen (press `p`), a `atlas score --profile
+  <id>` option, and PROJECT.md §4.1's row-level **"owned by" scoring lease**
+  (`score_claim`) so a concurrent writer never double-scores. No score-table
+  migration (the `profile_id` column already existed).
+- **`score_claim` table + `atlas.matching.claims`** (PROJECT.md §4.1): a lightweight
+  per-`(posting, profile)` scoring lease with a unique constraint on the pair.
+  `try_claim` acquires a fresh pair, refuses a live claim, and steals a stale one
+  (past its lease); `release_claim` frees it. The daemon poll claims each pair before
+  scoring and releases it after, using its pid as the owner token. Ships with an
+  Alembic migration.
+- **`atlas score --profile <id>`**: score a saved posting against a specific profile
+  rather than the active one (each profile keeps its own append-only score history);
+  an unknown profile id exits `1`.
+- **`busy_timeout` PRAGMA** (`atlas.db.engine`): every SQLite connection now sets
+  `busy_timeout=5000` alongside WAL + foreign keys, so a connection waits briefly for
+  a contended write lock instead of failing with "database is locked" — the more so
+  now that the daemon scores every profile while the TUI reads (PROJECT.md §4.1, §17).
 - **Key-gated aggregator adapters — Adzuna + USAJOBS** (`atlas.discovery.aggregators`):
   the two credential-requiring aggregators PROJECT.md §5.4-B names, joining the
   free RemoteOK/Remotive feeds. **Adzuna** (`api.adzuna.com`) uses query-string
