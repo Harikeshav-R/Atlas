@@ -23,6 +23,7 @@ from atlas.db import session_scope
 from atlas.materials.service import open_application, rerender_application
 from atlas.platform.browser import default_url_opener
 from atlas.platform.opener import default_file_opener
+from atlas.profiles.repository import set_active_profile
 from atlas.scrape.repository import get_posting, set_posting_queue_status
 from atlas.tailor.service import tailor_posting
 from atlas.tracking.service import StatusChangeOutcome, set_application_status
@@ -140,6 +141,19 @@ class AtlasApp(App[None]):
         """
         with session_scope(self._engine) as session:
             return set_posting_queue_status(session, posting_id, status)
+
+    def switch_profile(self, profile_id: int) -> None:
+        """Make ``profile_id`` the active profile (the single-active invariant).
+
+        The Discover queue is scored per active profile, so switching re-ranks it to
+        the chosen profile's scores (already populated by the daemon's
+        score-every-profile poll).
+
+        Raises:
+            ProfileNotFoundError: If no profile has ``profile_id``.
+        """
+        with session_scope(self._engine) as session:
+            set_active_profile(session, profile_id)
 
     def run_open_url(self, posting_id: int) -> str:
         """Open a posting's apply URL in the browser and return the URL.

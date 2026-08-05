@@ -17,7 +17,7 @@ from atlas.db import session_scope
 from atlas.matching.repository import create_match_score
 from atlas.matching.structure import QueueStatus
 from atlas.profiles.preferences import ProfilePreferences
-from atlas.profiles.repository import create_profile, get_active_profile
+from atlas.profiles.repository import create_profile, get_active_profile, set_active_profile
 from atlas.resume.repository import create_version
 from atlas.resume.structure import BlockType, ParsedBlock, ParsedResume
 from atlas.scrape.repository import (
@@ -37,6 +37,7 @@ from atlas.tui.data import (
     build_application_detail,
     build_dashboard_report,
     build_discover_queue,
+    build_profile_choices,
     build_tailor_workspace,
 )
 
@@ -395,6 +396,45 @@ def test_discover_queue_excludes_dismissed(db_engine: Engine) -> None:
 def test_discover_queue_empty(db_engine: Engine) -> None:
     with session_scope(db_engine) as session:
         assert build_discover_queue(session).rows == []
+
+
+def test_discover_queue_is_per_active_profile(db_engine: Engine) -> None:
+    # Two profiles, each with its own scored posting; the queue shows the active
+    # profile's, and switching the active profile re-ranks to the other's.
+    p_backend = _active_profile_id(db_engine)
+    posting_be = _seed_scored(db_engine, dedupe="be", score=80, salary={})
+    with session_scope(db_engine) as session:
+        ml = create_profile(session, name="ML", preferences=ProfilePreferences(), active=True)
+        assert ml.id is not None
+        ml_id = ml.id
+    posting_ml = _seed_scored(db_engine, dedupe="ml", score=90, salary={})
+    with session_scope(db_engine) as session:
+        # ML is active now → only its posting shows.
+        assert [row.id for row in build_discover_queue(session).rows] == [posting_ml]
+    with session_scope(db_engine) as session:
+        set_active_profile(session, p_backend)
+    with session_scope(db_engine) as session:
+        assert [row.id for row in build_discover_queue(session).rows] == [posting_be]
+    assert ml_id != p_backend
+
+
+# --- build_profile_choices -------------------------------------------------------
+
+
+def test_build_profile_choices_marks_active(db_engine: Engine) -> None:
+    with session_scope(db_engine) as session:
+        create_profile(session, name="Backend", preferences=ProfilePreferences(), active=True)
+        create_profile(session, name="ML", preferences=ProfilePreferences(), active=True)
+    with session_scope(db_engine) as session:
+        choices = build_profile_choices(session)
+    names = [(c.name, c.active) for c in choices.choices]
+    # Creation order; the last-created active profile is the sole active one.
+    assert names == [("Backend", False), ("ML", True)]
+
+
+def test_build_profile_choices_empty(db_engine: Engine) -> None:
+    with session_scope(db_engine) as session:
+        assert build_profile_choices(session).choices == []
 
 
 # --- serialization ---------------------------------------------------------------

@@ -29,9 +29,10 @@ from textual.worker import WorkerState
 
 from atlas.matching.structure import QueueStatus
 from atlas.platform.browser import UrlOpenError
-from atlas.tui.data import build_discover_queue
+from atlas.tui.data import build_discover_queue, build_profile_choices
 from atlas.tui.screens.application_detail import ApplicationDetailScreen
 from atlas.tui.screens.posting_detail import PostingDetailScreen
+from atlas.tui.screens.profile_picker import ProfilePickerScreen
 
 if TYPE_CHECKING:
     from textual.worker import Worker
@@ -54,6 +55,7 @@ class DiscoverScreen(Screen[None]):
         Binding("x", "pass_posting", "Dismiss"),
         Binding("s", "save", "Save"),
         Binding("o", "open_url", "Open URL"),
+        Binding("p", "switch_profile", "Profile"),
         Binding("escape", "app.pop_screen", "Back"),
     ]
 
@@ -138,6 +140,21 @@ class DiscoverScreen(Screen[None]):
         cast("AtlasApp", self.app).set_queue_status(posting_id, status)
         self._refresh()
         self.notify(f"{verb} posting {posting_id}.")
+
+    def action_switch_profile(self) -> None:
+        """Open the profile picker; on choice, switch the active profile + re-rank."""
+        choices = cast("AtlasApp", self.app).read(build_profile_choices)
+        if not choices.choices:
+            return
+        self.app.push_screen(ProfilePickerScreen(choices), self._on_profile_chosen)
+
+    def _on_profile_chosen(self, profile_id: int | None) -> None:
+        """Apply the chosen profile (if any) and re-rank the queue to it."""
+        if profile_id is None:
+            return
+        cast("AtlasApp", self.app).switch_profile(profile_id)
+        self._refresh()
+        self.notify(f"Switched to profile {profile_id}.")
 
     def action_open_url(self) -> None:
         """Open the highlighted posting's apply URL in the browser."""

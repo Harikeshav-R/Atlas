@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from atlas.coverletter.repository import get_latest_cover_letter
 from atlas.db.models import Company, JobPosting, JobSource
 from atlas.matching.repository import get_latest_match_score, list_scored_postings
-from atlas.profiles.repository import get_active_profile
+from atlas.profiles.repository import get_active_profile, list_profiles
 from atlas.resume.repository import get_blocks, get_latest_master_resume
 from atlas.tailor.repository import get_application, get_latest_tailored_resume
 from atlas.tailor.structure import TailoredItem
@@ -43,6 +43,8 @@ __all__ = [
     "DiscoverQueue",
     "DiscoverRow",
     "MaterialSummary",
+    "ProfileChoice",
+    "ProfileChoices",
     "RecentApplication",
     "ResumeBlockView",
     "StatusCount",
@@ -52,6 +54,7 @@ __all__ = [
     "build_application_detail",
     "build_dashboard_report",
     "build_discover_queue",
+    "build_profile_choices",
     "build_tailor_workspace",
 ]
 
@@ -480,6 +483,30 @@ class DiscoverQueue(BaseModel):
     rows: list[DiscoverRow]
 
 
+class ProfileChoice(BaseModel):
+    """One selectable profile in the Discover profile switcher.
+
+    Attributes:
+        id: The profile's id.
+        name: The profile's display name.
+        active: Whether this is the currently active profile.
+    """
+
+    id: int
+    name: str
+    active: bool
+
+
+class ProfileChoices(BaseModel):
+    """The profile switcher's view model.
+
+    Attributes:
+        choices: One :class:`ProfileChoice` per profile, in creation order.
+    """
+
+    choices: list[ProfileChoice]
+
+
 def _salary_display(salary: dict[str, object]) -> str:
     """Render a posting's ``salary`` JSON as a compact display string.
 
@@ -532,3 +559,18 @@ def build_discover_queue(session: Session) -> DiscoverQueue:
             )
         )
     return DiscoverQueue(rows=rows)
+
+
+def build_profile_choices(session: Session) -> ProfileChoices:
+    """Build the :class:`ProfileChoices` for the Discover profile switcher.
+
+    Pure over the session: maps every profile (creation order) into a
+    :class:`ProfileChoice`, flagging the active one so the picker can mark it.
+    """
+    return ProfileChoices(
+        choices=[
+            ProfileChoice(id=profile.id, name=profile.name, active=profile.active)
+            for profile in list_profiles(session)
+            if profile.id is not None
+        ]
+    )
