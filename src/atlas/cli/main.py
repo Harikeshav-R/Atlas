@@ -73,7 +73,12 @@ from atlas.coverletter.service import write_application_cover_letter
 from atlas.daemon.errors import DaemonAlreadyRunningError, DaemonNotRunningError
 from atlas.daemon.poll import run_scoring_poll
 from atlas.daemon.scheduler import default_scheduler
-from atlas.daemon.service import daemon_status, start_daemon, stop_daemon
+from atlas.daemon.service import (
+    daemon_status,
+    default_process_control,
+    start_daemon,
+    stop_daemon,
+)
 from atlas.db import initialize_database, session_scope
 from atlas.discovery.aggregators import (
     AGGREGATOR_TYPES,
@@ -1038,10 +1043,10 @@ def daemon_start() -> None:
     Runs Atlas's scheduled work on the ``[discovery]`` ``poll_interval_minutes``
     interval: first a **discovery poll** over the enabled ATS watchlist (fetching
     and persisting new postings), then a **scoring poll** that clears the fit-score
-    backlog — including whatever discovery just added — against the active profile.
-    This blocks the terminal until stopped (``atlas daemon stop`` or Ctrl-C);
-    background it with your OS service manager. Exits ``1`` if config/secrets can't
-    load or a daemon is already running.
+    backlog — including whatever discovery just added — for **every** profile. This
+    blocks the terminal until stopped (``atlas daemon stop`` or Ctrl-C); background
+    it with your OS service manager. Exits ``1`` if config/secrets can't load or a
+    daemon is already running.
     """
     try:
         config = load_config()
@@ -1051,9 +1056,12 @@ def daemon_start() -> None:
         raise typer.Exit(code=1) from exc
     provider = build_provider_chain(config.ai, store)
     engine = _open_database()
+    # This process's pid is the claim owner, so a stray second daemon never
+    # double-scores a (posting, profile) pair (PROJECT.md §4.1).
+    owner = str(default_process_control.current_pid())
 
     def run() -> None:
-        """Run discovery + aggregator polls, then score the backlog.
+        """Run discovery + aggregator polls, then score every profile's backlog.
 
         Each poll runs in its own short transaction and commits its new postings
         first, so the scoring poll's ``list_unscored_postings`` picks them all up on
@@ -1066,7 +1074,7 @@ def daemon_start() -> None:
                 session, config=config.aggregators, store=store, fetcher=default_fetcher
             )
         with session_scope(engine) as session:
-            run_scoring_poll(session, provider=provider)
+            run_scoring_poll(session, provider=provider, owner=owner)
 
     try:
         start_daemon(
