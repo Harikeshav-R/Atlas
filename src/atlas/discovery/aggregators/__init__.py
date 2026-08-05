@@ -40,11 +40,25 @@ if TYPE_CHECKING:
 __all__ = [
     "AGGREGATOR_TYPES",
     "AggregatorAdapter",
+    "CredentialPrompt",
     "SavedSearch",
     "aggregator_requires_key",
     "build_aggregator",
+    "credential_prompts",
     "validate_aggregator",
 ]
+
+
+class CredentialPrompt(NamedTuple):
+    """One credential a key-gated provider stores in the keychain.
+
+    Attributes:
+        label: Human label shown at the prompt, e.g. ``"Adzuna app id"``.
+        handle: The keyring handle the value is stored under.
+    """
+
+    label: str
+    handle: str
 
 
 class _Provider(NamedTuple):
@@ -54,21 +68,55 @@ class _Provider(NamedTuple):
         requires_key: Whether the provider needs a credential (key-gated).
         build: Factory returning the built adapter, or ``None`` when it cannot be
             activated (a key-gated provider that is disabled / missing its key).
+        credentials: Given the ``[aggregators]`` config, the secret credentials this
+            provider stores in the keychain (empty for a free feed). Non-secret
+            fields such as the USAJOBS email live in config, not here.
     """
 
     requires_key: bool
     build: Callable[[AggregatorsConfig, SecretStore], AggregatorAdapter | None]
+    credentials: Callable[[AggregatorsConfig], list[CredentialPrompt]]
+
+
+def _no_credentials(config: AggregatorsConfig) -> list[CredentialPrompt]:
+    """Return no credentials — a free feed stores nothing in the keychain."""
+    return []
+
+
+def _adzuna_credentials(config: AggregatorsConfig) -> list[CredentialPrompt]:
+    """Return Adzuna's two secret credentials (app id + app key)."""
+    return [
+        CredentialPrompt("Adzuna app id", config.adzuna.app_id_handle),
+        CredentialPrompt("Adzuna app key", config.adzuna.app_key_handle),
+    ]
+
+
+def _usajobs_credentials(config: AggregatorsConfig) -> list[CredentialPrompt]:
+    """Return USAJOBS's one secret credential (the API key)."""
+    return [CredentialPrompt("USAJOBS API key", config.usajobs.api_key_handle)]
 
 
 #: Every registered aggregator provider, keyed by name.
 _REGISTRY: dict[str, _Provider] = {
-    "remoteok": _Provider(requires_key=False, build=lambda config, store: RemoteOKAdapter()),
-    "remotive": _Provider(requires_key=False, build=lambda config, store: RemotiveAdapter()),
+    "remoteok": _Provider(
+        requires_key=False,
+        build=lambda config, store: RemoteOKAdapter(),
+        credentials=_no_credentials,
+    ),
+    "remotive": _Provider(
+        requires_key=False,
+        build=lambda config, store: RemotiveAdapter(),
+        credentials=_no_credentials,
+    ),
     "adzuna": _Provider(
-        requires_key=True, build=lambda config, store: build_adzuna(config.adzuna, store)
+        requires_key=True,
+        build=lambda config, store: build_adzuna(config.adzuna, store),
+        credentials=_adzuna_credentials,
     ),
     "usajobs": _Provider(
-        requires_key=True, build=lambda config, store: build_usajobs(config.usajobs, store)
+        requires_key=True,
+        build=lambda config, store: build_usajobs(config.usajobs, store),
+        credentials=_usajobs_credentials,
     ),
 }
 
@@ -94,6 +142,19 @@ def aggregator_requires_key(aggregator: str) -> bool:
     """
     validate_aggregator(aggregator)
     return _REGISTRY[aggregator].requires_key
+
+
+def credential_prompts(aggregator: str, config: AggregatorsConfig) -> list[CredentialPrompt]:
+    """Return the secret credentials ``aggregator`` stores in the keychain.
+
+    Empty for a free feed. ``atlas source key`` uses this to know what to prompt
+    for and under which handle to store each value.
+
+    Raises:
+        UnknownAggregatorError: If no provider is registered under that name.
+    """
+    validate_aggregator(aggregator)
+    return _REGISTRY[aggregator].credentials(config)
 
 
 def build_aggregator(

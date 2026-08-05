@@ -14,6 +14,7 @@ from atlas.discovery.aggregators import (
     AGGREGATOR_TYPES,
     aggregator_requires_key,
     build_aggregator,
+    credential_prompts,
     validate_aggregator,
 )
 from atlas.discovery.aggregators.adzuna import AdzunaAdapter
@@ -94,3 +95,23 @@ def test_build_aggregator_unknown_raises(fake_keyring: FakeKeyring) -> None:
     config, store = _config_store(fake_keyring)
     with pytest.raises(UnknownAggregatorError):
         build_aggregator("linkedin", config=config, store=store)
+
+
+def test_credential_prompts_free_provider_is_empty() -> None:
+    assert credential_prompts("remoteok", AggregatorsConfig()) == []
+
+
+def test_credential_prompts_adzuna_has_two_handles() -> None:
+    prompts = credential_prompts("adzuna", AggregatorsConfig())
+    assert [p.handle for p in prompts] == ["adzuna_app_id", "adzuna_app_key"]
+    assert all(p.label for p in prompts)
+
+
+def test_credential_prompts_usajobs_has_one_handle() -> None:
+    prompts = credential_prompts("usajobs", AggregatorsConfig())
+    assert [p.handle for p in prompts] == ["usajobs"]
+
+
+def test_credential_prompts_unknown_raises() -> None:
+    with pytest.raises(UnknownAggregatorError):
+        credential_prompts("linkedin", AggregatorsConfig())

@@ -79,6 +79,7 @@ from atlas.discovery.aggregators import (
     AGGREGATOR_TYPES,
     SavedSearch,
     aggregator_requires_key,
+    credential_prompts,
     validate_aggregator,
 )
 from atlas.discovery.ats import ATS_TYPES, detect_ats
@@ -1291,6 +1292,48 @@ def source_add(
             f"[muted]Already saved — [/muted][accent]{outcome.aggregator}[/accent]"
             f"[muted] ({outcome.query!r}).[/muted]"
         )
+
+
+@source_app.command("key")
+def source_key(
+    aggregator: str = typer.Argument(
+        ..., help="The key-gated aggregator whose credential(s) to store."
+    ),
+) -> None:
+    """Store a key-gated aggregator's API credential(s) in the OS keychain (§5.4-B).
+
+    Prompts for each credential with hidden input (never echoed, never in shell
+    history) and writes it to the OS keychain under the handle from config, so the
+    daemon and ``atlas discover`` can activate the source. The secret is never
+    printed, logged, or stored in config. Exits ``1`` if the aggregator is unknown
+    or is a free (no-key) source, or if the keychain is unavailable.
+    """
+    try:
+        validate_aggregator(aggregator)
+    except UnknownAggregatorError as exc:
+        error_console.print(f"[error]atlas source key:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    if not aggregator_requires_key(aggregator):
+        keyed = ", ".join(name for name in AGGREGATOR_TYPES if aggregator_requires_key(name))
+        error_console.print(
+            f"[error]atlas source key:[/error] [accent]{aggregator}[/accent] needs no API key. "
+            f"Key-gated aggregators: {keyed}."
+        )
+        raise typer.Exit(code=1)
+    try:
+        config = load_config()
+        store = default_secret_store()
+    except ConfigError as exc:
+        error_console.print(f"[error]atlas source key:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    for prompt in credential_prompts(aggregator, config.aggregators):
+        value = typer.prompt(prompt.label, hide_input=True)
+        store.set(prompt.handle, value)
+    console.print(
+        f"[success]Stored credentials[/success] for [accent]{aggregator}[/accent]. "
+        f"Enable it in your config's [accent][aggregators.{aggregator}][/accent] section, "
+        "then run [accent]atlas discover[/accent]."
+    )
 
 
 @source_app.command("list")
