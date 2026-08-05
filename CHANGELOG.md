@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lever, Ashby, and Workday ATS adapters** (`atlas.discovery.ats`): three new
+  discovery sources alongside Greenhouse (PROJECT.md §5.4-A), each a drop-in on the
+  existing registry — the daemon poll, watchlist service, and `atlas company add`
+  are generic over the `ats_type` string, so no downstream code changed. Each
+  adapter's `detect(url)` recognizes both the public board URL and the raw API URL:
+  **Lever** (`jobs.lever.co/<site>` / `api.lever.co/v0/postings/<site>`, a raw JSON
+  array); **Ashby** (`jobs.ashbyhq.com/<name>` /
+  `api.ashbyhq.com/posting-api/job-board/<name>`, deriving the external id from the
+  job's URL since Ashby exposes none, and skipping unlisted postings); and
+  **Workday** (`<tenant>.<wdN>.myworkdayjobs.com` — a POST-based, paginated CxS API,
+  with a compound `<tenant>:<wd>:<site>` board reference). Known limitations: Lever
+  polls the US base only, and Workday apply URLs omit any locale segment.
+- **POST support on the `Fetcher` seam** (`atlas.scrape.fetcher`): the `Fetcher` /
+  `BrowserFetcher` protocols and `default_fetcher` gained optional, GET-defaulted
+  `method` / `json_body` / `headers` params so an ATS adapter can issue a JSON POST
+  (Workday's CxS API) over the same boundary. Backward compatible — existing GET
+  callers are unchanged; the test `FakeFetcher` now records these and can replay a
+  sequence of pages for pagination.
 - **Discover screen** (`atlas.tui.screens.discover`): the TUI's ranked queue of
   scored postings (PROJECT.md §8 screen #2) — the piece that makes the daemon's
   discovery/scoring work visible and actionable, closing Journey B (background

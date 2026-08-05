@@ -1106,14 +1106,15 @@ The document specs everything; build order is phased. Each phase is independentl
   (`poll_interval_minutes`), and `atlas daemon start|stop|status`. **Remaining:** the **IPC
   surface** (Unix socket / Windows named pipe) for the TUI to trigger work + stream progress, and
   wiring the poll to real discovery sources once the adapters below land.)*
-- [ ] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday).
-  *(**Greenhouse ✅** — an extensible `AtsAdapter` Protocol + registry
-  (`atlas.discovery.ats`) with URL-based provider detection; the Greenhouse boards-API
-  adapter; a watchlist on the existing `company`/`job_source` tables (no migration);
-  `run_discovery_poll` (best-effort per source, dedup by external id + apply-URL hash),
-  wired into the daemon before the scoring poll; and `atlas company add|list` /
-  `atlas discover`. **Remaining:** the Lever/Ashby/Workday adapters (drop into the same
-  registry) and URL auto-detection for them.)*
+- [x] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday). *(✅ an
+  extensible `AtsAdapter` Protocol + registry (`atlas.discovery.ats`) with URL-based provider
+  detection; a watchlist on the existing `company`/`job_source` tables (no migration);
+  `run_discovery_poll` (best-effort per source, dedup by external id + apply-URL hash), wired
+  into the daemon before the scoring poll; and `atlas company add|list` / `atlas discover`.
+  **All four adapters** land: Greenhouse (boards API) and Lever (raw-array postings API) and
+  Ashby (job-board API, id derived from the job URL) over GET; Workday (per-tenant CxS API) over
+  a POST-with-pagination extension of the `Fetcher` seam, with a compound `<tenant>:<wd>:<site>`
+  board reference. Follow-ups: Lever EU region and Workday apply-URL locale.)*
 - [ ] **Aggregator** adapters + saved keyword searches.
 - [x] Dedup + scored **Discover** queue in the TUI. *(✅ `DiscoverScreen` — a ranked queue of
   scored postings (`matching.repository.list_scored_postings`) with tailor / dismiss / save /
