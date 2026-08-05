@@ -9,6 +9,7 @@ from __future__ import annotations
 from atlas.tui.screens.application_detail import ApplicationDetailScreen
 from atlas.tui.screens.applications import ApplicationsScreen
 from atlas.tui.screens.dashboard import DashboardScreen
+from atlas.tui.screens.discover import DiscoverScreen
 from atlas.tui.screens.posting_detail import PostingDetailScreen
 from atlas.tui.screens.status_picker import StatusPickerScreen
 from atlas.tui.screens.tailor_workspace import TailorWorkspaceScreen
@@ -17,6 +18,7 @@ __all__ = [
     "ApplicationDetailScreen",
     "ApplicationsScreen",
     "DashboardScreen",
+    "DiscoverScreen",
     "PostingDetailScreen",
     "StatusPickerScreen",
     "TailorWorkspaceScreen",

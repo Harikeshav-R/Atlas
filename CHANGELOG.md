@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Discover screen** (`atlas.tui.screens.discover`): the TUI's ranked queue of
+  scored postings (PROJECT.md §8 screen #2) — the piece that makes the daemon's
+  discovery/scoring work visible and actionable, closing Journey B (background
+  discovery → review → tailor). A `DataTable` ranked by fit (score / verdict /
+  company / title / location / salary / source / queue state) with the AI's
+  rationale shown in a detail pane, reached with `w`. Its actions: **Enter** drills
+  into Posting detail, **`t`** tailors the posting off the event loop (a thread
+  worker; on success it opens the new application's detail), **`x`** dismisses a
+  posting (hiding it from the queue), **`s`** saves it for later, and **`o`** opens
+  its apply URL in the browser. The Posting-detail screen (§8 screen #3) also gained
+  a **Tailor** action. Data comes from the pure `build_discover_queue` builder.
+- **`list_scored_postings`** (`atlas.matching.repository`): the ranked query behind
+  the Discover queue — each posting paired with its latest `MatchScore`, scored-only,
+  dismissed excluded, ordered by fit (score descending).
+- **`JobPosting.queue_status`** (`new` / `saved` / `dismissed`, a `QueueStatus`
+  enum) with an Alembic migration (`server_default='new'`, so existing rows
+  backfill): the posting-level triage state the Discover queue's dismiss/save
+  actions set, distinct from the application-level `ApplicationStatus`.
+  `set_posting_queue_status` (`atlas.scrape.repository`) is its mutator.
+- **`atlas.platform.browser`**: a `UrlOpener` seam (`default_url_opener` via
+  `webbrowser.open`, `UrlOpenError`) mirroring the file opener, so the Discover
+  queue can launch a posting's apply URL cross-platform while the suite stays
+  hermetic (a `FakeUrlOpener` is injected).
 - **Company watchlist + Greenhouse ATS discovery** (`atlas.discovery`): the first
   real discovery source (PROJECT.md §5.4-A), so the daemon now *finds* jobs
   rather than only re-scoring pasted ones. An extensible `AtsAdapter` Protocol +

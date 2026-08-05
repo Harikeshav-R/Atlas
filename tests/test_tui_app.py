@@ -12,13 +12,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-from textual.widgets import DataTable, OptionList
+from textual.widgets import DataTable, Label, OptionList
 
 from atlas.config.schema import RenderConfig, TailoringConfig
 from atlas.db import session_scope
 from atlas.matching.repository import create_match_score
 from atlas.profiles.preferences import ProfilePreferences
-from atlas.profiles.repository import create_profile, upsert_user
+from atlas.profiles.repository import create_profile, get_active_profile, upsert_user
 from atlas.resume.repository import create_version
 from atlas.resume.structure import BlockType, ParsedBlock, ParsedResume
 from atlas.scrape.repository import (
@@ -33,10 +33,17 @@ from atlas.tui.app import AtlasApp
 from atlas.tui.screens.application_detail import ApplicationDetailScreen
 from atlas.tui.screens.applications import ApplicationsScreen
 from atlas.tui.screens.dashboard import DashboardScreen
+from atlas.tui.screens.discover import DiscoverScreen
 from atlas.tui.screens.posting_detail import PostingDetailScreen
 from atlas.tui.screens.status_picker import StatusPickerScreen
 from atlas.tui.screens.tailor_workspace import TailorWorkspaceScreen
-from tests.conftest import FakeFileOpener, FakeLLMProvider, FakePdfRenderer, make_response
+from tests.conftest import (
+    FakeFileOpener,
+    FakeLLMProvider,
+    FakePdfRenderer,
+    FakeUrlOpener,
+    make_response,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -364,6 +371,7 @@ def _action_app(
     *,
     provider: FakeLLMProvider,
     opener: FakeFileOpener | None = None,
+    url_opener: FakeUrlOpener | None = None,
     renders_dir: Path | None = None,
 ) -> AtlasApp:
     """Build an action-capable AtlasApp with injected fakes (hermetic)."""
@@ -372,6 +380,7 @@ def _action_app(
         provider=provider,
         renderer=FakePdfRenderer(),
         opener=opener if opener is not None else FakeFileOpener(),
+        url_opener=url_opener if url_opener is not None else FakeUrlOpener(),
         tailoring=TailoringConfig(),
         render_config=RenderConfig(),
         renders_dir=renders_dir,
@@ -440,8 +449,6 @@ async def test_workspace_worker_error_is_handled(db_engine: Engine, tmp_path: Pa
     # No active profile → tailor_posting raises NoActiveProfileError inside the worker.
     app_id = _seed(db_engine, scored=False)
     with session_scope(db_engine) as session:
-        from atlas.profiles.repository import get_active_profile
-
         active = get_active_profile(session)
         assert active is not None
         active.active = False  # deactivate so tailoring has no profile to target
@@ -492,3 +499,291 @@ async def test_workspace_open_with_no_materials(db_engine: Engine, tmp_path: Pat
         await pilot.pause()
         assert isinstance(pilot.app.screen, TailorWorkspaceScreen)
     assert opener.opened == []  # no materials → nothing opened
+
+
+# --- Discover screen ------------------------------------------------------------
+
+
+def _seed_scored_posting(
+    engine: Engine, *, score: int = 82, dedupe: str = "d1", title: str = "Backend Engineer"
+) -> int:
+    """Seed a scored posting (no application) + an active profile; return posting id."""
+    with session_scope(engine) as session:
+        company = get_or_create_company(session, name="Acme")
+        source = get_or_create_url_source(session)
+        assert company.id is not None
+        assert source.id is not None
+        posting = create_job_posting(
+            session,
+            source_id=source.id,
+            company_id=company.id,
+            title=title,
+            apply_url=f"https://jobs.acme.test/{dedupe}",
+            dedupe_hash=dedupe,
+            fetched_at=_NOW,
+            location="Remote",
+            salary={"min": 150000, "currency": "USD"},
+        )
+        assert posting.id is not None
+        profile = get_active_profile(session)
+        if profile is None:
+            profile = create_profile(
+                session, name="BE", preferences=ProfilePreferences(), active=True
+            )
+        assert profile.id is not None
+        create_match_score(
+            session,
+            job_posting_id=posting.id,
+            profile_id=profile.id,
+            score=score,
+            verdict="strong",
+            rationale=f"Great fit {dedupe}.",
+            matched_strengths=[],
+            gaps=[],
+            dealbreaker_hits=[],
+            salary_fit="within",
+            signals={},
+            model="fake",
+            created_at=_NOW,
+        )
+        return posting.id
+
+
+async def test_discover_mounts_and_lists_scored(db_engine: Engine) -> None:
+    _seed_scored_posting(db_engine, score=90, dedupe="d1")
+    _seed_scored_posting(db_engine, score=70, dedupe="d2")
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+        table = pilot.app.screen.query_one("#discover-table", DataTable)
+        assert table.row_count == 2
+        # Highlighting the first row shows its rationale in the detail pane.
+        rationale = pilot.app.screen.query_one("#discover-rationale", Label)
+        assert "Great fit" in str(rationale.content)
+
+
+async def test_discover_empty_queue(db_engine: Engine) -> None:
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert isinstance(screen, DiscoverScreen)
+        assert screen.query_one("#discover-table", DataTable).row_count == 0
+        # Empty queue shows the hint, and dismiss/save/open/enter are safe no-ops.
+        for key in ("x", "s", "o", "enter"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_enter_opens_posting_detail(db_engine: Engine) -> None:
+    _seed_scored_posting(db_engine)
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, PostingDetailScreen)
+
+
+async def test_discover_dismiss_removes_row(db_engine: Engine) -> None:
+    posting_id = _seed_scored_posting(db_engine)
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("x")  # dismiss
+        await pilot.pause()
+        assert pilot.app.screen.query_one("#discover-table", DataTable).row_count == 0
+    with session_scope(db_engine) as session:
+        from atlas.scrape.repository import get_posting
+
+        assert get_posting(session, posting_id).queue_status == "dismissed"
+
+
+async def test_discover_save_keeps_row(db_engine: Engine) -> None:
+    posting_id = _seed_scored_posting(db_engine)
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("s")  # save
+        await pilot.pause()
+        assert pilot.app.screen.query_one("#discover-table", DataTable).row_count == 1
+    with session_scope(db_engine) as session:
+        from atlas.scrape.repository import get_posting
+
+        assert get_posting(session, posting_id).queue_status == "saved"
+
+
+async def test_discover_open_url(db_engine: Engine) -> None:
+    _seed_scored_posting(db_engine, dedupe="d1")
+    url_opener = FakeUrlOpener()
+    app = AtlasApp(engine=db_engine, url_opener=url_opener)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("o")  # open URL
+        await pilot.pause()
+    assert url_opener.opened == ["https://jobs.acme.test/d1"]
+
+
+async def test_discover_open_url_error_is_handled(db_engine: Engine) -> None:
+    from atlas.platform.browser import UrlOpenError
+
+    _seed_scored_posting(db_engine)
+    url_opener = FakeUrlOpener(raises=UrlOpenError("no browser"))
+    app = AtlasApp(engine=db_engine, url_opener=url_opener)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("o")
+        await pilot.pause()
+        # The error is toasted; the app stays on Discover.
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_tailor_navigates_to_application(db_engine: Engine, tmp_path: Path) -> None:
+    _seed_scored_posting(db_engine)
+    with session_scope(db_engine) as session:
+        create_version(
+            session,
+            raw_markdown="# Sam",
+            source_path=None,
+            parsed=ParsedResume(
+                blocks=[
+                    ParsedBlock(
+                        type=BlockType.EXPERIENCE, content_id="blk_a", position=0, text="Led it"
+                    )
+                ]
+            ),
+            created_at=_NOW,
+        )
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("t")  # tailor
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, ApplicationDetailScreen)
+
+
+async def test_discover_tailor_empty_queue_is_noop(db_engine: Engine, tmp_path: Path) -> None:
+    # Action-capable app but an empty queue: tailor finds no row and no-ops.
+    provider = FakeLLMProvider([])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("t")  # no rows → guard returns, no worker
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_tailor_browse_only_disabled(db_engine: Engine) -> None:
+    _seed_scored_posting(db_engine)
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("t")  # no provider → disabled, no worker
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_tailor_worker_error_is_handled(db_engine: Engine, tmp_path: Path) -> None:
+    _seed_scored_posting(db_engine)
+    # Deactivate the profile so tailoring raises NoActiveProfileError in the worker.
+    with session_scope(db_engine) as session:
+        active = get_active_profile(session)
+        assert active is not None
+        active.active = False
+        session.add(active)
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_posting_detail_tailor_navigates(db_engine: Engine, tmp_path: Path) -> None:
+    _seed_scored_posting(db_engine)
+    with session_scope(db_engine) as session:
+        create_version(
+            session,
+            raw_markdown="# Sam",
+            source_path=None,
+            parsed=ParsedResume(
+                blocks=[
+                    ParsedBlock(
+                        type=BlockType.EXPERIENCE, content_id="blk_a", position=0, text="Led it"
+                    )
+                ]
+            ),
+            created_at=_NOW,
+        )
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("enter")  # → posting detail
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, PostingDetailScreen)
+        await pilot.press("t")  # tailor from posting detail
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, ApplicationDetailScreen)
+
+
+async def test_posting_detail_tailor_browse_only_disabled(db_engine: Engine) -> None:
+    _seed_scored_posting(db_engine)
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, PostingDetailScreen)
+        await pilot.press("t")  # no provider → disabled
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, PostingDetailScreen)
+
+
+async def test_posting_detail_tailor_worker_error_is_handled(
+    db_engine: Engine, tmp_path: Path
+) -> None:
+    _seed_scored_posting(db_engine)
+    with session_scope(db_engine) as session:
+        active = get_active_profile(session)
+        assert active is not None
+        active.active = False
+        session.add(active)
+    provider = FakeLLMProvider([make_response(structured=_TAILORED)])
+    app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, PostingDetailScreen)

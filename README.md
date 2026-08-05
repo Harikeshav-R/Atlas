@@ -114,7 +114,9 @@ terminal stage records the outcome. `atlas list` shows your tracked applications
 newest-updated first, filterable by `--status` and `--profile`.
 
 `atlas tui` launches the interactive Textual app: a Dashboard (pipeline funnel,
-active profile, recent activity, upcoming deadlines), an Applications view (table
+active profile, recent activity, upcoming deadlines), a **Discover** queue (press
+`w`) that ranks your scored postings by fit and lets you tailor / dismiss / save /
+open a posting's apply URL and drill into its detail, an Applications view (table
 or Kanban board, with in-app status changes), drill-through to Application and
 Posting detail, and a **Tailor workspace** (press `t` on an application) that shows
 your master resume and tailored selections and runs Tailor / Cover letter /

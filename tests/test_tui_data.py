@@ -15,6 +15,7 @@ import pytest
 from atlas.coverletter.repository import create_cover_letter
 from atlas.db import session_scope
 from atlas.matching.repository import create_match_score
+from atlas.matching.structure import QueueStatus
 from atlas.profiles.preferences import ProfilePreferences
 from atlas.profiles.repository import create_profile
 from atlas.resume.repository import create_version
@@ -23,6 +24,7 @@ from atlas.scrape.repository import (
     create_job_posting,
     get_or_create_company,
     get_or_create_url_source,
+    set_posting_queue_status,
 )
 from atlas.tailor.errors import ApplicationNotFoundError
 from atlas.tailor.repository import create_tailored_resume, get_or_create_application
@@ -34,6 +36,7 @@ from atlas.tui.data import (
     TailorWorkspaceView,
     build_application_detail,
     build_dashboard_report,
+    build_discover_queue,
     build_tailor_workspace,
 )
 
@@ -294,6 +297,88 @@ def test_tailor_workspace_with_master_and_materials(db_engine: Engine) -> None:
 def test_tailor_workspace_unknown_raises(db_engine: Engine) -> None:
     with session_scope(db_engine) as session, pytest.raises(ApplicationNotFoundError):
         build_tailor_workspace(session, 999)
+
+
+# --- build_discover_queue --------------------------------------------------------
+
+
+def _seed_scored(engine: Engine, *, dedupe: str, score: int, salary: dict[str, object]) -> int:
+    """Create a scored bare posting with the given salary; return the posting id."""
+    with session_scope(engine) as session:
+        company = get_or_create_company(session, name="Acme")
+        source = get_or_create_url_source(session)
+        assert company.id is not None
+        assert source.id is not None
+        posting = create_job_posting(
+            session,
+            source_id=source.id,
+            company_id=company.id,
+            title="Backend Engineer",
+            apply_url=f"https://jobs.acme.test/{dedupe}",
+            dedupe_hash=dedupe,
+            fetched_at=_NOW,
+            location="Remote",
+            salary=salary,
+        )
+        assert posting.id is not None
+        profile = create_profile(session, name="BE", preferences=ProfilePreferences(), active=True)
+        assert profile.id is not None
+        create_match_score(
+            session,
+            job_posting_id=posting.id,
+            profile_id=profile.id,
+            score=score,
+            verdict="strong",
+            rationale=f"Fit {dedupe}.",
+            matched_strengths=[],
+            gaps=[],
+            dealbreaker_hits=[],
+            salary_fit="within",
+            signals={},
+            model="fake",
+            created_at=_NOW,
+        )
+        return posting.id
+
+
+def test_discover_queue_maps_fields_and_ranks(db_engine: Engine) -> None:
+    _seed_scored(db_engine, dedupe="d1", score=70, salary={"min": 150000, "currency": "USD"})
+    _seed_scored(db_engine, dedupe="d2", score=90, salary={})
+    with session_scope(db_engine) as session:
+        queue = build_discover_queue(session)
+    assert [row.score for row in queue.rows] == [90, 70]  # ranked by fit
+    top = queue.rows[0]
+    assert top.company == "Acme"
+    assert top.source == "url"
+    assert top.salary == "—"  # empty salary JSON
+    assert top.verdict == "strong"
+    assert queue.rows[1].salary == "150000 USD"  # min-only + currency
+
+
+def test_discover_queue_salary_display_variants(db_engine: Engine) -> None:
+    _seed_scored(db_engine, dedupe="rng", score=80, salary={"min": 120000, "max": 150000})
+    _seed_scored(db_engine, dedupe="max", score=70, salary={"max": 90000, "currency": "EUR"})
+    with session_scope(db_engine) as session:
+        rows = {row.id: row for row in build_discover_queue(session).rows}
+    salaries = {row.salary for row in rows.values()}
+    assert "120000 - 150000" in salaries  # min+max, no currency
+    assert "90000 EUR" in salaries  # max-only + currency
+
+
+def test_discover_queue_excludes_dismissed(db_engine: Engine) -> None:
+    p1 = _seed_scored(db_engine, dedupe="d1", score=80, salary={})
+    _seed_scored(db_engine, dedupe="d2", score=90, salary={})
+    with session_scope(db_engine) as session:
+        set_posting_queue_status(session, p1, QueueStatus.DISMISSED)
+    with session_scope(db_engine) as session:
+        queue = build_discover_queue(session)
+    assert [row.id for row in queue.rows] == [row.id for row in queue.rows if row.id != p1]
+    assert all(row.id != p1 for row in queue.rows)
+
+
+def test_discover_queue_empty(db_engine: Engine) -> None:
+    with session_scope(db_engine) as session:
+        assert build_discover_queue(session).rows == []
 
 
 # --- serialization ---------------------------------------------------------------

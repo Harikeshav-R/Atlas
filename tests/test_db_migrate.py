@@ -45,6 +45,21 @@ def test_upgrade_to_head_creates_the_schema(tmp_path: Path) -> None:
     } <= tables
 
 
+def test_upgrade_to_head_adds_queue_status_with_default(tmp_path: Path) -> None:
+    url = sqlite_url(tmp_path / "atlas.db")
+    upgrade_to_head(url)
+    engine = create_engine(url)
+    try:
+        columns = {col["name"]: col for col in inspect(engine).get_columns("job_posting")}
+    finally:
+        engine.dispose()
+    # The Discover-queue migration added queue_status NOT NULL with a 'new' default,
+    # so existing rows backfill and new inserts default in the queue.
+    assert "queue_status" in columns
+    assert columns["queue_status"]["nullable"] is False
+    assert "new" in str(columns["queue_status"]["default"])
+
+
 def test_upgrade_to_head_wraps_failures_in_migration_error(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

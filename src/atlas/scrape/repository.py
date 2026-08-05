@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 
     from sqlmodel import Session
 
+    from atlas.matching.structure import QueueStatus
+
 __all__ = [
     "URL_SOURCE_TYPE",
     "create_job_posting",
@@ -34,6 +36,7 @@ __all__ = [
     "get_posting",
     "get_posting_by_dedupe",
     "list_postings",
+    "set_posting_queue_status",
 ]
 
 #: The :class:`~atlas.db.models.JobSource` ``type`` for pasted URLs (PROJECT.md §5.4).
@@ -83,6 +86,23 @@ def get_posting(session: Session, posting_id: int) -> JobPosting:
     posting = session.get(JobPosting, posting_id)
     if posting is None:
         raise JobPostingNotFoundError(posting_id)
+    return posting
+
+
+def set_posting_queue_status(session: Session, posting_id: int, status: QueueStatus) -> JobPosting:
+    """Set a posting's Discover-queue triage state and return it.
+
+    Backs the TUI Discover queue's dismiss/save actions (PROJECT.md §8): a
+    ``dismissed`` posting drops out of :func:`atlas.matching.repository.list_scored_postings`,
+    a ``saved`` one stays but is flagged.
+
+    Raises:
+        JobPostingNotFoundError: If no posting has that id.
+    """
+    posting = get_posting(session, posting_id)
+    posting.queue_status = status.value
+    session.add(posting)
+    session.flush()
     return posting
 
 

@@ -242,6 +242,10 @@ class JobPosting(SQLModel, table=True):
         raw_snapshot_ref: On-disk path to the raw HTML snapshot, or ``None``.
         fetched_at: When Atlas fetched the posting (timezone-aware UTC).
         dedupe_hash: A stable hash used to collapse duplicate postings.
+        queue_status: The posting's triage state in the TUI Discover queue — a
+            :class:`~atlas.matching.structure.QueueStatus` value (``new`` /
+            ``saved`` / ``dismissed``), stored as its string. Defaults to ``new``;
+            ``dismissed`` postings are hidden from the ranked queue.
     """
 
     __tablename__ = "job_posting"
@@ -264,6 +268,7 @@ class JobPosting(SQLModel, table=True):
     raw_snapshot_ref: str | None = None
     fetched_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
     dedupe_hash: str
+    queue_status: str = "new"
 
 
 class MatchScore(SQLModel, table=True):
