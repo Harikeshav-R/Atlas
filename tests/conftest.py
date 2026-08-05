@@ -341,6 +341,27 @@ class FakeFileOpener:
             raise self._raises
 
 
+class FakeUrlOpener:
+    """A scripted, offline :class:`~atlas.platform.browser.UrlOpener` for tests.
+
+    Records every URL it is asked to open on :attr:`opened` (instead of launching
+    a real browser), so the TUI Discover queue's "open" action is testable without
+    side effects (AGENTS.md §6.2). Optionally raises ``raises`` to exercise the
+    error path.
+    """
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        """Store an optional exception to raise, and start an empty record."""
+        self._raises = raises
+        self.opened: list[str] = []
+
+    def __call__(self, url: str) -> None:
+        """Record ``url`` (and raise the scripted exception, if any)."""
+        self.opened.append(url)
+        if self._raises is not None:
+            raise self._raises
+
+
 class FakeScheduler:
     """A scripted, offline :class:`~atlas.daemon.scheduler.Scheduler` for tests.
 
