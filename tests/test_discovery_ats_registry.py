@@ -8,17 +8,19 @@ from atlas.discovery.ats import ATS_TYPES, detect_ats, get_adapter
 from atlas.discovery.ats.ashby import AshbyAdapter
 from atlas.discovery.ats.greenhouse import GreenhouseAdapter
 from atlas.discovery.ats.lever import LeverAdapter
+from atlas.discovery.ats.workday import WorkdayAdapter
 from atlas.discovery.errors import UnknownAtsError
 
 
 def test_ats_types_lists_registered_providers() -> None:
-    assert ATS_TYPES == ("ashby", "greenhouse", "lever")
+    assert ATS_TYPES == ("ashby", "greenhouse", "lever", "workday")
 
 
 def test_get_adapter_resolves_each_provider() -> None:
     assert isinstance(get_adapter("greenhouse"), GreenhouseAdapter)
     assert isinstance(get_adapter("lever"), LeverAdapter)
     assert isinstance(get_adapter("ashby"), AshbyAdapter)
+    assert isinstance(get_adapter("workday"), WorkdayAdapter)
 
 
 def test_get_adapter_unknown_raises() -> None:
@@ -37,6 +39,7 @@ def test_get_adapter_unknown_raises() -> None:
         ("https://api.lever.co/v0/postings/acme", ("lever", "acme")),
         ("https://jobs.ashbyhq.com/acme", ("ashby", "acme")),
         ("https://api.ashbyhq.com/posting-api/job-board/acme", ("ashby", "acme")),
+        ("https://acme.wd5.myworkdayjobs.com/careers", ("workday", "acme:wd5:careers")),
     ],
 )
 def test_detect_ats_classifies_urls(url: str, expected: tuple[str, str]) -> None:
