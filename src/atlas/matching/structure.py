@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 __all__ = [
     "DeterministicSignals",
     "FitAssessment",
+    "QueueStatus",
     "SalaryFit",
     "SignalStatus",
     "Verdict",
@@ -48,6 +49,23 @@ class Verdict(StrEnum):
     GOOD = "good"
     STRETCH = "stretch"
     WEAK = "weak"
+
+
+class QueueStatus(StrEnum):
+    """A posting's status in the TUI Discover queue (PROJECT.md §8 screen #2).
+
+    Distinct from :class:`atlas.tracking.status.ApplicationStatus` (which tracks a
+    prepared *application*): this is the *posting-level* triage a user does on the
+    ranked queue of scored postings, before any application exists.
+
+    - ``new`` *(default)*: a scored posting awaiting triage; shown in the queue.
+    - ``saved``: flagged to revisit; still shown in the queue.
+    - ``dismissed``: hidden from the queue (the user passed on it).
+    """
+
+    NEW = "new"
+    SAVED = "saved"
+    DISMISSED = "dismissed"
 
 
 class SalaryFit(StrEnum):

@@ -165,6 +165,7 @@ def test_job_posting_defaults() -> None:
     assert posting.description == ""
     assert posting.posted_at is None
     assert posting.raw_snapshot_ref is None
+    assert posting.queue_status == "new"
 
 
 def test_job_posting_round_trip_with_fks(db_engine: Engine) -> None:
@@ -193,6 +194,7 @@ def test_job_posting_round_trip_with_fks(db_engine: Engine) -> None:
                 raw_snapshot_ref="snapshots/abc123.html",
                 fetched_at=fetched,
                 dedupe_hash="abc123",
+                queue_status="saved",
             )
         )
     with session_scope(db_engine) as session:
@@ -201,6 +203,7 @@ def test_job_posting_round_trip_with_fks(db_engine: Engine) -> None:
         source = session.exec(select(JobSource)).one()
         assert stored.company_id == company.id
         assert stored.source_id == source.id
+        assert stored.queue_status == "saved"
         assert stored.salary == {"min": 150000, "currency": "USD"}
         assert stored.requirements == {"must": ["Python"], "nice": ["Rust"]}
         assert stored.keywords == ["python", "postgres"]
