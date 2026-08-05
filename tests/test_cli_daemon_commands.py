@@ -20,8 +20,11 @@ from atlas.cli.main import app
 from atlas.config.errors import ConfigError
 from atlas.config.schema import Config
 from atlas.daemon.service import write_pid
-from atlas.db import create_db_engine
-from tests.conftest import FakeProcessControl, FakeScheduler
+from atlas.db import create_db_engine, session_scope
+from atlas.discovery.repository import get_or_create_ats_source
+from atlas.scrape.fetcher import FetchResult
+from atlas.scrape.repository import get_or_create_company, list_postings
+from tests.conftest import FakeFetcher, FakeProcessControl, FakeScheduler
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -75,8 +78,52 @@ def test_start_registers_job_and_starts(
     assert result.exit_code == 0
     assert scheduler.started is True
     assert len(scheduler.jobs) == 1
-    # The bound poll callable runs in its own session against the shared engine.
-    scheduler.jobs[0][0]()  # no rows to score → no error
+    # The bound poll callable runs in its own session against the shared engine —
+    # empty watchlist + empty backlog → no fetch, no error.
+    scheduler.jobs[0][0]()
+
+
+_BOARD = json.dumps(
+    {
+        "jobs": [
+            {
+                "id": 7,
+                "title": "Backend Engineer",
+                "absolute_url": "https://boards.greenhouse.io/acme/jobs/7",
+                "location": {"name": "Remote"},
+                "content": "&lt;p&gt;Build.&lt;/p&gt;",
+            }
+        ],
+        "meta": {"total": 1},
+    }
+)
+
+
+def test_start_bound_job_discovers_then_scores(
+    shared_engine: Engine, pid_path: Path, _stub_provider: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A watchlisted board + an injected fetcher: the bound job discovers the
+    # posting first (persisted), then the scoring poll runs over the new backlog.
+    with session_scope(shared_engine) as session:
+        company = get_or_create_company(session, name="Acme")
+        assert company.id is not None
+        get_or_create_ats_source(
+            session, ats_type="greenhouse", board_token="acme", company_id=company.id
+        )
+    monkeypatch.setattr(
+        app_module,
+        "default_fetcher",
+        FakeFetcher(
+            FetchResult(url="x", status_code=200, content_type="application/json", body=_BOARD)
+        ),
+    )
+    scheduler = FakeScheduler()
+    monkeypatch.setattr(app_module, "default_scheduler", lambda: scheduler)
+    result = runner.invoke(app, ["daemon", "start"])
+    assert result.exit_code == 0
+    scheduler.jobs[0][0]()
+    with session_scope(shared_engine) as session:
+        assert [p.external_id for p in list_postings(session)] == ["7"]
 
 
 def test_start_reports_config_error(pid_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

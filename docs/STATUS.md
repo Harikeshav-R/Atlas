@@ -9,13 +9,17 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-04 (**Phase 2 has begun** — the **daemon skeleton +
-  scheduler** landed: `atlas.daemon` + `atlas daemon start|stop|status`, running a
-  background scoring poll over the fit-score backlog. The daemon's IPC surface +
-  discovery-source polling, then the ATS/aggregator adapters, come next)
-- **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler ✅ —
-  APScheduler process, `[discovery]` config, PID-file lifecycle, score-backlog
-  poll; **IPC + discovery adapters next**). Phase 1 core loop ✅ complete.
+- **Last updated:** 2026-08-05 (**Phase 2 discovery is live** — the **company
+  watchlist + Greenhouse ATS adapter** landed: `atlas.discovery` (extensible
+  `AtsAdapter` registry + Greenhouse boards-API adapter), `atlas company add|list`,
+  `atlas discover`, and `run_discovery_poll` wired into the daemon **before** the
+  scoring poll. The daemon now genuinely finds jobs. Lever/Ashby/Workday adapters,
+  aggregators, the Discover TUI queue, and the daemon IPC surface come next)
+- **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler ✅;
+  **company watchlist + Greenhouse ATS discovery ✅** — `atlas.discovery` adapter
+  registry + poll, `atlas company`/`atlas discover`, discover→score in the daemon;
+  **more ATS adapters, aggregators, Discover queue, IPC next**). Phase 1 core loop
+  ✅ complete.
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -24,24 +28,30 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 2 (Discovery & background) has begun.** The **daemon skeleton + scheduler** landed
-(see "What has landed"): `atlas.daemon` is a long-running APScheduler process
-(`atlas daemon start|stop|status`) that runs one scheduled job today — the **scoring poll**,
-which clears the fit-score backlog against the active profile. This proves the process +
-scheduler + hermetic-testability pattern; there are no discovery-source adapters yet, so the
-poll's real work is scoring, not fetching.
+**Phase 2 (Discovery & background) is well underway.** The **daemon skeleton + scheduler** and
+now the **company watchlist + Greenhouse ATS discovery** have landed (see "What has landed").
+`atlas.discovery` is an extensible `AtsAdapter` registry (`detect_ats` classifies a pasted
+board URL; `get_adapter` resolves a provider) with a Greenhouse boards-API adapter;
+`run_discovery_poll` fetches each enabled watchlisted board, de-dupes, and persists new
+postings, and it now runs **before** the scoring poll in the daemon — so the daemon genuinely
+discovers *and* scores jobs. `atlas company add|list` and `atlas discover` are the CLI surface.
 
-**Do these next to grow the daemon (PROJECT.md §4.1, §5.4, §15):**
-1. **IPC surface** — a local socket (Unix domain / Windows named pipe) so the TUI can trigger
+**Do these next to grow discovery (PROJECT.md §4.1, §5.4, §15):**
+1. **More ATS adapters** — **Lever**, **Ashby**, **Workday**. Each is a new module in
+   `atlas.discovery.ats` implementing the `AtsAdapter` Protocol (a `detect(url)` hook + a
+   `list_postings` that fetches the board's public API through the injected `Fetcher`) plus one
+   entry in the `_ADAPTERS` registry tuple — no interface change. Greenhouse
+   (`ats/greenhouse.py`) is the worked example.
+2. **Aggregator adapters** + saved keyword searches — the second discovery strategy (RemoteOK,
+   Remotive, Adzuna, …), key-gated ones inactive until a key is pasted. A new
+   `atlas.discovery.aggregators` package alongside `ats/`, feeding the same `persist_discovered`.
+3. **Scored Discover queue in the TUI** + **multiple profiles** fully wired. Add the "owned by"
+   claim convention (PROJECT.md §4.1) and a `busy_timeout` PRAGMA now that the daemon writes
+   discovery rows while the TUI reads.
+4. **IPC surface** — a local socket (Unix domain / Windows named pipe) so the TUI can trigger
    "poll/tailor now" and stream progress. Follow the `platform/opener.py` seam (a Protocol +
    `sys.platform`-dispatched, pragma'd transport); a pure `handle_request` is the tested core.
-2. **Company watchlist + ATS adapters** (Greenhouse, Lever, Ashby, Workday) — the first real
-   discovery sources. Needs a source-attribution variant of `add_posting` (today it hardwires
-   the `url` source) and job-source repository functions (list-enabled, stamp `last_polled_at`).
-3. **Aggregator adapters** + saved keyword searches; the scored **Discover** queue in the TUI;
-   **multiple profiles** fully wired. Add the "owned by" claim convention (PROJECT.md §4.1) once
-   the daemon and TUI both write discovery rows, plus a `busy_timeout` PRAGMA.
-4. **Desktop notifications** (`desktop-notifier`, §5.16) for new high-fit matches / deadlines.
+5. **Desktop notifications** (`desktop-notifier`, §5.16) for new high-fit matches / deadlines.
 
 > **Deferred Phase-1 depth (optional, revisit as needed — not blockers for Phase 2):**
 > **PR 2b — tailoring depth**: `honesty_validate` traceability (§11), AI-phrase scrub (§5.7
@@ -93,6 +103,40 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 2 · Company watchlist + Greenhouse ATS discovery — `atlas.discovery` + `atlas company`
++ `atlas discover` (the first real discovery source — the daemon now *finds* jobs):
+
+- `atlas.discovery.ats`: an extensible `AtsAdapter` Protocol (`ats/base.py`) with a pure,
+  offline `detect(url)` hook + a `list_postings(board_ref, *, fetcher, timeout_s)` that fetches
+  through the reused `scrape.fetcher.Fetcher` (no new network boundary), and a **registry**
+  (`ats/__init__.py`): `get_adapter(ats_type)` (→ `UnknownAtsError`), `detect_ats(url)` →
+  `(ats_type, board_token)`, and `ATS_TYPES`. The **Greenhouse** adapter (`ats/greenhouse.py`)
+  detects the board token from the `boards`/`job-boards`/`embed`/subdomain URL forms and
+  normalizes the public boards JSON API (`content=true`), unescaping the HTML description via the
+  reused `extract_main_text` and skipping malformed jobs best-effort. `DiscoveredPosting`
+  (`structure.py`) reuses `ScrapedPosting` by composition, adding only `external_id`.
+- `atlas.discovery.repository`: an ATS board is a `JobSource(type="ats")` whose `config` JSON
+  carries `ats_type` / `board_token` / `company_id` — **no new column, no migration** (every
+  column pre-exists in the `company`/`job_source` migration). `get_ats_source` /
+  `get_or_create_ats_source` dedup by `(ats_type, board_token)`; `list_enabled_ats_sources` feeds
+  the poll (excludes disabled + the shared `url` source); `stamp_last_polled_at`;
+  `get_posting_by_source_external` is the stable per-source re-poll key.
+- `atlas.discovery.service`: `add_watchlist_company` (get-or-create the `Company` recording its
+  `ats_type`/`ats_board_ref`/`domain` + the ATS source, idempotent) and `persist_discovered`
+  (insert new postings, de-duplicating first by `(source, external_id)` then by the
+  normalized-apply-URL `dedupe_hash` shared with `atlas add`, reusing `create_job_posting`).
+- `atlas.discovery.poller`: `run_discovery_poll(session, *, fetcher, clock)` → `DiscoveryOutcome`
+  (`sources_polled` / `discovered` / `skipped` / `failed_sources`), best-effort per source (an
+  unknown provider, unusable board, or fetch failure is counted + skipped, never fatal), mirroring
+  `run_scoring_poll`. Pure over the session → tested with `db_engine` + `FakeFetcher`.
+- CLI (`atlas.cli.discovery` + `main`): `atlas company add <url>` (auto-detects ATS + token from
+  the URL, `--name` override, unrecognized URL → exit 1 naming supported providers, re-add no-op),
+  `atlas company list` (Rich table / `--json`), and `atlas discover` (run one poll now, AI-free,
+  `--json`). The daemon's `run()` now runs discovery **before** scoring each tick, so newly-found
+  postings are scored on the same pass. 100% line+branch; `mypy --strict` incl. win32; no new
+  dependency. **Remaining Phase-2 discovery:** the Lever/Ashby/Workday adapters (drop into the same
+  registry), aggregators, the TUI Discover queue, and the daemon IPC surface.
 
 Phase 2 · Daemon skeleton + scheduler — `atlas.daemon` + `atlas daemon start|stop|status`
 (the first Phase 2 feature — the background scheduler):
@@ -642,6 +686,6 @@ high-level state.
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ✅ **complete** — onboarding · master resume · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · application tracking (state machine + CLI) · full TUI (Dashboard · Applications/Kanban · Application detail · Posting detail · Tailor workspace with background action workers). Optional depth (PR-2b tailoring / interactive editing) deferred |
-| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon skeleton + scheduler ✅ (APScheduler process · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`); IPC surface, ATS/aggregator adapters, Discover queue, multiple profiles next |
+| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon skeleton + scheduler ✅ (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`); **company watchlist + Greenhouse ATS discovery ✅** (`atlas.discovery` adapter registry + Greenhouse adapter · `run_discovery_poll` wired discover→score in the daemon · `atlas company add\|list` · `atlas discover`); more ATS adapters (Lever/Ashby/Workday), aggregators, Discover queue, IPC surface, multiple profiles next |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |
