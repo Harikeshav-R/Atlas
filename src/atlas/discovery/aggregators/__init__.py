@@ -28,6 +28,7 @@ from atlas.discovery.aggregators.base import AggregatorAdapter
 from atlas.discovery.aggregators.remoteok import RemoteOKAdapter
 from atlas.discovery.aggregators.remotive import RemotiveAdapter
 from atlas.discovery.aggregators.structure import SavedSearch
+from atlas.discovery.aggregators.usajobs import build_usajobs
 from atlas.discovery.errors import UnknownAggregatorError
 
 if TYPE_CHECKING:
@@ -65,6 +66,9 @@ _REGISTRY: dict[str, _Provider] = {
     "remotive": _Provider(requires_key=False, build=lambda config, store: RemotiveAdapter()),
     "adzuna": _Provider(
         requires_key=True, build=lambda config, store: build_adzuna(config.adzuna, store)
+    ),
+    "usajobs": _Provider(
+        requires_key=True, build=lambda config, store: build_usajobs(config.usajobs, store)
     ),
 }
 

@@ -23,10 +23,10 @@ from tests.conftest import FakeKeyring
 
 
 def test_aggregator_types_are_sorted_names() -> None:
-    assert AGGREGATOR_TYPES == ("adzuna", "remoteok", "remotive")
+    assert AGGREGATOR_TYPES == ("adzuna", "remoteok", "remotive", "usajobs")
 
 
-@pytest.mark.parametrize("name", ["adzuna", "remoteok", "remotive"])
+@pytest.mark.parametrize("name", ["adzuna", "remoteok", "remotive", "usajobs"])
 def test_validate_aggregator_accepts_registered(name: str) -> None:
     validate_aggregator(name)  # does not raise
 
@@ -36,13 +36,13 @@ def test_validate_aggregator_unknown_raises() -> None:
         validate_aggregator("linkedin")
     error = excinfo.value
     assert error.aggregator == "linkedin"
-    assert error.supported == ("adzuna", "remoteok", "remotive")
-    assert "Supported: adzuna, remoteok, remotive" in str(error)
+    assert error.supported == ("adzuna", "remoteok", "remotive", "usajobs")
+    assert "Supported: adzuna, remoteok, remotive, usajobs" in str(error)
 
 
 @pytest.mark.parametrize(
     ("name", "requires_key"),
-    [("remoteok", False), ("remotive", False), ("adzuna", True)],
+    [("remoteok", False), ("remotive", False), ("adzuna", True), ("usajobs", True)],
 )
 def test_aggregator_requires_key(name: str, requires_key: bool) -> None:
     assert aggregator_requires_key(name) is requires_key
@@ -76,6 +76,18 @@ def test_build_aggregator_key_gated_builds_when_configured(fake_keyring: FakeKey
     config = AggregatorsConfig.model_validate({"adzuna": {"enabled": True}})
     adapter = build_aggregator("adzuna", config=config, store=store)
     assert isinstance(adapter, AdzunaAdapter)
+
+
+def test_build_aggregator_usajobs_builds_when_configured(fake_keyring: FakeKeyring) -> None:
+    from atlas.discovery.aggregators.usajobs import UsajobsAdapter
+
+    store = SecretStore(fake_keyring)
+    store.set("usajobs", "api-key")
+    config = AggregatorsConfig.model_validate(
+        {"usajobs": {"enabled": True, "email": "sam@example.test"}}
+    )
+    adapter = build_aggregator("usajobs", config=config, store=store)
+    assert isinstance(adapter, UsajobsAdapter)
 
 
 def test_build_aggregator_unknown_raises(fake_keyring: FakeKeyring) -> None:
