@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Key-gated aggregator adapters — Adzuna + USAJOBS** (`atlas.discovery.aggregators`):
+  the two credential-requiring aggregators PROJECT.md §5.4-B names, joining the
+  free RemoteOK/Remotive feeds. **Adzuna** (`api.adzuna.com`) uses query-string
+  auth (`app_id` + `app_key` + a configurable country); **USAJOBS**
+  (`data.usajobs.gov`) uses header auth (`Authorization-Key` + the registering
+  email as `User-Agent`) — the reason the `Fetcher` seam carries a `headers`
+  parameter. Each is a drop-in on the registry: a key-gating seam
+  (`AggregatorAdapter.requires_key` + a `build_aggregator(name, *, config, store)`
+  builder that resolves credentials from the keychain and returns `None` — an
+  inactive source — when disabled or keyless) keeps the poll generic. A key-gated
+  source that isn't configured is **skipped as inactive** (surfaced in the new
+  `DiscoveryOutcome.inactive` count and by `atlas discover`), never a silent drop
+  or a failure. Additional aggregators (HN "Who is hiring", arbeitnow) remain a
+  fast-follow.
+- **`[aggregators]` config section** (`AggregatorsConfig` / `AdzunaConfig` /
+  `UsajobsConfig`): per-provider `enabled` flags, the USAJOBS `email` and Adzuna
+  `country` (non-secret), and keyring **handles** for each credential (never the
+  secret itself), mirroring the `[ai.backends]` shape. Ships disabled; a missing
+  section still yields a valid `Config`.
+- **`atlas source key <aggregator>` command** (PROJECT.md §5.4-B, §9): stores a
+  key-gated aggregator's API credential(s) in the OS keychain via hidden prompts
+  (never echoed, never in shell history) — the first secret-writing path in the
+  CLI. Rejects an unknown or free (no-key) aggregator, and a missing keychain,
+  with exit `1`. `atlas source add` now points key-gated providers at it.
+- **Aggregator health in `atlas doctor`**: a second "Aggregator sources" table
+  (and a `DoctorReport.aggregators` JSON field) reporting each provider as
+  `active` / `needs API key` / `disabled`, so the user can see which job sources
+  are usable. Aggregators are optional, so they do not affect the overall
+  healthy/unhealthy exit code.
 - **Aggregator adapters + saved keyword searches** (`atlas.discovery.aggregators`):
   the second discovery strategy alongside the ATS watchlist (PROJECT.md §5.4-B),
   so the daemon now finds jobs from keyword searches across many companies, not
