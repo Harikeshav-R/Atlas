@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from atlas.discovery.ats import ATS_TYPES, AtsAdapter, detect_ats, get_adapter
 from atlas.discovery.errors import DiscoveryError, UnknownAtsError
+from atlas.discovery.poller import DiscoveryOutcome, run_discovery_poll
 from atlas.discovery.repository import (
     ATS_SOURCE_TYPE,
     get_ats_source,
@@ -39,6 +40,7 @@ __all__ = [
     "AtsAdapter",
     "DiscoveredPosting",
     "DiscoveryError",
+    "DiscoveryOutcome",
     "PersistOutcome",
     "UnknownAtsError",
     "add_watchlist_company",
@@ -49,5 +51,6 @@ __all__ = [
     "get_posting_by_source_external",
     "list_enabled_ats_sources",
     "persist_discovered",
+    "run_discovery_poll",
     "stamp_last_polled_at",
 ]
