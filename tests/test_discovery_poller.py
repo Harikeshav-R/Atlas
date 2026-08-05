@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from atlas.db import session_scope
 from atlas.db.models import JobSource
@@ -20,6 +20,8 @@ from atlas.scrape.repository import get_or_create_company, list_postings
 from tests.conftest import FakeFetcher
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sqlalchemy.engine import Engine
 
 _POLLED = datetime(2026, 8, 4, 9, 0, tzinfo=UTC)
@@ -113,7 +115,15 @@ def test_poll_best_effort_skips_a_failing_source(db_engine: Engine) -> None:
         def __init__(self) -> None:
             self.calls = 0
 
-        def __call__(self, url: str, *, timeout_s: int) -> FetchResult:
+        def __call__(
+            self,
+            url: str,
+            *,
+            timeout_s: int,
+            method: str = "GET",
+            json_body: Mapping[str, Any] | None = None,
+            headers: Mapping[str, str] | None = None,
+        ) -> FetchResult:
             self.calls += 1
             if "broken" in url:
                 raise FetchError("boom")
