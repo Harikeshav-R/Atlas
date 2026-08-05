@@ -135,13 +135,14 @@ atlas discover              # poll the watchlist now for new postings (--json)
 ```
 
 `atlas company add` auto-detects the ATS provider and board token from a
-careers/board URL (e.g. `https://boards.greenhouse.io/<token>`) — **Greenhouse**
-is supported today, with Lever/Ashby/Workday to follow — and adds the company to
-your watchlist; an unrecognized URL is refused with the list of supported
-providers. `atlas discover` runs one poll now, fetching each enabled board,
-normalizing and de-duplicating its postings (against both what discovery and
-`atlas add` already saved), and saving the new ones; it's AI-free and points you
-at `atlas score` (or the daemon) to score them.
+careers/board URL — **Greenhouse** (`boards.greenhouse.io/<token>`), **Lever**
+(`jobs.lever.co/<site>`), **Ashby** (`jobs.ashbyhq.com/<name>`), and **Workday**
+(`<tenant>.<wdN>.myworkdayjobs.com/<site>`) are supported, and each provider's raw
+API URL is accepted too — then adds the company to your watchlist; an unrecognized
+URL is refused with the list of supported providers. `atlas discover` runs one poll
+now, fetching each enabled board, normalizing and de-duplicating its postings
+(against both what discovery and `atlas add` already saved), and saving the new
+ones; it's AI-free and points you at `atlas score` (or the daemon) to score them.
 
 Run background work with the daemon:
 

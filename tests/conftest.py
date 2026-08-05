@@ -12,7 +12,7 @@ import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import pytest
 from sqlmodel import SQLModel
@@ -213,17 +213,25 @@ class FetchCall:
 
     url: str
     timeout_s: int
+    method: str = "GET"
+    json_body: Mapping[str, Any] | None = None
+    headers: Mapping[str, str] | None = None
 
 
 class FakeFetcher:
     """A scripted, offline :class:`~atlas.scrape.fetcher.Fetcher` for tests.
 
     Returns ``result`` for every call, or raises ``raises`` (e.g. a
-    :class:`~atlas.scrape.errors.FetchError`) instead. Every invocation is
-    recorded on :attr:`calls` so tests assert on the url and timeout the scraper
-    passed — without any real HTTP request (AGENTS.md §6.2). Its shape also
-    satisfies the ``BrowserFetcher`` protocol, so the same double stands in for
-    the JS-render fallback seam.
+    :class:`~atlas.scrape.errors.FetchError`) instead. Every invocation — including
+    the ``method`` / ``json_body`` / ``headers`` a POST adapter passes — is recorded
+    on :attr:`calls` so tests assert on exactly what the scraper sent, without any
+    real HTTP request (AGENTS.md §6.2). Its shape also satisfies the
+    ``BrowserFetcher`` protocol, so the same double stands in for the JS-render seam.
+
+    Pass ``results`` (a sequence of :class:`FetchResult`) instead of a single
+    ``result`` to replay different responses per call — the paginated Workday poll
+    needs one page per offset. The sequence is consumed in order; calling past its
+    end raises, so a test that under-supplies pages fails loudly.
     """
 
     def __init__(
@@ -231,18 +239,42 @@ class FakeFetcher:
         result: FetchResult | None = None,
         *,
         raises: BaseException | None = None,
+        results: list[FetchResult] | None = None,
     ) -> None:
-        """Store the scripted result or exception to replay."""
+        """Store the scripted single result / result sequence / exception to replay."""
         self._result = result
         self._raises = raises
+        self._results = results
+        self._index = 0
         self.calls: list[FetchCall] = []
 
-    def __call__(self, url: str, *, timeout_s: int) -> FetchResult:
-        """Record the call and return the scripted result, or raise."""
-        self.calls.append(FetchCall(url=url, timeout_s=timeout_s))
+    def __call__(
+        self,
+        url: str,
+        *,
+        timeout_s: int,
+        method: str = "GET",
+        json_body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> FetchResult:
+        """Record the call and return the next scripted result, or raise."""
+        self.calls.append(
+            FetchCall(
+                url=url,
+                timeout_s=timeout_s,
+                method=method,
+                json_body=json_body,
+                headers=headers,
+            )
+        )
         if self._raises is not None:
             raise self._raises
-        assert self._result is not None, "FakeFetcher needs a result or a raises"
+        if self._results is not None:
+            assert self._index < len(self._results), "FakeFetcher ran out of scripted results"
+            result = self._results[self._index]
+            self._index += 1
+            return result
+        assert self._result is not None, "FakeFetcher needs a result, results, or a raises"
         return self._result
 
 
@@ -254,6 +286,7 @@ class FakeFetcherFactory(Protocol):
         result: FetchResult | None = ...,
         *,
         raises: BaseException | None = ...,
+        results: list[FetchResult] | None = ...,
     ) -> FakeFetcher:
         """Build a :class:`FakeFetcher` from a scripted result or error."""
         ...
@@ -267,8 +300,9 @@ def make_fake_fetcher() -> FakeFetcherFactory:
         result: FetchResult | None = None,
         *,
         raises: BaseException | None = None,
+        results: list[FetchResult] | None = None,
     ) -> FakeFetcher:
-        return FakeFetcher(result, raises=raises)
+        return FakeFetcher(result, raises=raises, results=results)
 
     return factory
 

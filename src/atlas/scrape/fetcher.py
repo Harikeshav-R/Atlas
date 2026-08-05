@@ -17,11 +17,14 @@ fallback drops in later without reworking the fetch flow.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import httpx
 
 from atlas.scrape.errors import FetchError
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 __all__ = [
     "BrowserFetcher",
@@ -58,9 +61,21 @@ class Fetcher(Protocol):
     Implementations must follow redirects, decode the body as text, and raise
     :class:`~atlas.scrape.errors.FetchError` on a network failure or a
     non-success HTTP status.
+
+    The default is a plain ``GET``; ``method`` / ``json_body`` / ``headers`` are
+    optional so an ATS adapter can issue a JSON ``POST`` (e.g. Workday's CxS API)
+    over the same seam. Existing callers pass none of these and are unaffected.
     """
 
-    def __call__(self, url: str, *, timeout_s: int) -> FetchResult:
+    def __call__(
+        self,
+        url: str,
+        *,
+        timeout_s: int,
+        method: str = "GET",
+        json_body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> FetchResult:
         """Fetch ``url`` and return its :class:`FetchResult`."""
 
 
@@ -73,11 +88,26 @@ class BrowserFetcher(Protocol):
     fallback and consulted only when a static fetch looks JS-rendered.
     """
 
-    def __call__(self, url: str, *, timeout_s: int) -> FetchResult:
+    def __call__(
+        self,
+        url: str,
+        *,
+        timeout_s: int,
+        method: str = "GET",
+        json_body: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> FetchResult:
         """Render ``url`` in a browser and return its :class:`FetchResult`."""
 
 
-def default_fetcher(url: str, *, timeout_s: int) -> FetchResult:  # pragma: no cover
+def default_fetcher(
+    url: str,
+    *,
+    timeout_s: int,
+    method: str = "GET",
+    json_body: Mapping[str, Any] | None = None,
+    headers: Mapping[str, str] | None = None,
+) -> FetchResult:  # pragma: no cover
     """Fetch ``url`` over HTTP with ``httpx``, following redirects.
 
     This thin network boundary carries ``# pragma: no cover`` because the default
@@ -86,15 +116,22 @@ def default_fetcher(url: str, *, timeout_s: int) -> FetchResult:  # pragma: no c
     statuses and transport errors are normalized to
     :class:`~atlas.scrape.errors.FetchError`.
 
+    A plain ``GET`` by default; pass ``method="POST"`` with a ``json_body`` for an
+    ATS API that requires it (Workday). ``headers`` are merged on top of the
+    default ``User-Agent``.
+
     Raises:
         FetchError: On a transport error or a non-success HTTP status.
     """
+    merged_headers = {"User-Agent": _USER_AGENT, **(headers or {})}
     try:
-        response = httpx.get(
+        response = httpx.request(
+            method,
             url,
             follow_redirects=True,
             timeout=timeout_s,
-            headers={"User-Agent": _USER_AGENT},
+            headers=merged_headers,
+            json=json_body,
         )
         response.raise_for_status()
     except httpx.HTTPError as exc:
