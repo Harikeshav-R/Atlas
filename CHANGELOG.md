@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Aggregator adapters + saved keyword searches** (`atlas.discovery.aggregators`):
+  the second discovery strategy alongside the ATS watchlist (PROJECT.md §5.4-B),
+  so the daemon now finds jobs from keyword searches across many companies, not
+  only per-company boards. An `AggregatorAdapter` Protocol + registry paralleling
+  the ATS adapters, with two free/no-key reference implementations — **RemoteOK**
+  (`https://remoteok.com/api`, a raw JSON array whose leading legal notice and
+  malformed rows are skipped) and **Remotive**
+  (`https://remotive.com/api/remote-jobs?search=…`, a wrapped `{jobs: […]}` API).
+  Unlike an ATS adapter, an aggregator has no `detect(url)` (a source is named, not
+  a pasted URL) and each posting carries its own company. A shared
+  `matches_search` applies the saved search's query / location / remote filters
+  uniformly after normalization. Key-gated aggregators (Adzuna, USAJOBS) are a
+  documented fast-follow. Fetching goes through the existing `Fetcher` seam, so the
+  adapters run offline in tests.
+- **`SavedSearch` + aggregator persistence** (`atlas.discovery`): a per-profile
+  saved search (query + location + remote) persisted as a `JobSource`
+  (`type="aggregator"`) whose config carries the aggregator name and the serialized
+  search — **no migration** (the `job_source` table already has `type` / `config` /
+  `profile_id` / `enabled` / `last_polled_at`). `get_or_create_aggregator_source`
+  dedups by the `(aggregator, normalized search, profile_id)` triple;
+  `add_saved_search` and `persist_aggregated` (which get-or-creates a company per
+  posting, since an aggregator spans many) join the discovery service; and
+  `run_aggregator_poll` is the best-effort-per-source poll mirroring
+  `run_discovery_poll`.
+- **`atlas source add|list` commands** (PROJECT.md §9): `source add <aggregator>
+  --query <q> [--location <l>] [--remote/--onsite]` validates the aggregator against
+  the registry (unknown → exit `1` listing the supported providers), resolves the
+  active profile (none → exit `1` with an `atlas init` hint), and saves the search
+  (re-adding is a no-op); `source list` shows the saved searches (Rich table /
+  `--json`).
+- **Aggregator polling wired into discovery**: `atlas discover` and the daemon tick
+  now run the aggregator poll **after** the ATS poll and before scoring, so
+  newly-discovered aggregator postings are scored on the same pass; `discover`
+  reports the combined counts.
 - **Lever, Ashby, and Workday ATS adapters** (`atlas.discovery.ats`): three new
   discovery sources alongside Greenhouse (PROJECT.md §5.4-A), each a drop-in on the
   existing registry — the daemon poll, watchlist service, and `atlas company add`

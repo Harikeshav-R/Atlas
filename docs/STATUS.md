@@ -9,16 +9,18 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-05 (**the Lever, Ashby, and Workday ATS adapters landed**
-  — all four ATS providers the roadmap names now discover jobs, each a drop-in on the
-  registry; Workday required extending the `Fetcher` seam to POST + paginate. Earlier
-  the same phase: the daemon + scheduler, the Greenhouse adapter + watchlist, and the
-  TUI Discover queue. **Next:** aggregator adapters, multiple profiles, and the daemon
-  IPC surface)
+- **Last updated:** 2026-08-05 (**aggregator adapters + saved keyword searches landed**
+  — the second discovery strategy: an `AggregatorAdapter` registry with RemoteOK +
+  Remotive (both free/no-key), per-profile `SavedSearch` sources, `run_aggregator_poll`,
+  and `atlas source add|list`, with the poll wired into `atlas discover` + the daemon.
+  Earlier the same phase: the daemon + scheduler, all four ATS adapters + watchlist, and
+  the TUI Discover queue. **Next:** multiple profiles fully wired, the daemon IPC surface,
+  and key-gated aggregators (Adzuna/USAJOBS))
 - **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler ✅;
   company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby ·
-  Workday); scored Discover queue in the TUI ✅; **aggregators, multiple profiles,
-  IPC next**). Phase 1 core loop ✅ complete.
+  Workday); scored Discover queue in the TUI ✅; **aggregator adapters + saved
+  searches ✅** (RemoteOK · Remotive); **multiple profiles, IPC, key-gated
+  aggregators next**). Phase 1 core loop ✅ complete.
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -28,19 +30,24 @@
 ## ▶ Next up (do this next)
 
 **Phase 2 (Discovery & background) is well underway.** The **daemon + scheduler**, the
-**company watchlist + all four ATS adapters** (Greenhouse, Lever, Ashby, Workday), and the
-**scored Discover queue in the TUI** have landed (see "What has landed"). The daemon discovers
-postings from watchlisted ATS boards across every supported provider and scores them;
-`DiscoverScreen` (press `w`) presents them ranked by fit with tailor / dismiss / save / open-URL
-actions — so Journey B (background discovery → review → tailor) works end-to-end.
+**company watchlist + all four ATS adapters** (Greenhouse, Lever, Ashby, Workday), the
+**scored Discover queue in the TUI**, and now the **aggregator adapters + saved keyword
+searches** (RemoteOK, Remotive) have landed (see "What has landed"). The daemon discovers
+postings from both watchlisted ATS boards and per-profile aggregator searches, scores them,
+and `DiscoverScreen` (press `w`) presents them ranked by fit with tailor / dismiss / save /
+open-URL actions — so Journey B (background discovery → review → tailor) works end-to-end
+across both discovery strategies.
 
 **Do these next to grow discovery (PROJECT.md §4.1, §5.4, §15):**
-1. **Aggregator adapters** + saved keyword searches — the second discovery strategy (RemoteOK,
-   Remotive, Adzuna, …), key-gated ones inactive until a key is pasted. A new
-   `atlas.discovery.aggregators` package alongside `ats/`, feeding the same `persist_discovered`.
+1. **Key-gated aggregators** — **Adzuna** (app id + key) and **USAJOBS** (email + key), plus
+   the free HN "Who is hiring" / arbeitnow sources, dropping into the same
+   `atlas.discovery.aggregators` registry. Add the `requires_key` seam + a keyring-resolved
+   key (via `resolve_api_key`), a `[aggregators]` config section, and a "needs API key"
+   inactive state (shown, not failing silently, PROJECT.md §5.4-B).
 2. **Multiple profiles** fully wired (the Discover queue and scoring are single-active-profile
-   today). Add the "owned by" claim convention (PROJECT.md §4.1) and a `busy_timeout` PRAGMA now
-   that the daemon writes discovery rows while the TUI reads.
+   today; aggregator searches are already per-profile). Add the "owned by" claim convention
+   (PROJECT.md §4.1) and a `busy_timeout` PRAGMA now that the daemon writes discovery rows
+   while the TUI reads.
 3. **IPC surface** — a local socket (Unix domain / Windows named pipe) so the TUI can trigger
    "poll/tailor now" and stream progress. Follow the `platform/opener.py` seam (a Protocol +
    `sys.platform`-dispatched, pragma'd transport); a pure `handle_request` is the tested core.
@@ -100,6 +107,36 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 2 · Aggregator adapters + saved keyword searches — `atlas.discovery.aggregators` +
+`atlas source` (the second discovery strategy — the daemon now finds jobs from keyword
+searches across many companies, not only per-company ATS boards):
+
+- `atlas.discovery.aggregators`: an `AggregatorAdapter` Protocol (`base.py`) + registry
+  (`__init__.py`: `get_aggregator` → `UnknownAggregatorError`, `AGGREGATOR_TYPES`) paralleling
+  the ATS adapters, but an aggregator has **no `detect(url)`** (a source is named, not a pasted
+  URL) and each posting carries **its own company** (an aggregator spans many). Two free/no-key
+  reference adapters: **RemoteOK** (`remoteok.py`, `https://remoteok.com/api` — a raw JSON array
+  whose leading legal notice + malformed rows are skipped, mirroring Lever) and **Remotive**
+  (`remotive.py`, `?search=` API returning `{jobs: […]}`, mirroring Greenhouse). A shared
+  `matches_search` (`filters.py`) applies the `SavedSearch` query/location/remote filters
+  uniformly after normalization. `SavedSearch` (`structure.py`) is the per-profile spec.
+- Persistence with **no migration** (the `job_source` table already carries
+  `type`/`config`/`profile_id`/`enabled`/`last_polled_at`): a saved search is a
+  `JobSource(type="aggregator")` whose config holds the aggregator name + serialized search.
+  `get_or_create_aggregator_source` dedups by `(aggregator, normalized search, profile_id)`;
+  `add_saved_search` + `persist_aggregated` (which get-or-creates a company per posting) join
+  the service; `run_aggregator_poll` is the best-effort-per-source poll mirroring
+  `run_discovery_poll` (unknown provider / unusable response / fetch failure counted + skipped).
+- CLI (`atlas.cli.discovery` + `main`): `atlas source add <aggregator> --query <q>
+  [--location <l>] [--remote/--onsite]` (validates against the registry → exit 1 on unknown;
+  resolves the active profile → exit 1 with an `atlas init` hint; re-add is a no-op) and
+  `atlas source list` (Rich table / `--json`). The aggregator poll is wired into `atlas discover`
+  and the daemon tick **after** the ATS poll and before scoring, so new aggregator postings are
+  scored on the same pass; `discover` reports the combined counts.
+- 1012 tests at 100% line+branch; `mypy --strict` incl. win32; no new dependency (both feeds
+  are plain JSON over the existing `Fetcher` seam). **Follow-ups:** key-gated aggregators
+  (Adzuna, USAJOBS) + the HN "Who is hiring" / arbeitnow sources drop into the same registry.
 
 Phase 2 · Lever, Ashby & Workday ATS adapters — `atlas.discovery.ats` (all four roadmap ATS
 providers now discover jobs):
@@ -729,6 +766,6 @@ high-level state.
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ✅ **complete** — onboarding · master resume · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · application tracking (state machine + CLI) · full TUI (Dashboard · Applications/Kanban · Application detail · Posting detail · Tailor workspace with background action workers). Optional depth (PR-2b tailoring / interactive editing) deferred |
-| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon + scheduler ✅ (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`); company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby · Workday, on the `atlas.discovery.ats` registry · `run_discovery_poll` discover→score in the daemon · `atlas company add\|list` · `atlas discover`); scored Discover queue in the TUI ✅ (`DiscoverScreen` · `list_scored_postings` · `queue_status` · `UrlOpener`); aggregators, multiple profiles, IPC surface next |
+| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon + scheduler ✅ (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`); company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby · Workday, on the `atlas.discovery.ats` registry · `run_discovery_poll` discover→score in the daemon · `atlas company add\|list` · `atlas discover`); scored Discover queue in the TUI ✅ (`DiscoverScreen` · `list_scored_postings` · `queue_status` · `UrlOpener`); **aggregator adapters + saved searches ✅** (`atlas.discovery.aggregators` registry · RemoteOK · Remotive · per-profile `SavedSearch` sources · `run_aggregator_poll` · `atlas source add\|list`); multiple profiles, IPC surface, key-gated aggregators next |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |
