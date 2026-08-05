@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Company watchlist + Greenhouse ATS discovery** (`atlas.discovery`): the first
+  real discovery source (PROJECT.md §5.4-A), so the daemon now *finds* jobs
+  rather than only re-scoring pasted ones. An extensible `AtsAdapter` Protocol +
+  registry (`atlas.discovery.ats`) with a **Greenhouse** adapter that detects a
+  board token from a careers/board URL (offline, no `--ats` flag) and normalizes
+  the public boards JSON API into postings; a watchlist persisted on the existing
+  `company` / `job_source` tables (an ATS board is a `JobSource(type="ats")` whose
+  config carries `ats_type` / `board_token` / `company_id`, so **no migration**);
+  and `run_discovery_poll`, a best-effort-per-source poll that fetches each enabled
+  board, deduplicates (by the source's external id, then by the normalized-apply-URL
+  `dedupe_hash` shared with `atlas add`), and persists new postings. Lever/Ashby/
+  Workday are fast-follow adapters that drop into the same registry.
+- **`atlas company add|list` and `atlas discover` commands** (PROJECT.md §9):
+  `company add <url>` auto-detects the ATS + board token from the URL and
+  watchlists the company (an unrecognized URL exits `1` naming the supported
+  providers; `--name` overrides the display name; re-adding is a no-op);
+  `company list` shows the watchlist (Rich table / `--json`); `discover` runs one
+  poll now over the watchlist and reports the outcome (`--json`), AI-free (it hints
+  at `atlas score` / the daemon to score the new postings).
+- **Discovery wired into the daemon poll**: `atlas daemon start` now runs a
+  discovery poll over the ATS watchlist **before** the scoring poll each tick, so
+  newly-discovered postings are scored on the same pass (discovery commits first;
+  the scoring poll's `list_unscored_postings` picks them up).
 - **Background daemon** (`atlas.daemon`): the first Phase 2 feature (PROJECT.md
   §4.1) — a long-running scheduler process. It runs one scheduled job today, the
   **scoring poll** (`run_scoring_poll`), which clears the fit-score backlog by

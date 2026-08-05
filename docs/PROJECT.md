@@ -1107,6 +1107,13 @@ The document specs everything; build order is phased. Each phase is independentl
   surface** (Unix socket / Windows named pipe) for the TUI to trigger work + stream progress, and
   wiring the poll to real discovery sources once the adapters below land.)*
 - [ ] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday).
+  *(**Greenhouse ✅** — an extensible `AtsAdapter` Protocol + registry
+  (`atlas.discovery.ats`) with URL-based provider detection; the Greenhouse boards-API
+  adapter; a watchlist on the existing `company`/`job_source` tables (no migration);
+  `run_discovery_poll` (best-effort per source, dedup by external id + apply-URL hash),
+  wired into the daemon before the scoring poll; and `atlas company add|list` /
+  `atlas discover`. **Remaining:** the Lever/Ashby/Workday adapters (drop into the same
+  registry) and URL auto-detection for them.)*
 - [ ] **Aggregator** adapters + saved keyword searches.
 - [ ] Dedup + scored **Discover** queue in the TUI.
 - [ ] **Multiple profiles** fully wired.

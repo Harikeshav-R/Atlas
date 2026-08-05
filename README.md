@@ -123,6 +123,24 @@ freeze the app. When no AI backend is configured the TUI still opens for browsin
 and those actions are disabled (run `atlas doctor` to set the backend up).
 Inline editing of selections and per-section regenerate are coming next.
 
+Discover jobs from company ATS boards:
+
+```bash
+atlas company add <url>     # watchlist a company's ATS board (auto-detects the ATS)
+atlas company add <url> --name "Acme Inc"   # override the display name
+atlas company list          # list watchlisted boards (--json for scripting)
+atlas discover              # poll the watchlist now for new postings (--json)
+```
+
+`atlas company add` auto-detects the ATS provider and board token from a
+careers/board URL (e.g. `https://boards.greenhouse.io/<token>`) — **Greenhouse**
+is supported today, with Lever/Ashby/Workday to follow — and adds the company to
+your watchlist; an unrecognized URL is refused with the list of supported
+providers. `atlas discover` runs one poll now, fetching each enabled board,
+normalizing and de-duplicating its postings (against both what discovery and
+`atlas add` already saved), and saving the new ones; it's AI-free and points you
+at `atlas score` (or the daemon) to score them.
+
 Run background work with the daemon:
 
 ```bash
@@ -132,11 +150,12 @@ atlas daemon stop           # stop a running daemon
 ```
 
 `atlas daemon start` runs a scheduler that, on the `[discovery]`
-`poll_interval_minutes` interval, scores any not-yet-scored postings against your
-active profile — clearing the fit-score backlog in the background. (Discovery
-polling of ATS boards and aggregators, plus the daemon's IPC link to the TUI,
-arrive with the source adapters.) It blocks the terminal; background it with your
-OS service manager (`systemd --user`, `launchd`, Task Scheduler).
+`poll_interval_minutes` interval, first **discovers** new postings from your ATS
+watchlist and then **scores** any not-yet-scored postings against your active
+profile — so newly-found roles are scored on the same pass. (Aggregator sources
+and the daemon's IPC link to the TUI arrive next.) It blocks the terminal;
+background it with your OS service manager (`systemd --user`, `launchd`, Task
+Scheduler).
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /
