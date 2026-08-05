@@ -15,6 +15,7 @@ lookups need no change.
 
 from __future__ import annotations
 
+from atlas.discovery.ats.ashby import AshbyAdapter
 from atlas.discovery.ats.base import AtsAdapter
 from atlas.discovery.ats.greenhouse import GreenhouseAdapter
 from atlas.discovery.ats.lever import LeverAdapter
@@ -23,7 +24,7 @@ from atlas.discovery.errors import UnknownAtsError
 __all__ = ["ATS_TYPES", "AtsAdapter", "detect_ats", "get_adapter"]
 
 #: Every registered ATS adapter, tried in order by :func:`detect_ats`.
-_ADAPTERS: tuple[AtsAdapter, ...] = (GreenhouseAdapter(), LeverAdapter())
+_ADAPTERS: tuple[AtsAdapter, ...] = (GreenhouseAdapter(), LeverAdapter(), AshbyAdapter())
 
 #: The registered provider names (sorted), for help text and error messages.
 ATS_TYPES: tuple[str, ...] = tuple(sorted(adapter.ats_type for adapter in _ADAPTERS))
