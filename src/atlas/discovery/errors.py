@@ -13,6 +13,7 @@ from collections.abc import Iterable
 
 __all__ = [
     "DiscoveryError",
+    "UnknownAggregatorError",
     "UnknownAtsError",
 ]
 
@@ -39,3 +40,19 @@ class UnknownAtsError(DiscoveryError):
         self.supported = tuple(supported)
         supported_list = ", ".join(self.supported) if self.supported else "none"
         super().__init__(f"Unknown ATS provider {ats_type!r}. Supported: {supported_list}.")
+
+
+class UnknownAggregatorError(DiscoveryError):
+    """Raised when an aggregator name has no registered adapter.
+
+    Carries the unknown :attr:`aggregator` and the list of :attr:`supported`
+    providers so the CLI can render a specific, secret-free message (mirroring
+    :class:`UnknownAtsError`).
+    """
+
+    def __init__(self, aggregator: str, supported: Iterable[str]) -> None:
+        """Store the unknown provider and build a human-readable message."""
+        self.aggregator = aggregator
+        self.supported = tuple(supported)
+        supported_list = ", ".join(self.supported) if self.supported else "none"
+        super().__init__(f"Unknown aggregator {aggregator!r}. Supported: {supported_list}.")
