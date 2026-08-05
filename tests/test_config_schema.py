@@ -116,6 +116,35 @@ def test_discovery_section_loads() -> None:
     assert config.discovery.enable_scraping is True
 
 
+def test_aggregators_defaults() -> None:
+    aggregators = Config().aggregators
+    # Key-gated sources ship disabled, referencing keys only by handle.
+    assert aggregators.adzuna.enabled is False
+    assert aggregators.adzuna.app_id_handle == "adzuna_app_id"
+    assert aggregators.adzuna.app_key_handle == "adzuna_app_key"
+    assert aggregators.adzuna.country == "us"
+    assert aggregators.usajobs.enabled is False
+    assert aggregators.usajobs.email == ""
+    assert aggregators.usajobs.api_key_handle == "usajobs"
+
+
+def test_aggregators_section_loads() -> None:
+    config = Config.model_validate(
+        {
+            "aggregators": {
+                "adzuna": {"enabled": True, "country": "gb"},
+                "usajobs": {"enabled": True, "email": "sam@example.test"},
+            }
+        }
+    )
+    assert config.aggregators.adzuna.enabled is True
+    assert config.aggregators.adzuna.country == "gb"
+    # Unset handles keep their defaults.
+    assert config.aggregators.adzuna.app_id_handle == "adzuna_app_id"
+    assert config.aggregators.usajobs.enabled is True
+    assert config.aggregators.usajobs.email == "sam@example.test"
+
+
 def test_values_override_defaults() -> None:
     config = Config.model_validate(
         {
