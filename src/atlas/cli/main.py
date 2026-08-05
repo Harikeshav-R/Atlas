@@ -24,6 +24,7 @@ from atlas.ai.base import LLMError
 from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.coverletter import render_cover_letter_outcome
+from atlas.cli.daemon import render_daemon_status
 from atlas.cli.doctor import render_report, run_doctor
 from atlas.cli.matching import render_score
 from atlas.cli.materials import render_open_outcome, render_rerender_outcome
@@ -57,9 +58,14 @@ from atlas.cli.tracking import (
 )
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
+from atlas.config.paths import pid_file
 from atlas.config.secrets import default_secret_store
 from atlas.coverletter.errors import CoverLetterError
 from atlas.coverletter.service import write_application_cover_letter
+from atlas.daemon.errors import DaemonAlreadyRunningError, DaemonNotRunningError
+from atlas.daemon.poll import run_scoring_poll
+from atlas.daemon.scheduler import default_scheduler
+from atlas.daemon.service import daemon_status, start_daemon, stop_daemon
 from atlas.db import initialize_database, session_scope
 from atlas.logging import setup_logging
 from atlas.matching.errors import MatchingError
@@ -131,6 +137,13 @@ status_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(status_app)
+
+daemon_app = typer.Typer(
+    name="daemon",
+    help="Run and control the background scheduler.",
+    no_args_is_help=True,
+)
+app.add_typer(daemon_app)
 
 
 @app.callback()
@@ -965,3 +978,72 @@ def list_applications_command(
         print_json_line(report.model_dump_json(indent=2))
     else:
         console.print(render_applications(report))
+
+
+@daemon_app.command("start")
+def daemon_start() -> None:
+    """Start the background scheduler (foreground, blocking) (PROJECT.md §4.1, §9).
+
+    Runs Atlas's scheduled work — currently the scoring poll, which clears the
+    fit-score backlog against the active profile on the ``[discovery]``
+    ``poll_interval_minutes`` interval. This blocks the terminal until stopped
+    (``atlas daemon stop`` or Ctrl-C); background it with your OS service manager.
+    Exits ``1`` if config/secrets can't load or a daemon is already running.
+    """
+    try:
+        config = load_config()
+        store = default_secret_store()
+    except ConfigError as exc:
+        error_console.print(f"[error]atlas daemon start:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    provider = build_provider_chain(config.ai, store)
+    engine = _open_database()
+
+    def run() -> None:
+        """Run one scoring poll in its own short transaction."""
+        with session_scope(engine) as session:
+            run_scoring_poll(session, provider=provider)
+
+    try:
+        start_daemon(
+            pid_file(),
+            config.discovery,
+            scheduler=default_scheduler(),
+            run=run,
+        )
+    except DaemonAlreadyRunningError as exc:
+        error_console.print(f"[error]atlas daemon start:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    finally:
+        engine.dispose()
+
+
+@daemon_app.command("stop")
+def daemon_stop() -> None:
+    """Stop the running background scheduler (PROJECT.md §9).
+
+    Signals the daemon process to shut down and clears its PID file. Exits ``1``
+    if no daemon is running.
+    """
+    try:
+        pid = stop_daemon(pid_file())
+    except DaemonNotRunningError as exc:
+        error_console.print(f"[error]atlas daemon stop:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[success]Stopped the daemon[/success] (pid {pid}).")
+
+
+@daemon_app.command("status")
+def daemon_status_command(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the daemon status as JSON for scripting instead of text.",
+    ),
+) -> None:
+    """Report whether the background scheduler is running (PROJECT.md §9)."""
+    status = daemon_status(pid_file())
+    if as_json:
+        print_json_line(status.model_dump_json(indent=2))
+    else:
+        console.print(render_daemon_status(status))

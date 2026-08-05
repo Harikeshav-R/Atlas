@@ -19,6 +19,7 @@ from atlas.config.paths import (
     config_dir,
     config_file,
     data_dir,
+    pid_file,
     state_dir,
 )
 from atlas.config.schema import (
@@ -26,6 +27,7 @@ from atlas.config.schema import (
     AiConfig,
     ClaudeCodeBackend,
     Config,
+    DiscoveryConfig,
     LoggingConfig,
     OpenRouterBackend,
 )
@@ -45,6 +47,7 @@ __all__ = [
     "Config",
     "ConfigError",
     "ConfigValidationError",
+    "DiscoveryConfig",
     "KeyringUnavailableError",
     "LoggingConfig",
     "OpenRouterBackend",
@@ -55,6 +58,7 @@ __all__ = [
     "data_dir",
     "default_secret_store",
     "load_config",
+    "pid_file",
     "resolve_api_key",
     "save_config",
     "select_backend",

@@ -9,14 +9,13 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-04 (the **Tailor workspace** + background-worker action
-  wiring landed — `atlas tui`'s tailor/cover/re-render/open run in Textual thread
-  workers; **Phase 1 item #6 is DONE — the core loop is complete**. Phase 2
-  (discovery daemon) is next)
-- **Current phase:** Phase 1 — Core loop ✅ **complete** (onboarding · master resume
-  · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · app
-  tracking + full TUI all landed). **Phase 2 — Discovery & background** is next
-  (daemon + scheduler + IPC).
+- **Last updated:** 2026-08-04 (**Phase 2 has begun** — the **daemon skeleton +
+  scheduler** landed: `atlas.daemon` + `atlas daemon start|stop|status`, running a
+  background scoring poll over the fit-score backlog. The daemon's IPC surface +
+  discovery-source polling, then the ATS/aggregator adapters, come next)
+- **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler ✅ —
+  APScheduler process, `[discovery]` config, PID-file lifecycle, score-backlog
+  poll; **IPC + discovery adapters next**). Phase 1 core loop ✅ complete.
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -25,18 +24,24 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 1 (the core loop) is complete** — item #6 landed in full: the tracking state machine +
-CLI, the four browse/track TUI screens, and now the **Tailor workspace** with its background
-thread-worker actions (tailor / cover / re-render / open). Atlas can now, end to end: onboard →
-ingest a master resume → scrape a posting → score it → tailor a resume + cover letter → render
-PDFs → track the application through its pipeline, all from the CLI **or** the TUI.
+**Phase 2 (Discovery & background) has begun.** The **daemon skeleton + scheduler** landed
+(see "What has landed"): `atlas.daemon` is a long-running APScheduler process
+(`atlas daemon start|stop|status`) that runs one scheduled job today — the **scoring poll**,
+which clears the fit-score backlog against the active profile. This proves the process +
+scheduler + hermetic-testability pattern; there are no discovery-source adapters yet, so the
+poll's real work is scoring, not fetching.
 
-**Do Phase 2 next: Discovery & background** ([PROJECT.md §15](./PROJECT.md#15-phased-roadmap),
-§5.4). The first item is the **daemon + scheduler + IPC** (`atlas.daemon`, PROJECT.md §4.1) — a
-long-running APScheduler process that polls job sources, AI-scores new postings, and exposes a
-local IPC surface to the TUI. Then the **company watchlist + ATS adapters** (Greenhouse, Lever,
-Ashby, Workday), the **aggregator adapters** + saved searches, the scored **Discover** queue in
-the TUI, and **multiple profiles** fully wired.
+**Do these next to grow the daemon (PROJECT.md §4.1, §5.4, §15):**
+1. **IPC surface** — a local socket (Unix domain / Windows named pipe) so the TUI can trigger
+   "poll/tailor now" and stream progress. Follow the `platform/opener.py` seam (a Protocol +
+   `sys.platform`-dispatched, pragma'd transport); a pure `handle_request` is the tested core.
+2. **Company watchlist + ATS adapters** (Greenhouse, Lever, Ashby, Workday) — the first real
+   discovery sources. Needs a source-attribution variant of `add_posting` (today it hardwires
+   the `url` source) and job-source repository functions (list-enabled, stamp `last_polled_at`).
+3. **Aggregator adapters** + saved keyword searches; the scored **Discover** queue in the TUI;
+   **multiple profiles** fully wired. Add the "owned by" claim convention (PROJECT.md §4.1) once
+   the daemon and TUI both write discovery rows, plus a `busy_timeout` PRAGMA.
+4. **Desktop notifications** (`desktop-notifier`, §5.16) for new high-fit matches / deadlines.
 
 > **Deferred Phase-1 depth (optional, revisit as needed — not blockers for Phase 2):**
 > **PR 2b — tailoring depth**: `honesty_validate` traceability (§11), AI-phrase scrub (§5.7
@@ -88,6 +93,33 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 2 · Daemon skeleton + scheduler — `atlas.daemon` + `atlas daemon start|stop|status`
+(the first Phase 2 feature — the background scheduler):
+
+- `atlas.daemon.poll`: `run_scoring_poll(session, *, provider, clock=utcnow)` — the pure
+  scheduled job. It scores every posting with no `MatchScore` yet (via the new
+  `matching.repository.list_unscored_postings`) against the active profile, **best-effort per
+  posting** (a `MatchingError` — no active profile / no master resume / AI failure — is counted
+  and skipped, not fatal), returning a `PollOutcome` (scored / skipped). Pure over the session →
+  tested directly with `FakeLLMProvider`.
+- `atlas.daemon.scheduler`: a `Scheduler` Protocol (the injectable seam) + the pure
+  `register_poll_job` (wires the poll on an `interval` trigger from
+  `config.discovery.poll_interval_minutes`, clamped ≥ 1) + `default_scheduler` — a
+  `# pragma: no cover` factory that **lazily** imports APScheduler and returns a
+  `BlockingScheduler`, so the hermetic suite never imports the scheduler stack.
+- `atlas.daemon.service`: the lifecycle — `start_daemon` (refuse-if-running → write PID →
+  register job → `scheduler.start()`), `stop_daemon` (signal + clear PID), `daemon_status`
+  (running/stopped, stale-PID-aware), and `read_pid`/`write_pid`. The OS process ops
+  (`current_pid`/`is_running`/`terminate`) sit behind an injectable `ProcessControl` seam whose
+  real `os.kill`-based impl is pragma'd; tests use a `FakeProcessControl`.
+- Config/paths: `DiscoveryConfig` (`[discovery]` — `poll_interval_minutes`, `enable_scraping`;
+  previously ignored-by-design) + `pid_file()` under the state dir.
+- CLI (`atlas.cli.daemon` + `main`): `atlas daemon start` (blocking; refuses if already
+  running), `stop`, `status` (Rich grid / `--json`). New `apscheduler` dep (+ mypy override, no
+  stubs). 100% line+branch; `mypy --strict` incl. win32. Verified end-to-end against a temp DB:
+  a poll tick scores the backlog, `status` reflects a live vs. stale PID, and `stop` clears a
+  stale pidfile. The daemon's IPC surface + discovery-source polling are next.
 
 Phase 1 · Tailor workspace + action workers — `atlas.tui` (item #6, PR 3 — **completes item #6
 and the Phase 1 core loop**):
@@ -610,6 +642,6 @@ high-level state.
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ✅ **complete** — onboarding · master resume · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · application tracking (state machine + CLI) · full TUI (Dashboard · Applications/Kanban · Application detail · Posting detail · Tailor workspace with background action workers). Optional depth (PR-2b tailoring / interactive editing) deferred |
-| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 **next** — not started |
+| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon skeleton + scheduler ✅ (APScheduler process · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`); IPC surface, ATS/aggregator adapters, Discover queue, multiple profiles next |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

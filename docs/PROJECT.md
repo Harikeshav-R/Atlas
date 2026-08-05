@@ -1097,7 +1097,15 @@ The document specs everything; build order is phased. Each phase is independentl
   depth — `honesty_validate` / AI-phrase scrub / keyword-gap / diff-mode (§5.7, §5.8, §11).)*
 
 ### Phase 2 — Discovery & background
-- [ ] **Daemon** + scheduler + IPC.
+- [ ] **Daemon** + scheduler + IPC. *(**Scheduler skeleton ✅** `atlas.daemon` — an APScheduler
+  `BlockingScheduler` (behind an injectable `Scheduler` seam; the real one built by a pragma'd,
+  lazy-import factory) running one job today: the **scoring poll** (`run_scoring_poll`) that
+  clears the fit-score backlog (`matching.repository.list_unscored_postings`) against the active
+  profile, best-effort per posting. PID-file lifecycle (`start_daemon`/`stop_daemon`/
+  `daemon_status`, OS ops behind a `ProcessControl` seam), the `[discovery]` config
+  (`poll_interval_minutes`), and `atlas daemon start|stop|status`. **Remaining:** the **IPC
+  surface** (Unix socket / Windows named pipe) for the TUI to trigger work + stream progress, and
+  wiring the poll to real discovery sources once the adapters below land.)*
 - [ ] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday).
 - [ ] **Aggregator** adapters + saved keyword searches.
 - [ ] Dedup + scored **Discover** queue in the TUI.

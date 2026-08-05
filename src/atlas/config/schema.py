@@ -1,13 +1,13 @@
 """Typed schema for Atlas's ``config.toml``.
 
 Only the sections Atlas consumes today are modelled — cross-platform behaviour
-plus the ``[ai]`` backend selection, the ``[render]`` pipeline, and the
-``[tailoring]`` controls. Unknown keys and the not-yet-built sections (the
-``[discovery]``, ``[integrations]``, and ``[notifications]`` blocks from
-PROJECT.md §10) are **ignored** rather than rejected, so a user's fuller config
-still loads while those features are built out in later phases. Every field is
-defaulted, so a missing or empty config file yields a valid default
-:class:`Config`.
+plus the ``[ai]`` backend selection, the ``[render]`` pipeline, the
+``[tailoring]`` controls, and the ``[discovery]`` daemon settings. Unknown keys
+and the not-yet-built sections (the ``[integrations]`` and ``[notifications]``
+blocks from PROJECT.md §10) are **ignored** rather than rejected, so a user's
+fuller config still loads while those features are built out in later phases.
+Every field is defaulted, so a missing or empty config file yields a valid
+default :class:`Config`.
 
 Secrets never appear here: API keys and passwords live in the OS keychain and
 the config references them only by handle (see :mod:`atlas.config.secrets`).
@@ -24,6 +24,7 @@ __all__ = [
     "AiConfig",
     "ClaudeCodeBackend",
     "Config",
+    "DiscoveryConfig",
     "HonestyLevel",
     "LoggingConfig",
     "OpenRouterBackend",
@@ -151,6 +152,23 @@ class TailoringConfig(_Base):
     enforce_one_page: bool = True
 
 
+class DiscoveryConfig(_Base):
+    """The ``[discovery]`` section: the background daemon's polling (PROJECT.md §5.4).
+
+    Attributes:
+        poll_interval_minutes: How often the daemon's scheduled poll runs
+            (PROJECT.md §10). The poll currently scores not-yet-scored postings in
+            the background; discovery-source polling arrives with the ATS/aggregator
+            adapters.
+        enable_scraping: Whether ToS-risky mainstream-board scraping is allowed
+            (PROJECT.md §5.4). Off by default; not consumed yet (scraping is a later,
+            explicitly-opt-in phase), modelled now to match PROJECT.md §10.
+    """
+
+    poll_interval_minutes: int = 120
+    enable_scraping: bool = False
+
+
 class Config(_Base):
     """The top-level Atlas configuration."""
 
@@ -158,3 +176,4 @@ class Config(_Base):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     render: RenderConfig = Field(default_factory=RenderConfig)
     tailoring: TailoringConfig = Field(default_factory=TailoringConfig)
+    discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
