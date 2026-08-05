@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from atlas.coverletter.repository import get_latest_cover_letter
-from atlas.db.models import Company, JobPosting
-from atlas.matching.repository import get_latest_match_score
+from atlas.db.models import Company, JobPosting, JobSource
+from atlas.matching.repository import get_latest_match_score, list_scored_postings
 from atlas.profiles.repository import get_active_profile
 from atlas.resume.repository import get_blocks, get_latest_master_resume
 from atlas.tailor.repository import get_application, get_latest_tailored_resume
@@ -40,6 +40,8 @@ __all__ = [
     "ApplicationDetail",
     "DashboardReport",
     "DeadlineEntry",
+    "DiscoverQueue",
+    "DiscoverRow",
     "MaterialSummary",
     "RecentApplication",
     "ResumeBlockView",
@@ -49,6 +51,7 @@ __all__ = [
     "TimelineEntry",
     "build_application_detail",
     "build_dashboard_report",
+    "build_discover_queue",
     "build_tailor_workspace",
 ]
 
@@ -433,3 +436,92 @@ def build_tailor_workspace(session: Session, application_id: int) -> TailorWorks
         cover_version=letter.version if letter is not None else None,
         cover_path=letter.rendered_pdf_ref if letter is not None else None,
     )
+
+
+class DiscoverRow(BaseModel):
+    """One row of the Discover queue — a scored posting (PROJECT.md §8, screen #2).
+
+    Attributes:
+        id: The posting's id (the key the row's actions target).
+        title: The role title.
+        company: The hiring company's name.
+        location: The posting's location, if any.
+        salary: A display string for the stated compensation (``"—"`` when none).
+        source: Where the posting came from (the job source's type).
+        score: The latest fit score (0-100).
+        verdict: The latest fit verdict.
+        rationale: The AI's short explanation of the score (shown in the detail pane).
+        queue_status: The posting's triage state (``new`` / ``saved``).
+    """
+
+    id: int
+    title: str
+    company: str
+    location: str | None
+    salary: str
+    source: str
+    score: int
+    verdict: str
+    rationale: str
+    queue_status: str
+
+
+class DiscoverQueue(BaseModel):
+    """The Discover screen's view model: the ranked scored-posting queue.
+
+    Attributes:
+        rows: One :class:`DiscoverRow` per scored, non-dismissed posting, ranked by
+            fit (highest score first).
+    """
+
+    rows: list[DiscoverRow]
+
+
+def _salary_display(salary: dict[str, object]) -> str:
+    """Render a posting's ``salary`` JSON as a compact display string.
+
+    Uses ``min`` / ``max`` / ``currency`` when present, in any combination; returns
+    a muted ``"—"`` when the posting stated no compensation.
+    """
+    low = salary.get("min")
+    high = salary.get("max")
+    currency = salary.get("currency")
+    if low is None and high is None:
+        return "—"
+    if low is not None and high is not None:
+        amount = f"{low} - {high}"
+    else:
+        amount = str(low if low is not None else high)
+    return f"{amount} {currency}" if currency is not None else amount
+
+
+def build_discover_queue(session: Session) -> DiscoverQueue:
+    """Build the :class:`DiscoverQueue` from the ranked scored postings.
+
+    Pure over the session: maps
+    :func:`atlas.matching.repository.list_scored_postings` (already ranked by fit,
+    excluding dismissed) into rows, resolving each posting's company name, its
+    source type, and a salary display string.
+    """
+    rows: list[DiscoverRow] = []
+    for posting, score in list_scored_postings(session):
+        assert posting.id is not None  # persisted rows always have an id
+        company = session.get(Company, posting.company_id)
+        assert company is not None  # a non-null foreign key never misses
+        source = session.get(JobSource, posting.source_id)
+        assert source is not None  # a non-null foreign key never misses
+        rows.append(
+            DiscoverRow(
+                id=posting.id,
+                title=posting.title,
+                company=company.name,
+                location=posting.location,
+                salary=_salary_display(posting.salary),
+                source=source.type,
+                score=score.score,
+                verdict=score.verdict,
+                rationale=score.rationale,
+                queue_status=posting.queue_status,
+            )
+        )
+    return DiscoverQueue(rows=rows)
