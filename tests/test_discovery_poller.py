@@ -138,14 +138,19 @@ def test_poll_best_effort_skips_a_failing_source(db_engine: Engine) -> None:
 
 def test_poll_skips_unknown_provider(db_engine: Engine) -> None:
     # A source whose provider has no adapter → UnknownAtsError (a DiscoveryError)
-    # is caught and counted, never fetched.
+    # is caught and counted, never fetched. smartrecruiters is documented but not
+    # yet registered (PROJECT.md §5.4-A).
     with session_scope(db_engine) as session:
         company = get_or_create_company(session, name="Acme")
         assert company.id is not None
         session.add(
             JobSource(
                 type="ats",
-                config={"ats_type": "lever", "board_token": "acme", "company_id": company.id},
+                config={
+                    "ats_type": "smartrecruiters",
+                    "board_token": "acme",
+                    "company_id": company.id,
+                },
             )
         )
         session.flush()
