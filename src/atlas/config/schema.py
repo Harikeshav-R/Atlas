@@ -2,11 +2,11 @@
 
 Only the sections Atlas consumes today are modelled — cross-platform behaviour
 plus the ``[ai]`` backend selection, the ``[render]`` pipeline, the
-``[tailoring]`` controls, the ``[discovery]`` daemon settings, and the
-``[aggregators]`` key-gated job sources. Unknown keys and the not-yet-built
-sections (the ``[integrations]`` and ``[notifications]`` blocks from PROJECT.md
-§10) are **ignored** rather than rejected, so a user's fuller config still loads
-while those features are built out in later phases.
+``[tailoring]`` controls, the ``[discovery]`` daemon settings, the
+``[aggregators]`` key-gated job sources, and the ``[notifications]`` desktop
+alerts. Unknown keys and the not-yet-built sections (the ``[integrations]`` block
+from PROJECT.md §10) are **ignored** rather than rejected, so a user's fuller
+config still loads while those features are built out in later phases.
 Every field is defaulted, so a missing or empty config file yields a valid
 default :class:`Config`.
 
@@ -30,6 +30,7 @@ __all__ = [
     "DiscoveryConfig",
     "HonestyLevel",
     "LoggingConfig",
+    "NotificationsConfig",
     "OpenRouterBackend",
     "RenderConfig",
     "TailoringConfig",
@@ -221,6 +222,34 @@ class AggregatorsConfig(_Base):
     usajobs: UsajobsConfig = Field(default_factory=UsajobsConfig)
 
 
+class NotificationsConfig(_Base):
+    """The ``[notifications]`` section: the daemon's desktop notifications (§5.16).
+
+    The daemon posts native OS notifications for new high-fit matches and upcoming
+    deadlines even when the TUI is closed (PROJECT.md §4.1, §5.16). Notifications
+    carry no secret, so nothing is kept in the keychain. Ships **disabled** — like
+    ``[aggregators]`` — so a fresh install is quiet until the user opts in.
+
+    Attributes:
+        enabled: Whether the daemon posts desktop notifications at all.
+        min_match_score: Only notify for matches at or above this fit score
+            (0-100). The starting default of ``80`` is validated against real usage
+            (PROJECT.md §17).
+        deadline_lead_hours: Notify about an OA/interview deadline once it is within
+            this many hours.
+        quiet_hours: A ``"HH:MM-HH:MM"`` window during which notifications are
+            suppressed (wraps past midnight, e.g. ``"22:00-08:00"``); empty disables
+            quiet hours.
+        daily_cap: The most notifications to post in a single day, to avoid spam.
+    """
+
+    enabled: bool = False
+    min_match_score: int = 80
+    deadline_lead_hours: int = 24
+    quiet_hours: str = "22:00-08:00"
+    daily_cap: int = 20
+
+
 class Config(_Base):
     """The top-level Atlas configuration."""
 
@@ -230,3 +259,4 @@ class Config(_Base):
     tailoring: TailoringConfig = Field(default_factory=TailoringConfig)
     discovery: DiscoveryConfig = Field(default_factory=DiscoveryConfig)
     aggregators: AggregatorsConfig = Field(default_factory=AggregatorsConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
