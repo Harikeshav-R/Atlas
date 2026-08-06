@@ -397,6 +397,27 @@ class FakeUrlOpener:
             raise self._raises
 
 
+class FakeNotifier:
+    """A scripted, offline :class:`~atlas.platform.notifier.Notifier` for tests.
+
+    Records every ``(title, message)`` it is asked to post on
+    :attr:`notifications` (instead of posting a real desktop notification), so the
+    daemon's notification flow is testable without side effects (AGENTS.md §6.2).
+    Optionally raises ``raises`` to exercise the error path.
+    """
+
+    def __init__(self, *, raises: BaseException | None = None) -> None:
+        """Store an optional exception to raise, and start an empty record."""
+        self._raises = raises
+        self.notifications: list[tuple[str, str]] = []
+
+    def __call__(self, title: str, message: str) -> None:
+        """Record ``(title, message)`` (and raise the scripted exception, if any)."""
+        self.notifications.append((title, message))
+        if self._raises is not None:
+            raise self._raises
+
+
 class FakeScheduler:
     """A scripted, offline :class:`~atlas.daemon.scheduler.Scheduler` for tests.
 
