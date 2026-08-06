@@ -10,6 +10,9 @@ __all__ = [
     "DaemonAlreadyRunningError",
     "DaemonError",
     "DaemonNotRunningError",
+    "IpcError",
+    "IpcProtocolError",
+    "IpcUnavailableError",
 ]
 
 
@@ -35,3 +38,27 @@ class DaemonNotRunningError(DaemonError):
     def __init__(self) -> None:
         """Build a human-readable message."""
         super().__init__("The daemon is not running.")
+
+
+class IpcError(DaemonError):
+    """Base class for the daemon's local IPC surface errors (PROJECT.md §4.1)."""
+
+
+class IpcProtocolError(IpcError):
+    """Raised when an IPC message cannot be decoded (malformed / unknown shape).
+
+    Carries a secret-free, human-readable message; the transport catches this so
+    garbled bytes from one connection never crash the daemon's accept loop.
+    """
+
+
+class IpcUnavailableError(IpcError):
+    """Raised when an IPC client cannot reach the daemon.
+
+    The daemon is not running, or its socket is missing/unreachable — a normal,
+    recoverable condition the CLI/TUI reports with a fix hint, not a crash.
+    """
+
+    def __init__(self) -> None:
+        """Build a human-readable message."""
+        super().__init__("The daemon is not running or its socket is unavailable.")
