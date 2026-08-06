@@ -6,7 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from atlas.config import cache_dir, config_dir, config_file, data_dir, pid_file, state_dir
+from atlas.config import (
+    cache_dir,
+    config_dir,
+    config_file,
+    data_dir,
+    pid_file,
+    socket_file,
+    state_dir,
+)
 
 
 @pytest.mark.parametrize(
@@ -52,3 +60,12 @@ def test_pid_file_lives_under_state_dir(monkeypatch: pytest.MonkeyPatch) -> None
     )
     assert pid_file() == Path("/fake/atlas/state/daemon.pid")
     assert pid_file().parent == state_dir()
+
+
+def test_socket_file_lives_under_state_dir(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "atlas.config.paths.platformdirs.user_state_dir",
+        lambda app_name: f"/fake/{app_name}/state",
+    )
+    assert socket_file() == Path("/fake/atlas/state/daemon.socket")
+    assert socket_file().parent == state_dir()
