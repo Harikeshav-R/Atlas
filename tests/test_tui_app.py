@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from textual.widgets import DataTable, Label, OptionList
 
 from atlas.config.schema import RenderConfig, TailoringConfig
@@ -47,6 +48,7 @@ from tests.conftest import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from sqlalchemy.engine import Engine
@@ -767,6 +769,109 @@ async def test_discover_tailor_worker_error_is_handled(db_engine: Engine, tmp_pa
         await pilot.press("w")
         await pilot.pause()
         await pilot.press("t")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+def _scripted_ipc_request(events: Sequence[object]) -> object:
+    """Build a fake ``atlas.tui.app.ipc_request`` that replays ``events``."""
+
+    def fake(socket_path: object, request: object, *, on_event: object) -> None:
+        for event in events:
+            on_event(event)  # type: ignore[operator]
+
+    return fake
+
+
+async def test_discover_poll_now_streams_and_refreshes(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas.daemon.ipc import ProgressEvent, ResultEvent
+
+    events = [
+        ProgressEvent(phase="discovery", stage="start", total=1),
+        ResultEvent(discovered=1, scored=1, skipped=0, failed_sources=0, inactive=0, claimed=0),
+    ]
+    monkeypatch.setattr("atlas.tui.app.ipc_request", _scripted_ipc_request(events))
+    app = AtlasApp(engine=db_engine, socket_path=tmp_path / "daemon.socket")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("g")  # poll now
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        # The poll finished and the app stayed on Discover (queue refreshed).
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_poll_now_unavailable_without_socket(db_engine: Engine) -> None:
+    # No socket path → the daemon isn't reachable, so `g` is a safe no-op warning.
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("g")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_poll_now_without_result_still_refreshes(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A successful poll that streamed only progress (no ResultEvent): the screen
+    # refreshes without a summary toast (the defensive result-is-None path).
+    from atlas.daemon.ipc import ProgressEvent
+
+    events = [ProgressEvent(phase="scoring", stage="done", done=0)]
+    monkeypatch.setattr("atlas.tui.app.ipc_request", _scripted_ipc_request(events))
+    app = AtlasApp(engine=db_engine, socket_path=tmp_path / "daemon.socket")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_poll_now_error_event_is_handled(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas.daemon.ipc import ErrorEvent
+
+    events = [ErrorEvent(message="the poll failed")]
+    monkeypatch.setattr("atlas.tui.app.ipc_request", _scripted_ipc_request(events))
+    app = AtlasApp(engine=db_engine, socket_path=tmp_path / "daemon.socket")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("g")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_poll_now_worker_error_is_handled(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The daemon is unreachable → ipc_request raises inside the worker; the app
+    # survives the WorkerState.ERROR and stays on the Discover screen.
+    from atlas.daemon.errors import IpcUnavailableError
+
+    def refuse(socket_path: object, request: object, *, on_event: object) -> None:
+        raise IpcUnavailableError
+
+    monkeypatch.setattr("atlas.tui.app.ipc_request", refuse)
+    app = AtlasApp(engine=db_engine, socket_path=tmp_path / "daemon.socket")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("g")
         await app.workers.wait_for_complete()
         await pilot.pause()
         assert isinstance(pilot.app.screen, DiscoverScreen)

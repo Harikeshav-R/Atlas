@@ -19,6 +19,7 @@ from textual.app import App
 from textual.binding import Binding, BindingType
 
 from atlas.coverletter.service import write_application_cover_letter
+from atlas.daemon.ipc import IpcRequest, ipc_request
 from atlas.db import session_scope
 from atlas.materials.service import open_application, rerender_application
 from atlas.platform.browser import default_url_opener
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from atlas.ai.base import LLMProvider
     from atlas.config.schema import RenderConfig, TailoringConfig
     from atlas.coverletter.service import CoverLetterOutcome
+    from atlas.daemon.ipc import IpcEvent
     from atlas.db.models import JobPosting
     from atlas.matching.structure import QueueStatus
     from atlas.materials.service import OpenOutcome, RerenderOutcome
@@ -79,6 +81,7 @@ class AtlasApp(App[None]):
         tailoring: TailoringConfig | None = None,
         render_config: RenderConfig | None = None,
         renders_dir: Path | None = None,
+        socket_path: Path | None = None,
     ) -> None:
         """Store the engine and the (optional) action boundaries.
 
@@ -87,7 +90,10 @@ class AtlasApp(App[None]):
         ``tailoring`` + ``render_config``; when any is absent the app runs
         **browse-only** and those actions are disabled (see :attr:`actions_enabled`).
         The ``opener`` (PDFs) and ``url_opener`` (apply URLs) are always available
-        (opening needs no AI).
+        (opening needs no AI). ``socket_path`` is the daemon's IPC socket
+        (:func:`atlas.config.paths.socket_file`); when set, the Discover screen's
+        "poll now" action can trigger the daemon over IPC, and when ``None`` that
+        action is a safe no-op (the daemon isn't reachable).
         """
         super().__init__()
         self._engine = engine
@@ -98,6 +104,7 @@ class AtlasApp(App[None]):
         self._tailoring = tailoring
         self._render_config = render_config
         self._renders_dir = renders_dir
+        self._socket_path = socket_path
 
     @property
     def actions_enabled(self) -> bool:
@@ -166,6 +173,24 @@ class AtlasApp(App[None]):
             url = get_posting(session, posting_id).apply_url
         self._url_opener(url)
         return url
+
+    @property
+    def socket_path(self) -> Path | None:
+        """The daemon's IPC socket path, or ``None`` if the app has none."""
+        return self._socket_path
+
+    def run_poll_now(self, on_event: Callable[[IpcEvent], None]) -> None:
+        """Ask the daemon to poll now over IPC, streaming events; blocking.
+
+        Runs inside a Textual thread worker (the IPC round-trip blocks on the
+        socket). Requires :attr:`socket_path`; the caller guards on it first.
+
+        Raises:
+            IpcUnavailableError: If the daemon is not running / socket unreachable.
+            IpcProtocolError: If the daemon sends an undecodable event.
+        """
+        assert self._socket_path is not None
+        ipc_request(self._socket_path, IpcRequest(action="poll"), on_event=on_event)
 
     # --- blocking service calls (run inside a Textual thread worker) --------------
     #

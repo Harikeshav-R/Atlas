@@ -378,6 +378,7 @@ def tui() -> None:
         renderer=actions.renderer,
         tailoring=actions.tailoring,
         render_config=actions.render_config,
+        socket_path=socket_file(),
     )
     try:
         app_instance.run()  # pragma: no cover - launches the interactive Textual app
