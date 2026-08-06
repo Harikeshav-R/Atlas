@@ -1115,15 +1115,19 @@ The document specs everything; build order is phased. Each phase is independentl
   depth — `honesty_validate` / AI-phrase scrub / keyword-gap / diff-mode (§5.7, §5.8, §11).)*
 
 ### Phase 2 — Discovery & background
-- [ ] **Daemon** + scheduler + IPC. *(**Scheduler skeleton ✅** `atlas.daemon` — an APScheduler
-  `BlockingScheduler` (behind an injectable `Scheduler` seam; the real one built by a pragma'd,
-  lazy-import factory) running one job today: the **scoring poll** (`run_scoring_poll`) that
-  clears the fit-score backlog (`matching.repository.list_unscored_postings`) against the active
-  profile, best-effort per posting. PID-file lifecycle (`start_daemon`/`stop_daemon`/
-  `daemon_status`, OS ops behind a `ProcessControl` seam), the `[discovery]` config
-  (`poll_interval_minutes`), and `atlas daemon start|stop|status`. **Remaining:** the **IPC
-  surface** (Unix socket / Windows named pipe) for the TUI to trigger work + stream progress, and
-  wiring the poll to real discovery sources once the adapters below land.)*
+- [x] **Daemon** + scheduler + IPC. *(✅ `atlas.daemon` — an APScheduler `BlockingScheduler`
+  (behind an injectable `Scheduler` seam; the real one built by a pragma'd, lazy-import factory)
+  running the tick — discovery + aggregator + **scoring poll** (`run_scoring_poll`) clearing the
+  fit-score backlog for every profile, best-effort per posting. PID-file lifecycle
+  (`start_daemon`/`stop_daemon`/`daemon_status`, OS ops behind a `ProcessControl` seam), the
+  `[discovery]` config (`poll_interval_minutes`), and `atlas daemon start|stop|status`. **IPC
+  surface** (`atlas.daemon.ipc`) — a local socket (AF_UNIX on POSIX, loopback TCP on Windows,
+  dispatched on `sys.platform` behind the `platform/opener.py` seam) with a newline-JSON protocol
+  and a pure `handle_request` core (`status` / `poll`, reusing the daemon's claim owner). A
+  progress-callback seam threaded through all three polls streams a poll live; the framing is pure
+  and fully tested against an in-memory fake, only the real socket I/O pragma'd. `atlas daemon
+  poll` (CLI client) and a TUI `g` "poll now" binding drive it. **Remaining Phase-2 work:** desktop
+  notifications.)*
 - [x] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday). *(✅ an
   extensible `AtsAdapter` Protocol + registry (`atlas.discovery.ats`) with URL-based provider
   detection; a watchlist on the existing `company`/`job_source` tables (no migration);
@@ -1228,6 +1232,7 @@ The document specs everything; build order is phased. Each phase is independentl
 | Prompt storage | **Jinja2** templates (not plain Python constants). |
 | Structured-output recovery | `complete_json()` layered repair + JSON-mode→prompt fallback (§5.1). |
 | Tailoring approach | **Diff mode** preferred, full-output fallback; deterministic post-LLM safety nets (§5.7). |
+| Daemon IPC transport (§4.1) | **Unix-domain socket on POSIX, loopback TCP on Windows** (port in a `daemon.socket` sidecar), dispatched on `sys.platform` behind the `platform/opener.py` seam pattern. Chosen over a Windows named pipe to stay **stdlib-only** (no `pywin32`); the whole real transport is pragma'd, so the added branch costs no coverage. A newline-delimited-JSON protocol with a pure `handle_request` core streams progress. |
 
 ### 18.2 Remaining open questions (revisit during build)
 
