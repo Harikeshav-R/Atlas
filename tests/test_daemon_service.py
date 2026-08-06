@@ -22,10 +22,16 @@ from atlas.daemon.service import (
     stop_daemon,
     write_pid,
 )
-from tests.conftest import FakeProcessControl, FakeScheduler
+from tests.conftest import FakeIpcServer, FakeProcessControl, FakeScheduler
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from atlas.daemon.ipc import IpcRequest
+
+
+def _noop_dispatch(_request: IpcRequest, _emit: object) -> None:
+    """A dispatch that does nothing (the lifecycle tests don't exercise handling)."""
 
 
 def test_write_then_read_pid_round_trip(tmp_path: Path) -> None:
@@ -117,6 +123,71 @@ def test_start_overwrites_stale_pidfile(tmp_path: Path) -> None:
         control=FakeProcessControl(pid=777, alive=set()),
     )
     assert read_pid(pid_path) == 777
+    assert scheduler.started is True
+
+
+def test_start_serves_ipc_before_scheduler_and_stops_after(tmp_path: Path) -> None:
+    pid_path = tmp_path / "daemon.pid"
+    socket_path = tmp_path / "daemon.socket"
+    order: list[str] = []
+
+    class _RecordingIpcServer(FakeIpcServer):
+        def serve(self, socket_path: Path, dispatch: object) -> None:
+            order.append("ipc.serve")
+            super().serve(socket_path, dispatch)
+
+    class _RecordingScheduler(FakeScheduler):
+        def start(self) -> None:
+            order.append("scheduler.start")
+            super().start()
+
+    ipc = _RecordingIpcServer()
+    start_daemon(
+        pid_path,
+        DiscoveryConfig(),
+        scheduler=_RecordingScheduler(),
+        run=lambda: None,
+        control=FakeProcessControl(pid=1),
+        ipc_server=ipc,
+        dispatch=_noop_dispatch,
+        socket_path=socket_path,
+    )
+    assert order == ["ipc.serve", "scheduler.start"]
+    assert ipc.served == [socket_path]
+    assert ipc.stopped is True  # stopped after the (fake, non-blocking) scheduler returns
+
+
+def test_start_unlinks_stale_socket_before_serving(tmp_path: Path) -> None:
+    pid_path = tmp_path / "daemon.pid"
+    socket_path = tmp_path / "daemon.socket"
+    socket_path.write_text("stale", encoding="utf-8")  # a leftover socket file
+    ipc = FakeIpcServer()
+    start_daemon(
+        pid_path,
+        DiscoveryConfig(),
+        scheduler=FakeScheduler(),
+        run=lambda: None,
+        control=FakeProcessControl(pid=1),
+        ipc_server=ipc,
+        dispatch=_noop_dispatch,
+        socket_path=socket_path,
+    )
+    # The stale file was removed before serve (the fake never re-creates it).
+    assert not socket_path.exists()
+    assert ipc.served == [socket_path]
+
+
+def test_start_without_ipc_skips_serving(tmp_path: Path) -> None:
+    # The plain lifecycle path (no IPC args) still starts the scheduler.
+    pid_path = tmp_path / "daemon.pid"
+    scheduler = FakeScheduler()
+    start_daemon(
+        pid_path,
+        DiscoveryConfig(),
+        scheduler=scheduler,
+        run=lambda: None,
+        control=FakeProcessControl(pid=1),
+    )
     assert scheduler.started is True
 
 

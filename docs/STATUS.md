@@ -9,20 +9,22 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-05 (**multiple profiles fully wired** — scoring + the
-  Discover queue are now per-profile (reading `match_score.profile_id`), the daemon
-  scores **every** profile's backlog each tick behind a row-level `score_claim` lease,
-  a TUI profile switcher (`p`) re-ranks the queue in place, `atlas score --profile`
-  lands, and a `busy_timeout` PRAGMA covers daemon/TUI contention. Earlier the same
-  phase: the daemon + scheduler, all four ATS adapters + watchlist, the TUI Discover
-  queue, and the aggregator adapters (free + key-gated). **Next:** the daemon IPC
-  surface, then desktop notifications)
-- **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler ✅;
-  company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby ·
-  Workday); scored Discover queue in the TUI ✅; **aggregator adapters + saved
-  searches ✅** — free (RemoteOK · Remotive) and key-gated (Adzuna · USAJOBS);
-  **multiple profiles fully wired ✅**; **IPC surface next**). Phase 1 core loop ✅
-  complete.
+- **Last updated:** 2026-08-06 (**daemon IPC surface** — a local socket
+  (`atlas.daemon.ipc`, PROJECT.md §4.1) so the TUI/CLI can trigger on-demand daemon
+  work and stream its progress: a newline-delimited-JSON protocol + pure
+  `handle_request` core (`status` / `poll`), a `sys.platform`-dispatched transport
+  (AF_UNIX / loopback TCP) behind the `platform/opener.py` seam pattern, a
+  progress-callback seam threaded through all three polls, `atlas daemon poll`, and
+  a TUI "poll now" binding (`g`) on the Discover screen. Earlier the same phase: the
+  daemon + scheduler, all four ATS adapters + watchlist, the TUI Discover queue, the
+  aggregator adapters (free + key-gated), and multiple profiles fully wired.
+  **Next:** desktop notifications — the last Phase-2 item)
+- **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler +
+  **IPC ✅**; company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever ·
+  Ashby · Workday); scored Discover queue in the TUI ✅; **aggregator adapters +
+  saved searches ✅** — free (RemoteOK · Remotive) and key-gated (Adzuna · USAJOBS);
+  **multiple profiles fully wired ✅**; **desktop notifications next**). Phase 1 core
+  loop ✅ complete.
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -31,23 +33,24 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 2 (Discovery & background) is nearly complete.** The **daemon + scheduler**, the
-**company watchlist + all four ATS adapters** (Greenhouse, Lever, Ashby, Workday), the
+**Phase 2 (Discovery & background) is nearly complete.** The **daemon + scheduler + IPC**,
+the **company watchlist + all four ATS adapters** (Greenhouse, Lever, Ashby, Workday), the
 **scored Discover queue in the TUI**, the **aggregator adapters + saved keyword searches**
-— free (RemoteOK, Remotive) **and key-gated (Adzuna, USAJOBS)** — and now **multiple
-profiles fully wired** have landed (see "What has landed"). The daemon discovers postings
-from both watchlisted ATS boards and per-profile aggregator searches, **scores them for
-every profile** (behind a `score_claim` lease), and `DiscoverScreen` (press `w`) presents
-each profile's ranked queue — switchable in place with `p` — with tailor / dismiss / save /
-open-URL actions, so Journey B (background discovery → review → tailor) works end-to-end
-across strategies and profiles.
+— free (RemoteOK, Remotive) **and key-gated (Adzuna, USAJOBS)** — and **multiple profiles
+fully wired** have landed (see "What has landed"). The daemon discovers postings from both
+watchlisted ATS boards and per-profile aggregator searches, **scores them for every profile**
+(behind a `score_claim` lease), and `DiscoverScreen` (press `w`) presents each profile's
+ranked queue — switchable in place with `p`, refreshable on demand with `g` (poll the daemon
+over IPC) — with tailor / dismiss / save / open-URL actions, so Journey B (background
+discovery → review → tailor) works end-to-end across strategies and profiles.
 
-**Do these next to finish Phase 2 (PROJECT.md §4.1, §15):**
-1. **IPC surface** — a local socket (Unix domain / Windows named pipe) so the TUI can trigger
-   "poll/tailor now" and stream progress. Follow the `platform/opener.py` seam (a Protocol +
-   `sys.platform`-dispatched, pragma'd transport); a pure `handle_request` is the tested core.
-   This is the last unchecked "Daemon + scheduler + IPC" sub-item.
-2. **Desktop notifications** (`desktop-notifier`, §5.16) for new high-fit matches / deadlines.
+**Do this next to finish Phase 2 (PROJECT.md §5.16, §15):**
+1. **Desktop notifications** (`desktop-notifier`, §5.16) fired by the daemon for new high-fit
+   matches / upcoming deadlines even when the TUI is closed — the last unchecked Phase-2
+   item. Follow the platform-seam pattern (`atlas.platform` / `atlas.notify`): a `Notifier`
+   Protocol + a `sys.platform`-appropriate, pragma'd backend (`desktop-notifier` over D-Bus /
+   Notification Center / WinRT) with a no-op fallback, driven from the daemon tick behind the
+   `[notifications]` config (min score, quiet hours, daily cap).
 
 **Smaller aggregator/ATS follow-ups (optional):** the free HN "Who is hiring" / arbeitnow
 aggregators (drop into the `atlas.discovery.aggregators` registry); Lever EU-region boards
@@ -104,6 +107,42 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 2 · Daemon IPC surface — `atlas.daemon.ipc` + `atlas daemon poll` + a TUI "poll now"
+binding (the last "Daemon + scheduler + IPC" sub-item — the TUI/CLI can now drive the daemon
+on demand and watch it work, PROJECT.md §4.1):
+
+- **Wire protocol + pure core** (`atlas.daemon.ipc`): a newline-delimited-JSON protocol — an
+  `IpcRequest` (`status` / `poll`) and a discriminated `IpcEvent` union
+  (`StatusEvent` / `ProgressEvent` / `ResultEvent` / `ErrorEvent`) — with a pure codec
+  (malformed bytes → `IpcProtocolError`, never a crash). `handle_request(..., emit)` is the
+  transport-free tested heart: `status` reports run-state (reusing `daemon_status`); `poll`
+  runs one discovery + aggregator + scoring pass (each in its own session, **reusing the
+  daemon's claim owner** so an on-demand poll never double-scores against the scheduled tick),
+  streaming per-phase progress then a terminal `ResultEvent`; any poll failure becomes an
+  `ErrorEvent`. Poll functions are lazy-imported to avoid a daemon↔discovery cycle.
+- **Transport seam** following `platform/opener.py`: the framing is pure and fully tested
+  against a `BytesIO` duplex fake (server-side `handle_connection`, client-side
+  `stream_events` / `ipc_request`); only the real socket bind/accept/connect carries a
+  justified `# pragma: no cover`. `IpcServer` is the injectable listener (real
+  `_DefaultIpcServer` accepts on a background thread, built by a pragma'd
+  `default_ipc_server()` factory); the transport dispatches on `sys.platform` — AF_UNIX on
+  POSIX, loopback TCP (port sidecar) on Windows — stdlib-only, no new dependency, the AF_UNIX
+  reference guarded for the win32 mypy run.
+- **Progress seam on the polls** (`atlas.daemon.progress`): a `ProgressUpdate` model +
+  `ProgressCallback` + best-effort `emit_progress` (a raising sink is swallowed). All three
+  polls gained an optional `on_progress` (default `None`, existing callers unaffected)
+  emitting start → per-source / per-pair item → done.
+- **Served + wired**: `start_daemon` gained optional `ipc_server` / `dispatch` / `socket_path`
+  (serve before the blocking `scheduler.start()`, stop in `finally`, unlink a stale socket
+  first); `atlas daemon start` builds the dispatch over its own engine/config/provider/owner.
+  New `socket_file()` path helper. **`atlas daemon poll`** streams progress (to stderr) + the
+  summary (`--json`-capable; exits 1 on error / no daemon). TUI: a **`g` "poll now"** binding
+  on `DiscoverScreen` triggers the daemon over IPC in a thread worker, toasting per-phase
+  progress and refreshing the queue (a safe no-op when no daemon socket is set); `AtlasApp`
+  gained an injected `socket_path` + `run_poll_now`.
+- 1140 tests at 100% line+branch; `mypy --strict` incl. win32; no new dependency (stdlib
+  `socket` / `threading`). **Remaining Phase 2:** desktop notifications.
 
 Phase 2 · Multiple profiles fully wired — `atlas.matching` + `atlas.daemon` + `atlas.tui`
 (scoring and the Discover queue go from single-active-profile to per-profile):
@@ -819,6 +858,6 @@ high-level state.
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ✅ **complete** — onboarding · master resume · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · application tracking (state machine + CLI) · full TUI (Dashboard · Applications/Kanban · Application detail · Posting detail · Tailor workspace with background action workers). Optional depth (PR-2b tailoring / interactive editing) deferred |
-| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon + scheduler ✅ (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`); company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby · Workday, on the `atlas.discovery.ats` registry · `run_discovery_poll` discover→score in the daemon · `atlas company add\|list` · `atlas discover`); scored Discover queue in the TUI ✅ (`DiscoverScreen` · `list_scored_postings` · `queue_status` · `UrlOpener`); **aggregator adapters + saved searches ✅** (`atlas.discovery.aggregators` registry · free RemoteOK · Remotive **and key-gated Adzuna · USAJOBS** · per-profile `SavedSearch` sources · `run_aggregator_poll` · `[aggregators]` config · `atlas source add\|list\|key` · aggregator health in `atlas doctor`); **multiple profiles fully wired ✅** (per-profile `list_unscored_postings` / `list_scored_postings` · `score_posting(profile=…)` · daemon scores every profile behind a `score_claim` lease · `atlas score --profile` · TUI profile switcher `p` · `busy_timeout` PRAGMA); IPC surface next |
+| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon + scheduler + **IPC ✅** (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`; **IPC surface** — `atlas.daemon.ipc` newline-JSON protocol + pure `handle_request` · `sys.platform`-dispatched transport (AF_UNIX / loopback TCP) · progress-callback seam on all three polls · `atlas daemon poll` · TUI `g` "poll now"); company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby · Workday, on the `atlas.discovery.ats` registry · `run_discovery_poll` discover→score in the daemon · `atlas company add\|list` · `atlas discover`); scored Discover queue in the TUI ✅ (`DiscoverScreen` · `list_scored_postings` · `queue_status` · `UrlOpener`); **aggregator adapters + saved searches ✅** (`atlas.discovery.aggregators` registry · free RemoteOK · Remotive **and key-gated Adzuna · USAJOBS** · per-profile `SavedSearch` sources · `run_aggregator_poll` · `[aggregators]` config · `atlas source add\|list\|key` · aggregator health in `atlas doctor`); **multiple profiles fully wired ✅** (per-profile `list_unscored_postings` / `list_scored_postings` · `score_posting(profile=…)` · daemon scores every profile behind a `score_claim` lease · `atlas score --profile` · TUI profile switcher `p` · `busy_timeout` PRAGMA); desktop notifications next |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

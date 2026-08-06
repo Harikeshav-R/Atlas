@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from atlas.config.schema import DiscoveryConfig
+    from atlas.daemon.ipc import Dispatch, IpcServer
     from atlas.daemon.scheduler import Scheduler
 
 __all__ = [
@@ -160,14 +161,24 @@ def start_daemon(
     scheduler: Scheduler,
     run: Callable[[], None],
     control: ProcessControl | None = None,
+    ipc_server: IpcServer | None = None,
+    dispatch: Dispatch | None = None,
+    socket_path: Path | None = None,
 ) -> None:
     """Register the poll job and run the scheduler, recording the pid.
 
     Refuses to start if a live daemon is already recorded. Writes this process's
-    pid, registers the scoring poll at the configured interval, then starts the
-    scheduler (blocking). All orchestration up to the blocking start is tested with
-    a fake scheduler + fake control; only ``scheduler.start()`` is a real edge.
-    ``control`` defaults to :data:`default_process_control`, resolved at call time.
+    pid, optionally serves the IPC surface, registers the scoring poll at the
+    configured interval, then starts the scheduler (blocking) — stopping the IPC
+    server when the scheduler returns. All orchestration up to the blocking start
+    is tested with a fake scheduler + fake control + fake IPC server; only
+    ``scheduler.start()`` is a real edge. ``control`` defaults to
+    :data:`default_process_control`, resolved at call time.
+
+    The IPC surface is served only when all three of ``ipc_server`` / ``dispatch``
+    / ``socket_path`` are supplied (the CLI wires them; the plain lifecycle tests
+    pass none and skip it). A stale socket file is removed before binding, mirroring
+    the stale-pidfile handling above.
 
     Raises:
         DaemonAlreadyRunningError: If a live daemon is already recorded.
@@ -177,5 +188,18 @@ def start_daemon(
     if existing is not None and control.is_running(existing):
         raise DaemonAlreadyRunningError(existing)
     write_pid(pid_path, control.current_pid())
+    serving = ipc_server is not None and dispatch is not None and socket_path is not None
+    if serving:
+        # ``serving`` implies all three are set; re-assert so mypy narrows them.
+        assert ipc_server is not None
+        assert dispatch is not None
+        assert socket_path is not None
+        socket_path.unlink(missing_ok=True)  # clear a stale socket before binding
+        ipc_server.serve(socket_path, dispatch)
     register_poll_job(scheduler, config, run=run)
-    scheduler.start()
+    try:
+        scheduler.start()
+    finally:
+        if serving:
+            assert ipc_server is not None
+            ipc_server.stop()

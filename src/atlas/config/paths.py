@@ -18,6 +18,7 @@ __all__ = [
     "config_file",
     "data_dir",
     "pid_file",
+    "socket_file",
     "state_dir",
 ]
 
@@ -26,6 +27,9 @@ _APP_NAME = "atlas"
 
 #: The daemon's PID file name, under the state dir.
 _PID_FILENAME = "daemon.pid"
+
+#: The daemon's IPC socket file name, under the state dir.
+_SOCKET_FILENAME = "daemon.socket"
 
 
 def config_dir() -> Path:
@@ -56,3 +60,14 @@ def config_file() -> Path:
 def pid_file() -> Path:
     """Return the path to the daemon's PID file inside :func:`state_dir`."""
     return state_dir() / _PID_FILENAME
+
+
+def socket_file() -> Path:
+    """Return the path to the daemon's IPC socket inside :func:`state_dir`.
+
+    The daemon's local IPC surface (PROJECT.md §4.1) binds here so the TUI/CLI can
+    trigger on-demand work; on POSIX it is the Unix-domain-socket node, on Windows
+    a sidecar file recording the loopback port. Pure — like the sibling path
+    helpers, it computes the path and never touches the filesystem.
+    """
+    return state_dir() / _SOCKET_FILENAME

@@ -24,14 +24,31 @@ from atlas.db import create_db_engine, session_scope
 from atlas.discovery.repository import get_or_create_ats_source
 from atlas.scrape.fetcher import FetchResult
 from atlas.scrape.repository import get_or_create_company, list_postings
-from tests.conftest import FakeFetcher, FakeProcessControl, FakeScheduler
+from tests.conftest import FakeFetcher, FakeIpcServer, FakeProcessControl, FakeScheduler
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from sqlalchemy.engine import Engine
 
+    from atlas.daemon.ipc import IpcEvent, IpcRequest
+
 runner = CliRunner()
+
+
+@pytest.fixture
+def socket_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point the daemon commands at a tmp_path socket file (no real socket)."""
+    path = tmp_path / "daemon.socket"
+    monkeypatch.setattr(app_module, "socket_file", lambda: path)
+    return path
+
+
+@pytest.fixture
+def _stub_ipc_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the IPC server factory so ``start`` never binds a real socket."""
+    monkeypatch.setattr(app_module, "default_ipc_server", FakeIpcServer)
 
 
 @pytest.fixture(autouse=True)
@@ -70,10 +87,21 @@ def _stub_provider(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_start_registers_job_and_starts(
-    shared_engine: Engine, pid_path: Path, _stub_provider: None, monkeypatch: pytest.MonkeyPatch
+    shared_engine: Engine,
+    pid_path: Path,
+    socket_path: Path,
+    _stub_provider: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     scheduler = FakeScheduler()
     monkeypatch.setattr(app_module, "default_scheduler", lambda: scheduler)
+    ipc = FakeIpcServer()
+    monkeypatch.setattr(app_module, "default_ipc_server", lambda: ipc)
+    # A fake process control so the dispatch's status probe never runs a real
+    # os.kill (a no-op on POSIX, but a console CTRL_C_EVENT on Windows).
+    monkeypatch.setattr(
+        "atlas.daemon.service.default_process_control", FakeProcessControl(pid=4242, alive={4242})
+    )
     result = runner.invoke(app, ["daemon", "start"])
     assert result.exit_code == 0
     assert scheduler.started is True
@@ -81,6 +109,14 @@ def test_start_registers_job_and_starts(
     # The bound poll callable runs in its own session against the shared engine —
     # empty watchlist + empty backlog → no fetch, no error.
     scheduler.jobs[0][0]()
+    # The dispatch the CLI wired into the IPC server services a live status
+    # request against the daemon's own engine/config/owner.
+    from atlas.daemon.ipc import IpcRequest, StatusEvent
+
+    events: list[IpcEvent] = []
+    assert callable(ipc.dispatch)
+    ipc.dispatch(IpcRequest(action="status"), events.append)
+    assert any(isinstance(e, StatusEvent) for e in events)
 
 
 _BOARD = json.dumps(
@@ -100,7 +136,12 @@ _BOARD = json.dumps(
 
 
 def test_start_bound_job_discovers_then_scores(
-    shared_engine: Engine, pid_path: Path, _stub_provider: None, monkeypatch: pytest.MonkeyPatch
+    shared_engine: Engine,
+    pid_path: Path,
+    socket_path: Path,
+    _stub_provider: None,
+    _stub_ipc_server: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # A watchlisted board + an injected fetcher: the bound job discovers the
     # posting first (persisted), then the scoring poll runs over the new backlog.
@@ -137,7 +178,12 @@ def test_start_reports_config_error(pid_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_start_refuses_when_running(
-    shared_engine: Engine, pid_path: Path, _stub_provider: None, monkeypatch: pytest.MonkeyPatch
+    shared_engine: Engine,
+    pid_path: Path,
+    socket_path: Path,
+    _stub_provider: None,
+    _stub_ipc_server: None,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     write_pid(pid_path, 4242)
     monkeypatch.setattr(app_module, "default_scheduler", FakeScheduler)
@@ -190,3 +236,80 @@ def test_status_running(pid_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     result = runner.invoke(app, ["daemon", "status", "--json"])
     assert result.exit_code == 0
     assert json.loads(result.output) == {"running": True, "pid": 4242}
+
+
+# --- atlas daemon poll ----------------------------------------------------------
+
+
+def _scripted_ipc_request(
+    events: Sequence[IpcEvent],
+) -> Callable[..., None]:
+    """Build a fake ``ipc_request`` that replays ``events`` to the ``on_event`` sink."""
+
+    def fake(
+        socket_path: Path,
+        request: IpcRequest,
+        *,
+        on_event: Callable[[IpcEvent], None],
+        connect: object = None,
+    ) -> None:
+        for event in events:
+            on_event(event)
+
+    return fake
+
+
+def test_poll_streams_progress_and_result(
+    socket_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas.daemon.ipc import ProgressEvent, ResultEvent
+
+    events: list[IpcEvent] = [
+        ProgressEvent(phase="discovery", stage="start", total=1),
+        ProgressEvent(phase="discovery", stage="item", label="greenhouse:acme", done=1, total=1),
+        ResultEvent(discovered=1, scored=1, skipped=0, failed_sources=0, inactive=0, claimed=0),
+    ]
+    monkeypatch.setattr(app_module, "ipc_request", _scripted_ipc_request(events))
+    result = runner.invoke(app, ["daemon", "poll"])
+    assert result.exit_code == 0
+    assert "Discovered" in result.output
+
+
+def test_poll_json(socket_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from atlas.daemon.ipc import ResultEvent
+
+    events: list[IpcEvent] = [
+        ResultEvent(discovered=2, scored=1, skipped=0, failed_sources=0, inactive=1, claimed=0)
+    ]
+    monkeypatch.setattr(app_module, "ipc_request", _scripted_ipc_request(events))
+    result = runner.invoke(app, ["daemon", "poll", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["discovered"] == 2
+    assert payload["inactive"] == 1
+
+
+def test_poll_reports_error_event(socket_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from atlas.daemon.ipc import ErrorEvent
+
+    events: list[IpcEvent] = [ErrorEvent(message="the poll failed")]
+    monkeypatch.setattr(app_module, "ipc_request", _scripted_ipc_request(events))
+    result = runner.invoke(app, ["daemon", "poll"])
+    assert result.exit_code == 1
+    assert "the poll failed" in result.output
+
+
+def test_poll_daemon_not_running_exits_one(
+    socket_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas.daemon.errors import IpcUnavailableError
+
+    def refuse(
+        _socket_path: Path, _request: IpcRequest, *, on_event: object, connect: object = None
+    ) -> None:
+        raise IpcUnavailableError
+
+    monkeypatch.setattr(app_module, "ipc_request", refuse)
+    result = runner.invoke(app, ["daemon", "poll"])
+    assert result.exit_code == 1
+    assert "atlas daemon poll" in result.output

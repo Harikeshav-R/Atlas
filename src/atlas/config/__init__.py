@@ -20,6 +20,7 @@ from atlas.config.paths import (
     config_file,
     data_dir,
     pid_file,
+    socket_file,
     state_dir,
 )
 from atlas.config.schema import (
@@ -68,5 +69,6 @@ __all__ = [
     "resolve_api_key",
     "save_config",
     "select_backend",
+    "socket_file",
     "state_dir",
 ]

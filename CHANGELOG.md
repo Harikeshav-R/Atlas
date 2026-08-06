@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Daemon IPC surface** (`atlas.daemon.ipc`): the local socket the TUI/CLI use
+  to trigger on-demand daemon work and stream its progress (PROJECT.md §4.1) —
+  the last unchecked "Daemon + scheduler + IPC" sub-item. A newline-delimited-JSON
+  protocol (an `IpcRequest` with a `"status"` / `"poll"` action and a discriminated
+  `IpcEvent` union — `StatusEvent` / `ProgressEvent` / `ResultEvent` / `ErrorEvent`)
+  with a pure codec, plus a transport-free `handle_request` core that pushes events
+  through an injected `emit`: `"status"` replies with the daemon's run-state;
+  `"poll"` runs one discovery + aggregator + scoring pass (reusing the daemon's
+  claim owner so an on-demand poll never double-scores against the scheduled tick),
+  streaming per-phase progress and a terminal result. Following the
+  `platform/opener.py` seam, the framing (server-side `handle_connection`,
+  client-side `stream_events` / `ipc_request`) is pure and fully tested against an
+  in-memory duplex fake, while only the real socket bind/accept/connect carries a
+  justified `# pragma: no cover`. The transport dispatches on `sys.platform`
+  (AF_UNIX on POSIX, loopback TCP on Windows — stdlib-only, no new dependency).
+  Adds `IpcError` / `IpcProtocolError` / `IpcUnavailableError`.
+- **Progress-callback seam on the polls** (`atlas.daemon.progress`): a small
+  `ProgressUpdate` model + `ProgressCallback` alias + best-effort `emit_progress`
+  helper (a raising sink is logged and swallowed, never breaking the poll). The
+  three poll functions (`run_discovery_poll`, `run_aggregator_poll`,
+  `run_scoring_poll`) gained an optional `on_progress` param (default `None`, so
+  every existing caller is unaffected) that emits start → per-source / per-pair
+  item → done, letting the IPC surface stream a poll live.
+- **`socket_file()` path helper** (`atlas.config.paths`): the daemon's IPC socket
+  path under the state dir (`daemon.socket`), sibling to `pid_file()`.
+- **IPC served from the daemon**: `start_daemon` gained optional
+  `ipc_server` / `dispatch` / `socket_path` params — when supplied it removes a
+  stale socket, serves the IPC surface on a background thread before the blocking
+  `scheduler.start()`, and stops it on shutdown. `atlas daemon start` wires this
+  up (a `default_ipc_server()` behind an injectable `IpcServer` seam, plus a
+  `dispatch` bound to the daemon's engine/config/provider/owner).
+- **`atlas daemon poll` command** (PROJECT.md §9): asks the running daemon to poll
+  now over IPC, streaming each phase's progress (to stderr, so `--json` on stdout
+  stays pipe-safe) and printing the summary; exits `1` on a poll error or when the
+  daemon is not running.
+- **TUI "poll now" on the Discover screen** (press `g`): triggers the daemon poll
+  over IPC in a thread worker, toasting per-phase progress and refreshing the queue
+  when it finishes (so newly-scored postings appear). When no daemon socket is
+  configured it is a safe warning no-op. `AtlasApp` gained an injected
+  `socket_path` and a `run_poll_now` IPC-client method.
 - **Multiple profiles fully wired** (`atlas.matching`, `atlas.daemon`, `atlas.tui`):
   scoring and the Discover queue are now **per-profile** rather than
   single-active. The daemon's poll scores **every** profile's backlog each tick

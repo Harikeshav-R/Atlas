@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 from sqlmodel import select
 
 from atlas.daemon.poll import run_scoring_poll
+from atlas.daemon.progress import ProgressUpdate
 from atlas.db import session_scope
 from atlas.db.models import MatchScore
 from atlas.matching.claims import try_claim
@@ -195,6 +196,47 @@ def test_poll_scores_every_profile(db_engine: Engine) -> None:
             session, provider=FakeLLMProvider([]), owner="pid-1", clock=_fixed_clock
         )
     assert again.scored == 0
+
+
+def test_poll_reports_progress(db_engine: Engine) -> None:
+    # start → one item per scored pair → done; the counts track the outcome.
+    _seed_profile(db_engine)
+    _seed_resume(db_engine)
+    _seed_posting(db_engine, title="A", dedupe_hash="h1")
+    _seed_posting(db_engine, title="B", dedupe_hash="h2")
+    provider = FakeLLMProvider(
+        [make_response(structured=_assessment()), make_response(structured=_assessment())]
+    )
+    updates: list[ProgressUpdate] = []
+    with session_scope(db_engine) as session:
+        run_scoring_poll(
+            session,
+            provider=provider,
+            owner="pid-1",
+            clock=_fixed_clock,
+            on_progress=updates.append,
+        )
+    stages = [u.stage for u in updates]
+    assert stages == ["start", "item", "item", "done"]
+    assert updates[-1].done == 2
+    assert all(u.total is None for u in updates)  # pair total unknown up front
+
+
+def test_poll_progress_callback_may_raise(db_engine: Engine) -> None:
+    # A progress sink that raises must not abort the poll — it still scores.
+    _seed_profile(db_engine)
+    _seed_resume(db_engine)
+    _seed_posting(db_engine, title="A", dedupe_hash="h1")
+    provider = FakeLLMProvider([make_response(structured=_assessment())])
+
+    def boom(_: ProgressUpdate) -> None:
+        raise RuntimeError("sink failed")
+
+    with session_scope(db_engine) as session:
+        outcome = run_scoring_poll(
+            session, provider=provider, owner="pid-1", clock=_fixed_clock, on_progress=boom
+        )
+    assert outcome.scored == 1
 
 
 def test_poll_skips_pairs_claimed_by_another_worker(db_engine: Engine) -> None:

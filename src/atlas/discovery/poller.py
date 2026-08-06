@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from atlas.daemon.progress import ProgressUpdate, emit_progress
 from atlas.discovery.aggregators import build_aggregator
 from atlas.discovery.aggregators.structure import SavedSearch
 from atlas.discovery.ats import get_adapter
@@ -44,6 +45,7 @@ if TYPE_CHECKING:
 
     from atlas.config.schema import AggregatorsConfig
     from atlas.config.secrets import SecretStore
+    from atlas.daemon.progress import ProgressCallback
     from atlas.scrape.fetcher import Fetcher
 
 __all__ = ["DiscoveryOutcome", "run_aggregator_poll", "run_discovery_poll"]
@@ -81,6 +83,7 @@ def run_discovery_poll(
     *,
     fetcher: Fetcher = default_fetcher,
     clock: Callable[[], datetime] = utcnow,
+    on_progress: ProgressCallback | None = None,
 ) -> DiscoveryOutcome:
     """Poll every enabled ATS source and persist newly-discovered postings.
 
@@ -89,6 +92,10 @@ def run_discovery_poll(
         fetcher: The HTTP boundary the adapters fetch boards through (injectable
             for tests).
         clock: The clock for ``fetched_at`` / ``last_polled_at`` (injectable).
+        on_progress: Optional sink for progress updates (:mod:`atlas.daemon.progress`).
+            ``None`` (the default) leaves every existing caller unaffected. A
+            ``start`` update carries the source count; an ``item`` update fires per
+            source (whether polled or failed); a ``done`` update closes the poll.
 
     Returns:
         A :class:`DiscoveryOutcome` summarizing the poll.
@@ -97,7 +104,9 @@ def run_discovery_poll(
     discovered = 0
     skipped = 0
     failed_sources = 0
-    for source in list_enabled_ats_sources(session):
+    sources = list(list_enabled_ats_sources(session))
+    emit_progress(on_progress, ProgressUpdate(stage="start", total=len(sources)))
+    for index, source in enumerate(sources, start=1):
         ats_type = str(source.config.get("ats_type", ""))
         board_token = str(source.config.get("board_token", ""))
         company_id = int(source.config["company_id"])
@@ -116,11 +125,24 @@ def run_discovery_poll(
             # best-effort rather than aborting the whole poll.
             _LOGGER.warning("Discovery poll skipped a source (type=%s).", ats_type)
             failed_sources += 1
-            continue
-        stamp_last_polled_at(session, source, clock())
-        sources_polled += 1
-        discovered += outcome.discovered
-        skipped += outcome.skipped
+        else:
+            stamp_last_polled_at(session, source, clock())
+            sources_polled += 1
+            discovered += outcome.discovered
+            skipped += outcome.skipped
+        emit_progress(
+            on_progress,
+            ProgressUpdate(
+                stage="item",
+                label=f"{ats_type}:{board_token}",
+                done=index,
+                total=len(sources),
+            ),
+        )
+    emit_progress(
+        on_progress,
+        ProgressUpdate(stage="done", done=len(sources), total=len(sources)),
+    )
     return DiscoveryOutcome(
         sources_polled=sources_polled,
         discovered=discovered,
@@ -136,6 +158,7 @@ def run_aggregator_poll(
     store: SecretStore,
     fetcher: Fetcher = default_fetcher,
     clock: Callable[[], datetime] = utcnow,
+    on_progress: ProgressCallback | None = None,
 ) -> DiscoveryOutcome:
     """Poll every enabled aggregator saved search and persist new postings.
 
@@ -160,6 +183,10 @@ def run_aggregator_poll(
         store: The secret store key-gated adapters resolve their credentials from.
         fetcher: The HTTP boundary the adapters fetch through (injectable for tests).
         clock: The clock for ``fetched_at`` / ``last_polled_at`` (injectable).
+        on_progress: Optional sink for progress updates (:mod:`atlas.daemon.progress`).
+            ``None`` (the default) leaves every existing caller unaffected. A
+            ``start`` update carries the source count; an ``item`` update fires per
+            source (polled, inactive, or failed alike); a ``done`` update closes it.
 
     Returns:
         A :class:`DiscoveryOutcome` summarizing the poll.
@@ -169,7 +196,9 @@ def run_aggregator_poll(
     skipped = 0
     failed_sources = 0
     inactive = 0
-    for source in list_enabled_aggregator_sources(session):
+    sources = list(list_enabled_aggregator_sources(session))
+    emit_progress(on_progress, ProgressUpdate(stage="start", total=len(sources)))
+    for index, source in enumerate(sources, start=1):
         aggregator = str(source.config.get("aggregator", ""))
         try:
             adapter = build_aggregator(aggregator, config=config, store=store)
@@ -177,25 +206,37 @@ def run_aggregator_poll(
                 # Key-gated + unconfigured/keyless — inactive, not a failure.
                 _LOGGER.info("Aggregator source needs an API key (aggregator=%s).", aggregator)
                 inactive += 1
-                continue
-            spec = SavedSearch.model_validate(source.config.get("search", {}))
-            postings = adapter.search(spec, fetcher=fetcher, timeout_s=_TIMEOUT_S)
-            outcome = persist_aggregated(
-                session,
-                source=source,
-                discovered=postings,
-                clock=clock,
-            )
+            else:
+                spec = SavedSearch.model_validate(source.config.get("search", {}))
+                postings = adapter.search(spec, fetcher=fetcher, timeout_s=_TIMEOUT_S)
+                outcome = persist_aggregated(
+                    session,
+                    source=source,
+                    discovered=postings,
+                    clock=clock,
+                )
+                stamp_last_polled_at(session, source, clock())
+                sources_polled += 1
+                discovered += outcome.discovered
+                skipped += outcome.skipped
         except (DiscoveryError, FetchError):
             # Unknown provider / unusable response / fetch failure — skip this source
             # best-effort rather than aborting the whole poll.
             _LOGGER.warning("Aggregator poll skipped a source (aggregator=%s).", aggregator)
             failed_sources += 1
-            continue
-        stamp_last_polled_at(session, source, clock())
-        sources_polled += 1
-        discovered += outcome.discovered
-        skipped += outcome.skipped
+        emit_progress(
+            on_progress,
+            ProgressUpdate(
+                stage="item",
+                label=aggregator,
+                done=index,
+                total=len(sources),
+            ),
+        )
+    emit_progress(
+        on_progress,
+        ProgressUpdate(stage="done", done=len(sources), total=len(sources)),
+    )
     return DiscoveryOutcome(
         sources_polled=sources_polled,
         discovered=discovered,

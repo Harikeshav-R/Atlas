@@ -11,8 +11,9 @@ Actions (§8): ``enter`` drills into :class:`~atlas.tui.screens.posting_detail.P
 ``t`` tailors the posting (AI + render, off the event loop via a thread worker —
 the same pattern as :mod:`atlas.tui.screens.tailor_workspace`); ``x`` dismisses a
 posting (hiding it from the queue); ``s`` saves it for later; ``o`` opens its apply
-URL in the browser. Data comes from the pure
-:func:`atlas.tui.data.build_discover_queue` builder.
+URL in the browser; ``g`` asks the running daemon to poll now over IPC (a thread
+worker that streams progress toasts, then refreshes the queue). Data comes from
+the pure :func:`atlas.tui.data.build_discover_queue` builder.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Label
 from textual.worker import WorkerState
 
+from atlas.daemon.ipc import ErrorEvent, ProgressEvent, ResultEvent
 from atlas.matching.structure import QueueStatus
 from atlas.platform.browser import UrlOpenError
 from atlas.tui.data import build_discover_queue, build_profile_choices
@@ -37,6 +39,7 @@ from atlas.tui.screens.profile_picker import ProfilePickerScreen
 if TYPE_CHECKING:
     from textual.worker import Worker
 
+    from atlas.daemon.ipc import IpcEvent
     from atlas.tailor.service import TailorOutcome
     from atlas.tui.app import AtlasApp
     from atlas.tui.data import DiscoverQueue
@@ -45,6 +48,7 @@ __all__ = ["DiscoverScreen"]
 
 _DISABLED_HINT = "AI actions unavailable — check your backend with `atlas doctor`."
 _EMPTY_HINT = "No scored postings yet — add or discover some, then let scoring run."
+_POLL_UNAVAILABLE_HINT = "Poll now needs the daemon — start it with `atlas daemon start`."
 
 
 class DiscoverScreen(Screen[None]):
@@ -56,6 +60,7 @@ class DiscoverScreen(Screen[None]):
         Binding("s", "save", "Save"),
         Binding("o", "open_url", "Open URL"),
         Binding("p", "switch_profile", "Profile"),
+        Binding("g", "poll_now", "Poll now"),
         Binding("escape", "app.pop_screen", "Back"),
     ]
 
@@ -184,15 +189,62 @@ class DiscoverScreen(Screen[None]):
         """Run the tailoring service off the event loop and return its outcome."""
         return cast("AtlasApp", self.app).run_tailor(posting_id)
 
+    def action_poll_now(self) -> None:
+        """Ask the running daemon to poll now over IPC, off the event loop."""
+        if cast("AtlasApp", self.app).socket_path is None:
+            self.notify(_POLL_UNAVAILABLE_HINT, severity="warning")
+            return
+        self.notify("Polling…")
+        self._poll_worker()
+
+    @work(thread=True, exclusive=True, exit_on_error=False, group="poll")
+    def _poll_worker(self) -> list[IpcEvent]:
+        """Trigger the daemon poll over IPC, toasting progress; return all events.
+
+        Runs off the event loop (the IPC round-trip blocks). Each phase's ``start``
+        event is toasted via ``call_from_thread`` (worker callbacks run off the UI
+        thread); the collected events are handed to :meth:`on_worker_state_changed`.
+        """
+        events: list[IpcEvent] = []
+
+        def on_event(event: IpcEvent) -> None:
+            events.append(event)
+            if isinstance(event, ProgressEvent) and event.stage == "start":
+                self.app.call_from_thread(self.notify, f"Polling: {event.phase}…")
+
+        cast("AtlasApp", self.app).run_poll_now(on_event)
+        return events
+
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        """Navigate to the new application on success, or toast the error.
+        """Handle a finished worker: tailor navigates, poll summarizes + refreshes.
 
         Workers post state changes back to the event loop, so this runs on the UI
-        thread and may safely push a screen / touch widgets.
+        thread and may safely push a screen / touch widgets. The worker's ``group``
+        distinguishes the tailor worker from the poll worker.
         """
+        if event.worker.group == "poll":
+            self._on_poll_finished(event)
+            return
         if event.state is WorkerState.SUCCESS:
             outcome = cast("TailorOutcome", event.worker.result)
             self.notify(f"Tailored → application {outcome.application_id}.")
             self.app.push_screen(ApplicationDetailScreen(outcome.application_id))
         elif event.state is WorkerState.ERROR:
             self.notify(str(event.worker.error), severity="error")
+
+    def _on_poll_finished(self, event: Worker.StateChanged) -> None:
+        """Summarize a finished poll and refresh the queue (or toast the error)."""
+        if event.state is WorkerState.ERROR:
+            self.notify(str(event.worker.error), severity="error")
+            return
+        if event.state is not WorkerState.SUCCESS:
+            return
+        events = cast("list[IpcEvent]", event.worker.result)
+        error = next((e for e in events if isinstance(e, ErrorEvent)), None)
+        if error is not None:
+            self.notify(error.message, severity="error")
+            return
+        result = next((e for e in events if isinstance(e, ResultEvent)), None)
+        if result is not None:
+            self.notify(f"Poll done: {result.discovered} found, {result.scored} scored.")
+        self._refresh()

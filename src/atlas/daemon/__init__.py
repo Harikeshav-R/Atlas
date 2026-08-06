@@ -18,8 +18,27 @@ from atlas.daemon.errors import (
     DaemonAlreadyRunningError,
     DaemonError,
     DaemonNotRunningError,
+    IpcError,
+    IpcProtocolError,
+    IpcUnavailableError,
+)
+from atlas.daemon.ipc import (
+    Connect,
+    Connection,
+    Dispatch,
+    ErrorEvent,
+    IpcEvent,
+    IpcRequest,
+    IpcServer,
+    ProgressEvent,
+    ResultEvent,
+    StatusEvent,
+    default_ipc_server,
+    handle_request,
+    ipc_request,
 )
 from atlas.daemon.poll import PollOutcome, run_scoring_poll
+from atlas.daemon.progress import ProgressCallback, ProgressUpdate, emit_progress
 from atlas.daemon.scheduler import Scheduler, default_scheduler, register_poll_job
 from atlas.daemon.service import (
     DaemonStatus,
@@ -31,16 +50,35 @@ from atlas.daemon.service import (
 )
 
 __all__ = [
+    "Connect",
+    "Connection",
     "DaemonAlreadyRunningError",
     "DaemonError",
     "DaemonNotRunningError",
     "DaemonStatus",
+    "Dispatch",
+    "ErrorEvent",
+    "IpcError",
+    "IpcEvent",
+    "IpcProtocolError",
+    "IpcRequest",
+    "IpcServer",
+    "IpcUnavailableError",
     "PollOutcome",
     "ProcessControl",
+    "ProgressCallback",
+    "ProgressEvent",
+    "ProgressUpdate",
+    "ResultEvent",
     "Scheduler",
+    "StatusEvent",
     "daemon_status",
+    "default_ipc_server",
     "default_process_control",
     "default_scheduler",
+    "emit_progress",
+    "handle_request",
+    "ipc_request",
     "register_poll_job",
     "run_scoring_poll",
     "start_daemon",
