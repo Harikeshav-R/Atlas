@@ -23,6 +23,9 @@ from atlas.tracking.status import ApplicationStatus
 from tests.conftest import FakeNotifier
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
     from sqlalchemy.engine import Engine
 
 _NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
@@ -329,3 +332,63 @@ def test_raising_notifier_is_swallowed(db_engine: Engine) -> None:
     # The match was counted and the high-water mark advanced even though the post failed.
     assert outcome.matches == 1
     assert state.daily_count == 1
+
+
+# --- run_after_poll_notifications (the daemon-facing wrapper) --------------------
+
+
+def test_run_after_poll_disabled_touches_no_disk(db_engine: Engine, tmp_path: Path) -> None:
+    from atlas.notify.service import run_after_poll_notifications
+
+    state_file = tmp_path / "notify-state.json"
+    outcome = run_after_poll_notifications(
+        db_engine,
+        config=NotificationsConfig(enabled=False),
+        notifier=FakeNotifier(),
+        state_path=state_file,
+        clock=_clock,
+    )
+    assert outcome.suppressed is True
+    # Disabled short-circuits before any load/save — no state file is written.
+    assert not state_file.exists()
+
+
+def test_run_after_poll_loads_saves_and_notifies(db_engine: Engine, tmp_path: Path) -> None:
+    from atlas.notify.service import run_after_poll_notifications
+    from atlas.notify.state import load_notify_state
+
+    profile_id = _seed_profile(db_engine)
+    posting_id = _seed_posting(db_engine, title="Backend Engineer")
+    score_id = _score(db_engine, posting_id=posting_id, profile_id=profile_id, score=91)
+    notifier = FakeNotifier()
+    state_file = tmp_path / "notify-state.json"
+    outcome = run_after_poll_notifications(
+        db_engine, config=_enabled(), notifier=notifier, state_path=state_file, clock=_clock
+    )
+    assert outcome.matches == 1
+    assert len(notifier.notifications) == 1
+    # The advanced high-water mark was persisted for the next tick.
+    assert load_notify_state(state_file).last_notified_score_id == score_id
+
+
+def test_run_after_poll_swallows_internal_failure(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas.notify import service as notify_service
+    from atlas.notify.service import run_after_poll_notifications
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("state file unreadable")
+
+    monkeypatch.setattr(notify_service, "load_notify_state", _boom)
+    # An internal failure returns a no-op outcome rather than raising into the poll.
+    outcome = run_after_poll_notifications(
+        db_engine,
+        config=_enabled(),
+        notifier=FakeNotifier(),
+        state_path=tmp_path / "n.json",
+        clock=_clock,
+    )
+    assert outcome.matches == 0
+    assert outcome.deadlines == 0
+    assert outcome.suppressed is False

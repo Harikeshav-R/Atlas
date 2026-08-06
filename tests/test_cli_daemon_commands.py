@@ -167,6 +167,33 @@ def test_start_bound_job_discovers_then_scores(
         assert [p.external_id for p in list_postings(session)] == ["7"]
 
 
+def test_start_bound_job_fires_notifications_after_scoring(
+    shared_engine: Engine,
+    pid_path: Path,
+    socket_path: Path,
+    _stub_provider: None,
+    _stub_ipc_server: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The bound tick calls the notification hook after the scoring poll, with the
+    # config's [notifications] section (best-effort — stubbed here to a spy).
+    calls: list[object] = []
+
+    def _spy(engine: object, *, config: object, **_kwargs: object) -> object:
+        calls.append(config)
+        return object()
+
+    monkeypatch.setattr(app_module, "run_after_poll_notifications", _spy)
+    scheduler = FakeScheduler()
+    monkeypatch.setattr(app_module, "default_scheduler", lambda: scheduler)
+    result = runner.invoke(app, ["daemon", "start"])
+    assert result.exit_code == 0
+    scheduler.jobs[0][0]()
+    # The hook ran exactly once, handed the notifications config.
+    assert len(calls) == 1
+    assert calls[0] == Config().notifications
+
+
 def test_start_reports_config_error(pid_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def _bad_config() -> Config:
         raise ConfigError("no config")

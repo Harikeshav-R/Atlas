@@ -38,6 +38,7 @@ from atlas.daemon.errors import IpcProtocolError, IpcUnavailableError
 from atlas.daemon.progress import ProgressUpdate
 from atlas.daemon.service import daemon_status
 from atlas.db import session_scope
+from atlas.platform.notifier import default_notifier
 from atlas.scrape.fetcher import default_fetcher
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ if TYPE_CHECKING:
     from atlas.config.schema import Config
     from atlas.config.secrets import SecretStore
     from atlas.daemon.progress import ProgressCallback
+    from atlas.platform.notifier import Notifier
     from atlas.scrape.fetcher import Fetcher
 
 __all__ = [
@@ -203,17 +205,21 @@ def _run_poll(
     provider: LLMProvider,
     owner: str,
     fetcher: Fetcher,
+    notifier: Notifier,
     emit: Callable[[IpcEvent], None],
 ) -> ResultEvent:
     """Run one discovery + aggregator + scoring pass, streaming per-phase progress.
 
     Each poll runs in its own short transaction (so its new rows are committed
-    before the next reads them), reusing the daemon's ``owner`` claim token. Lazy
-    imports of the poll functions keep :mod:`atlas.daemon.ipc` free of an import
-    cycle with :mod:`atlas.discovery`.
+    before the next reads them), reusing the daemon's ``owner`` claim token. After
+    scoring commits, it fires desktop notifications for new high-fit matches and
+    upcoming deadlines (best-effort — a notification failure never fails the poll).
+    Lazy imports of the poll functions keep :mod:`atlas.daemon.ipc` free of an
+    import cycle with :mod:`atlas.discovery`.
     """
     from atlas.daemon.poll import run_scoring_poll
     from atlas.discovery.poller import run_aggregator_poll, run_discovery_poll
+    from atlas.notify.service import run_after_poll_notifications
 
     with session_scope(engine) as session:
         ats = run_discovery_poll(
@@ -234,6 +240,7 @@ def _run_poll(
             owner=owner,
             on_progress=_phase_emitter(emit, phase="scoring"),
         )
+    run_after_poll_notifications(engine, config=config.notifications, notifier=notifier)
     return ResultEvent(
         discovered=ats.discovered + agg.discovered,
         scored=scoring.scored,
@@ -255,6 +262,7 @@ def handle_request(
     pid_path: Path,
     emit: Callable[[IpcEvent], None],
     fetcher: Fetcher = default_fetcher,
+    notifier: Notifier = default_notifier,
 ) -> None:
     """Dispatch one IPC request, pushing every reply/progress event through ``emit``.
 
@@ -275,6 +283,7 @@ def handle_request(
         pid_path: The daemon's PID file, read for the ``"status"`` reply.
         emit: The sink every event is pushed to (the transport writes it to the wire).
         fetcher: The HTTP boundary the discovery adapters fetch through (injectable).
+        notifier: The desktop-notification boundary fired after the poll (injectable).
     """
     if request.action == "status":
         status = daemon_status(pid_path)
@@ -288,6 +297,7 @@ def handle_request(
             provider=provider,
             owner=owner,
             fetcher=fetcher,
+            notifier=notifier,
             emit=emit,
         )
     except Exception:
