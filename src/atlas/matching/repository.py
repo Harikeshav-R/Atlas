@@ -93,54 +93,65 @@ def create_match_score(
     return match_score
 
 
-def get_latest_match_score(session: Session, job_posting_id: int) -> MatchScore | None:
+def get_latest_match_score(
+    session: Session, job_posting_id: int, *, profile_id: int | None = None
+) -> MatchScore | None:
     """Return the most recent score for ``job_posting_id``, or ``None`` if unscored.
 
-    Ordered by insertion (id) descending, so the newest append-only row wins.
+    Ordered by insertion (id) descending, so the newest append-only row wins. When
+    ``profile_id`` is given, only that profile's scores are considered (a posting
+    now carries one score history per profile); the default (``None``) keeps the
+    profile-agnostic "latest score by any profile" behaviour for callers that don't
+    scope to a profile.
     """
-    return session.exec(
-        select(MatchScore)
-        .where(MatchScore.job_posting_id == job_posting_id)
-        .order_by(desc(col(MatchScore.id)))
-    ).first()
+    statement = select(MatchScore).where(MatchScore.job_posting_id == job_posting_id)
+    if profile_id is not None:
+        statement = statement.where(MatchScore.profile_id == profile_id)
+    return session.exec(statement.order_by(desc(col(MatchScore.id)))).first()
 
 
-def list_unscored_postings(session: Session) -> Sequence[JobPosting]:
-    """Return postings that have no :class:`~atlas.db.models.MatchScore` yet.
+def list_unscored_postings(session: Session, profile_id: int) -> Sequence[JobPosting]:
+    """Return postings not yet scored **for ``profile_id``**.
 
     The background daemon's scoring poll (PROJECT.md §4.1, §5.6) uses this to find
-    the fit-score backlog. A posting counts as scored once it has at least one
-    (append-only) match-score row, so a posting drops out of this list after its
-    first successful score. Ordered by insertion (id) for a stable, oldest-first
-    poll order.
+    one profile's fit-score backlog. A posting counts as scored *for a profile* once
+    it has at least one (append-only) match-score row for that profile, so it drops
+    out of this list after its first successful score against ``profile_id`` — but
+    stays in every other profile's backlog until scored there too. Ordered by
+    insertion (id) for a stable, oldest-first poll order.
     """
-    scored = select(MatchScore.job_posting_id)
+    scored = select(MatchScore.job_posting_id).where(MatchScore.profile_id == profile_id)
     return session.exec(
         select(JobPosting).where(col(JobPosting.id).not_in(scored)).order_by(col(JobPosting.id))
     ).all()
 
 
-def list_scored_postings(session: Session) -> Sequence[tuple[JobPosting, MatchScore]]:
-    """Return scored, non-dismissed postings with their latest score, ranked by fit.
+def list_scored_postings(
+    session: Session, profile_id: int
+) -> Sequence[tuple[JobPosting, MatchScore]]:
+    """Return ``profile_id``'s scored, non-dismissed postings, ranked by fit.
 
     The TUI Discover queue (PROJECT.md §8 screen #2) uses this: each row is a
-    posting paired with its **latest** :class:`~atlas.db.models.MatchScore` — the
-    row with the greatest ``id`` for that posting, matching
-    :func:`get_latest_match_score`'s "newest append-only row wins" convention (not
-    ``created_at``). Postings with no score are excluded (an inner match), and
-    ``dismissed`` postings are hidden. Ordered by score descending, then newest
-    posting first (``JobPosting.id`` descending) as a stable tiebreak.
+    posting paired with its **latest** :class:`~atlas.db.models.MatchScore` **for
+    ``profile_id``** — the row with the greatest ``id`` for that (posting, profile)
+    pair, matching :func:`get_latest_match_score`'s "newest append-only row wins"
+    convention (not ``created_at``). Postings this profile has not scored are
+    excluded (an inner match), and ``dismissed`` postings are hidden. Ordered by
+    score descending, then newest posting first (``JobPosting.id`` descending) as a
+    stable tiebreak.
     """
     inner = aliased(MatchScore)
     latest_id = (
         select(func.max(inner.id))
         .where(inner.job_posting_id == JobPosting.id)
+        .where(inner.profile_id == profile_id)
         .correlate(JobPosting)
         .scalar_subquery()
     )
     rows = session.exec(
         select(JobPosting, MatchScore)
         .where(MatchScore.job_posting_id == JobPosting.id)
+        .where(MatchScore.profile_id == profile_id)
         .where(MatchScore.id == latest_id)
         .where(JobPosting.queue_status != QueueStatus.DISMISSED)
         .order_by(desc(col(MatchScore.score)), desc(col(JobPosting.id)))

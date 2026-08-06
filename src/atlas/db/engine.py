@@ -57,19 +57,28 @@ def sqlite_url(path: Path) -> str:
     return f"sqlite:///{path}"
 
 
+#: How long (milliseconds) a connection waits for a held write lock before
+#: raising "database is locked". WAL keeps readers non-blocking, but the daemon
+#: writer and a TUI-driven write can still briefly contend; a short busy timeout
+#: lets the loser wait it out rather than fail (PROJECT.md §4.1, §17).
+_BUSY_TIMEOUT_MS = 5000
+
+
 def _enable_sqlite_pragmas(dbapi_connection: Any, _connection_record: Any) -> None:
     """Apply Atlas's per-connection SQLite PRAGMAs on every new connection.
 
     Enables **WAL** journaling (concurrent daemon writer + TUI readers,
-    PROJECT.md §4.1) and enforces **foreign keys** (off by default in SQLite).
-    Runs for every pooled connection via SQLAlchemy's ``connect`` event. An
-    in-memory database silently keeps its default journal mode, so this stays a
-    single, always-executed path.
+    PROJECT.md §4.1), enforces **foreign keys** (off by default in SQLite), and
+    sets a **busy timeout** so a connection waits briefly for a contended write
+    lock instead of failing immediately. Runs for every pooled connection via
+    SQLAlchemy's ``connect`` event. An in-memory database silently keeps its
+    default journal mode, so this stays a single, always-executed path.
     """
     cursor = dbapi_connection.cursor()
     try:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
     finally:
         cursor.close()
 

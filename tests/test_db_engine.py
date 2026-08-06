@@ -41,8 +41,12 @@ def test_file_engine_enables_wal_and_foreign_keys(tmp_path: Path) -> None:
         with engine.connect() as connection:
             journal_mode = connection.execute(text("PRAGMA journal_mode")).scalar_one()
             foreign_keys = connection.execute(text("PRAGMA foreign_keys")).scalar_one()
+            busy_timeout = connection.execute(text("PRAGMA busy_timeout")).scalar_one()
         assert journal_mode == "wal"
         assert foreign_keys == 1
+        # A non-zero busy timeout lets a contended writer wait rather than fail
+        # with "database is locked" (PROJECT.md §4.1).
+        assert busy_timeout == 5000
     finally:
         engine.dispose()
 

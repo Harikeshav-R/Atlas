@@ -41,3 +41,11 @@ DataTable {
     border: thick $accent;
     background: $surface;
 }
+
+#profile-picker {
+    width: 40;
+    height: auto;
+    padding: 1 2;
+    border: thick $accent;
+    background: $surface;
+}

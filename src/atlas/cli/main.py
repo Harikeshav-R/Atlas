@@ -73,7 +73,12 @@ from atlas.coverletter.service import write_application_cover_letter
 from atlas.daemon.errors import DaemonAlreadyRunningError, DaemonNotRunningError
 from atlas.daemon.poll import run_scoring_poll
 from atlas.daemon.scheduler import default_scheduler
-from atlas.daemon.service import daemon_status, start_daemon, stop_daemon
+from atlas.daemon.service import (
+    daemon_status,
+    default_process_control,
+    start_daemon,
+    stop_daemon,
+)
 from atlas.db import initialize_database, session_scope
 from atlas.discovery.aggregators import (
     AGGREGATOR_TYPES,
@@ -87,14 +92,14 @@ from atlas.discovery.errors import UnknownAggregatorError
 from atlas.discovery.poller import DiscoveryOutcome, run_aggregator_poll, run_discovery_poll
 from atlas.discovery.service import add_saved_search, add_watchlist_company
 from atlas.logging import setup_logging
-from atlas.matching.errors import MatchingError
+from atlas.matching.errors import MatchingError, NoActiveProfileError
 from atlas.matching.service import ScoreOutcome, score_posting
 from atlas.materials.service import open_application, rerender_application
 from atlas.platform.opener import FileOpenError, default_file_opener
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
 from atlas.profiles.prompt import RichPrompter
-from atlas.profiles.repository import get_active_profile
+from atlas.profiles.repository import get_active_profile, get_profile
 from atlas.render.errors import RenderError
 from atlas.render.renderer import build_renderer
 from atlas.render.service import render_master_resume
@@ -628,7 +633,7 @@ def add(
 def _score_after_add(
     engine: Engine, outcome: AddOutcome, *, provider: LLMProvider
 ) -> ScoreOutcome | None:
-    """Score a freshly-added posting best-effort, in its own transaction.
+    """Score a freshly-added posting against the active profile, best-effort.
 
     Returns the :class:`~atlas.matching.service.ScoreOutcome` on success, or
     ``None`` when scoring can't run yet (no active profile / no master resume) or
@@ -637,7 +642,10 @@ def _score_after_add(
     """
     try:
         with session_scope(engine) as session:
-            return score_posting(session, outcome.posting_id, provider=provider)
+            profile = get_active_profile(session)
+            if profile is None:
+                raise NoActiveProfileError
+            return score_posting(session, outcome.posting_id, profile=profile, provider=provider)
     except MatchingError as exc:
         console.print(
             f"[muted]Saved, but not scored — {exc} Run `atlas score {outcome.posting_id}`.[/muted]"
@@ -648,19 +656,24 @@ def _score_after_add(
 @app.command()
 def score(
     posting_id: int = typer.Argument(..., help="The id of the saved posting to score."),
+    profile_id: int | None = typer.Option(
+        None, "--profile", help="Score against this profile id (defaults to the active profile)."
+    ),
     as_json: bool = typer.Option(
         False,
         "--json",
         help="Emit the fit assessment as JSON for scripting instead of text.",
     ),
 ) -> None:
-    """Score a saved posting for fit against the active profile.
+    """Score a saved posting for fit against a profile (the active one by default).
 
-    Sends the posting, the active profile's preferences, a compact master-resume
-    summary, and Atlas's deterministic signals to the AI and records a fit
-    assessment (PROJECT.md §5.6). Re-scoring appends a new assessment rather than
-    replacing the last one. Exits ``1`` if the posting id is unknown, no profile is
-    active, no master resume is set, or the AI cannot produce an assessment.
+    Sends the posting, the profile's preferences, a compact master-resume summary,
+    and Atlas's deterministic signals to the AI and records a fit assessment
+    (PROJECT.md §5.6). Pass ``--profile`` to score against a specific profile rather
+    than the active one (each profile keeps its own score history). Re-scoring
+    appends a new assessment rather than replacing the last one. Exits ``1`` if the
+    posting or profile id is unknown, no profile is active, no master resume is set,
+    or the AI cannot produce an assessment.
     """
     try:
         config = load_config()
@@ -672,8 +685,15 @@ def score(
     engine = _open_database()
     try:
         with session_scope(engine) as session:
-            outcome = score_posting(session, posting_id, provider=provider)
-    except (JobPostingNotFoundError, MatchingError) as exc:
+            if profile_id is not None:
+                profile = get_profile(session, profile_id)
+            else:
+                active = get_active_profile(session)
+                if active is None:
+                    raise NoActiveProfileError
+                profile = active
+            outcome = score_posting(session, posting_id, profile=profile, provider=provider)
+    except (JobPostingNotFoundError, ProfileNotFoundError, MatchingError) as exc:
         error_console.print(f"[error]atlas score:[/error] {exc}")
         raise typer.Exit(code=1) from exc
     finally:
@@ -1023,10 +1043,10 @@ def daemon_start() -> None:
     Runs Atlas's scheduled work on the ``[discovery]`` ``poll_interval_minutes``
     interval: first a **discovery poll** over the enabled ATS watchlist (fetching
     and persisting new postings), then a **scoring poll** that clears the fit-score
-    backlog — including whatever discovery just added — against the active profile.
-    This blocks the terminal until stopped (``atlas daemon stop`` or Ctrl-C);
-    background it with your OS service manager. Exits ``1`` if config/secrets can't
-    load or a daemon is already running.
+    backlog — including whatever discovery just added — for **every** profile. This
+    blocks the terminal until stopped (``atlas daemon stop`` or Ctrl-C); background
+    it with your OS service manager. Exits ``1`` if config/secrets can't load or a
+    daemon is already running.
     """
     try:
         config = load_config()
@@ -1036,9 +1056,12 @@ def daemon_start() -> None:
         raise typer.Exit(code=1) from exc
     provider = build_provider_chain(config.ai, store)
     engine = _open_database()
+    # This process's pid is the claim owner, so a stray second daemon never
+    # double-scores a (posting, profile) pair (PROJECT.md §4.1).
+    owner = str(default_process_control.current_pid())
 
     def run() -> None:
-        """Run discovery + aggregator polls, then score the backlog.
+        """Run discovery + aggregator polls, then score every profile's backlog.
 
         Each poll runs in its own short transaction and commits its new postings
         first, so the scoring poll's ``list_unscored_postings`` picks them all up on
@@ -1051,7 +1074,7 @@ def daemon_start() -> None:
                 session, config=config.aggregators, store=store, fetcher=default_fetcher
             )
         with session_scope(engine) as session:
-            run_scoring_poll(session, provider=provider)
+            run_scoring_poll(session, provider=provider, owner=owner)
 
     try:
         start_daemon(

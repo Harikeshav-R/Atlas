@@ -4,8 +4,9 @@
 an open :class:`~sqlmodel.Session`, with the AI provider and clock injected, it:
 
 1. loads the posting (:mod:`atlas.scrape.repository`) and its company;
-2. loads the active profile and its typed preferences
-   (:mod:`atlas.profiles.repository`), erroring if none is active;
+2. reads the caller-supplied profile's typed preferences (the caller resolves
+   *which* profile — the active one for ``atlas score``, or every profile for the
+   daemon's poll — so scoring is not tied to a single active profile);
 3. loads the latest master-resume version and builds a compact summary
    (:mod:`atlas.matching.summary`), erroring if no resume is set;
 4. computes the deterministic signals (:mod:`atlas.matching.signals`);
@@ -29,13 +30,12 @@ from pydantic import BaseModel
 from atlas.ai.base import LLMOutputError
 from atlas.db.models import Company
 from atlas.matching.ai_score import score_fit
-from atlas.matching.errors import NoActiveProfileError, NoMasterResumeError, ScoringError
+from atlas.matching.errors import NoMasterResumeError, ScoringError
 from atlas.matching.repository import create_match_score
 from atlas.matching.signals import compute_signals
 from atlas.matching.structure import DeterministicSignals
 from atlas.matching.summary import build_resume_summary
 from atlas.profiles.preferences import ProfilePreferences
-from atlas.profiles.repository import get_active_profile
 from atlas.resume.repository import get_blocks, get_latest_master_resume
 from atlas.resume.service import utcnow
 from atlas.scrape.repository import get_posting
@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from atlas.ai.base import LLMProvider
+    from atlas.db.models import Profile
 
 __all__ = ["ScoreOutcome", "score_posting"]
 
@@ -87,14 +88,20 @@ def score_posting(
     session: Session,
     posting_id: int,
     *,
+    profile: Profile,
     provider: LLMProvider,
     clock: Callable[[], datetime] = utcnow,
 ) -> ScoreOutcome:
-    """Score the posting ``posting_id`` for fit and persist the assessment.
+    """Score the posting ``posting_id`` against ``profile`` and persist the assessment.
+
+    The caller chooses the profile (the active one for ``atlas score``, or each
+    profile in turn for the daemon's poll), so scoring is not tied to a single
+    active profile.
 
     Args:
         session: The open session/transaction to work within.
         posting_id: The id of the posting to score.
+        profile: The profile whose preferences the posting is scored against.
         provider: The AI backend (or failover chain) to call.
         clock: The clock for the score's ``created_at`` (injectable for tests).
 
@@ -103,17 +110,13 @@ def score_posting(
 
     Raises:
         JobPostingNotFoundError: If no posting has ``posting_id``.
-        NoActiveProfileError: If no profile is active.
         NoMasterResumeError: If no master resume has been set.
         ScoringError: If the AI backend never produces a usable assessment.
     """
     posting = get_posting(session, posting_id)
     assert posting.id is not None  # persisted rows always have an id
 
-    profile = get_active_profile(session)
-    if profile is None:
-        raise NoActiveProfileError
-    assert profile.id is not None
+    assert profile.id is not None  # persisted profiles always have an id
     preferences = ProfilePreferences.model_validate(profile.preferences)
 
     resume = get_latest_master_resume(session)

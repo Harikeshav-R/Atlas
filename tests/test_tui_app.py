@@ -35,6 +35,7 @@ from atlas.tui.screens.applications import ApplicationsScreen
 from atlas.tui.screens.dashboard import DashboardScreen
 from atlas.tui.screens.discover import DiscoverScreen
 from atlas.tui.screens.posting_detail import PostingDetailScreen
+from atlas.tui.screens.profile_picker import ProfilePickerScreen
 from atlas.tui.screens.status_picker import StatusPickerScreen
 from atlas.tui.screens.tailor_workspace import TailorWorkspaceScreen
 from tests.conftest import (
@@ -572,11 +573,65 @@ async def test_discover_empty_queue(db_engine: Engine) -> None:
         screen = pilot.app.screen
         assert isinstance(screen, DiscoverScreen)
         assert screen.query_one("#discover-table", DataTable).row_count == 0
-        # Empty queue shows the hint, and dismiss/save/open/enter are safe no-ops.
-        for key in ("x", "s", "o", "enter"):
+        # Empty queue shows the hint; dismiss/save/open/enter and the profile
+        # switcher (no profiles) are safe no-ops.
+        for key in ("x", "s", "o", "enter", "p"):
             await pilot.press(key)
             await pilot.pause()
         assert isinstance(pilot.app.screen, DiscoverScreen)
+
+
+async def test_discover_switch_profile_reranks_queue(db_engine: Engine) -> None:
+    # Two profiles, each with its own scored posting. Discover shows the active
+    # profile's; pressing `p` and picking the other switches + re-ranks the queue.
+    backend_posting = _seed_scored_posting(db_engine, dedupe="be", title="Backend Role")
+    with session_scope(db_engine) as session:
+        ml = create_profile(session, name="ML", preferences=ProfilePreferences(), active=True)
+        assert ml.id is not None
+        ml_id = ml.id
+    ml_posting = _seed_scored_posting(db_engine, dedupe="ml", title="ML Role")
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert isinstance(screen, DiscoverScreen)
+        # ML is the active profile → its posting is the only queue row.
+        assert screen.query_one("#discover-table", DataTable).row_count == 1
+        assert screen._posting_ids == [ml_posting]
+        # Open the profile picker and choose the Backend profile (first option).
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, ProfilePickerScreen)
+        picker = pilot.app.screen.query_one(OptionList)
+        picker.highlighted = 0  # Backend (creation order)
+        await pilot.press("enter")
+        await pilot.pause()
+        # Back on Discover, re-ranked to the Backend profile's posting.
+        discover = pilot.app.screen
+        assert isinstance(discover, DiscoverScreen)
+        assert discover._posting_ids == [backend_posting]
+    # The active profile actually switched (persisted).
+    with session_scope(db_engine) as session:
+        active = get_active_profile(session)
+        assert active is not None and active.name == "BE"
+        assert active.id != ml_id
+
+
+async def test_discover_switch_profile_cancel_keeps_queue(db_engine: Engine) -> None:
+    # Cancelling the picker (Escape) leaves the active profile and queue unchanged.
+    _seed_scored_posting(db_engine, dedupe="be")
+    async with AtlasApp(engine=db_engine).run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("p")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, ProfilePickerScreen)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(pilot.app.screen, DiscoverScreen)
+        assert pilot.app.screen.query_one("#discover-table", DataTable).row_count == 1
 
 
 async def test_discover_enter_opens_posting_detail(db_engine: Engine) -> None:
@@ -702,13 +757,9 @@ async def test_discover_tailor_browse_only_disabled(db_engine: Engine) -> None:
 
 
 async def test_discover_tailor_worker_error_is_handled(db_engine: Engine, tmp_path: Path) -> None:
+    # A scored posting (so the queue is populated) but no master resume → tailoring
+    # raises in the worker; the app stays on the Discover screen and toasts.
     _seed_scored_posting(db_engine)
-    # Deactivate the profile so tailoring raises NoActiveProfileError in the worker.
-    with session_scope(db_engine) as session:
-        active = get_active_profile(session)
-        assert active is not None
-        active.active = False
-        session.add(active)
     provider = FakeLLMProvider([make_response(structured=_TAILORED)])
     app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
     async with app.run_test() as pilot:
@@ -769,12 +820,10 @@ async def test_posting_detail_tailor_browse_only_disabled(db_engine: Engine) -> 
 async def test_posting_detail_tailor_worker_error_is_handled(
     db_engine: Engine, tmp_path: Path
 ) -> None:
+    # Seed a scored posting (so the active profile's queue is populated) but no
+    # master resume, so tailoring raises inside the worker; the app stays on the
+    # Posting-detail screen and toasts rather than tearing down.
     _seed_scored_posting(db_engine)
-    with session_scope(db_engine) as session:
-        active = get_active_profile(session)
-        assert active is not None
-        active.active = False
-        session.add(active)
     provider = FakeLLMProvider([make_response(structured=_TAILORED)])
     app = _action_app(db_engine, provider=provider, renders_dir=tmp_path)
     async with app.run_test() as pilot:

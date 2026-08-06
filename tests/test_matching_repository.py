@@ -12,6 +12,7 @@ from atlas.matching.repository import (
     create_match_score,
     get_latest_match_score,
     list_scored_postings,
+    list_unscored_postings,
 )
 from atlas.matching.structure import QueueStatus
 from atlas.profiles.preferences import ProfilePreferences
@@ -139,7 +140,7 @@ def test_list_scored_postings_orders_by_score_desc(db_engine: Engine) -> None:
     _create(db_engine, job_posting_id=p2, profile_id=profile_id, score=90)
     _create(db_engine, job_posting_id=p3, profile_id=profile_id, score=75)
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)
+        rows = list_scored_postings(session, profile_id)
         assert [posting.id for posting, _ in rows] == [p2, p3, p1]
         assert [score.score for _, score in rows] == [90, 75, 60]
 
@@ -152,7 +153,7 @@ def test_list_scored_postings_uses_latest_score_not_highest(db_engine: Engine) -
     _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=40)  # newer, low
     _create(db_engine, job_posting_id=p2, profile_id=profile_id, score=70)
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)
+        rows = list_scored_postings(session, profile_id)
         # p1's latest score is 40 (< p2's 70), so p2 ranks first.
         assert [posting.id for posting, _ in rows] == [p2, p1]
         assert [score.score for _, score in rows] == [70, 40]
@@ -164,7 +165,7 @@ def test_list_scored_postings_tiebreak_newest_posting_first(db_engine: Engine) -
     _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=80)
     _create(db_engine, job_posting_id=p2, profile_id=profile_id, score=80)
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)
+        rows = list_scored_postings(session, profile_id)
         # Equal scores → newer posting (higher id) first.
         assert [posting.id for posting, _ in rows] == [p2, p1]
 
@@ -177,7 +178,7 @@ def test_list_scored_postings_excludes_dismissed(db_engine: Engine) -> None:
     with session_scope(db_engine) as session:
         set_posting_queue_status(session, p2, QueueStatus.DISMISSED)
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)
+        rows = list_scored_postings(session, profile_id)
         assert [posting.id for posting, _ in rows] == [p1]
 
 
@@ -187,7 +188,7 @@ def test_list_scored_postings_includes_saved(db_engine: Engine) -> None:
     with session_scope(db_engine) as session:
         set_posting_queue_status(session, p1, QueueStatus.SAVED)
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)
+        rows = list_scored_postings(session, profile_id)
         assert [posting.id for posting, _ in rows] == [p1]
         assert rows[0][0].queue_status == "saved"
 
@@ -197,22 +198,23 @@ def test_list_scored_postings_excludes_unscored(db_engine: Engine) -> None:
     _add_posting(db_engine, dedupe="h2")  # never scored → excluded
     _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=80)
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)
+        rows = list_scored_postings(session, profile_id)
         assert [posting.id for posting, _ in rows] == [p1]
 
 
 def test_list_scored_postings_empty(db_engine: Engine) -> None:
+    _, profile_id = _seed_refs(db_engine)
     with session_scope(db_engine) as session:
-        assert list(list_scored_postings(session)) == []
+        assert list(list_scored_postings(session, profile_id)) == []
 
 
 def test_set_posting_queue_status_persists(db_engine: Engine) -> None:
-    p1, _ = _seed_refs(db_engine)
+    p1, profile_id = _seed_refs(db_engine)
     with session_scope(db_engine) as session:
         updated = set_posting_queue_status(session, p1, QueueStatus.DISMISSED)
         assert updated.queue_status == "dismissed"
     with session_scope(db_engine) as session:
-        rows = list_scored_postings(session)  # dismissed → gone from the queue
+        rows = list_scored_postings(session, profile_id)  # dismissed → gone from the queue
         assert rows == []
 
 
@@ -221,3 +223,54 @@ def test_set_posting_queue_status_unknown_id_raises(db_engine: Engine) -> None:
 
     with session_scope(db_engine) as session, pytest.raises(JobPostingNotFoundError):
         set_posting_queue_status(session, 999, QueueStatus.SAVED)
+
+
+def _second_profile(engine: Engine) -> int:
+    """Create a second (inactive) profile and return its id."""
+    with session_scope(engine) as session:
+        profile = create_profile(
+            session, name="ML Engineer", preferences=ProfilePreferences(), active=False
+        )
+        assert profile.id is not None
+        return profile.id
+
+
+# --- per-profile scoring isolation ----------------------------------------------
+
+
+def test_get_latest_match_score_filters_by_profile(db_engine: Engine) -> None:
+    posting_id, p_a = _seed_refs(db_engine)
+    p_b = _second_profile(db_engine)
+    _create(db_engine, job_posting_id=posting_id, profile_id=p_a, score=60)
+    _create(db_engine, job_posting_id=posting_id, profile_id=p_b, score=90)
+    with session_scope(db_engine) as session:
+        # Profile-agnostic: newest row across profiles (B's 90).
+        assert get_latest_match_score(session, posting_id) is not None
+        assert get_latest_match_score(session, posting_id).score == 90  # type: ignore[union-attr]
+        # Scoped to a profile: that profile's latest.
+        a_latest = get_latest_match_score(session, posting_id, profile_id=p_a)
+        assert a_latest is not None and a_latest.score == 60
+        b_latest = get_latest_match_score(session, posting_id, profile_id=p_b)
+        assert b_latest is not None and b_latest.score == 90
+
+
+def test_list_unscored_postings_is_per_profile(db_engine: Engine) -> None:
+    # A posting scored for profile A is still unscored for profile B.
+    posting_id, p_a = _seed_refs(db_engine)
+    p_b = _second_profile(db_engine)
+    _create(db_engine, job_posting_id=posting_id, profile_id=p_a, score=70)
+    with session_scope(db_engine) as session:
+        assert [p.id for p in list_unscored_postings(session, p_a)] == []
+        assert [p.id for p in list_unscored_postings(session, p_b)] == [posting_id]
+
+
+def test_list_scored_postings_is_per_profile(db_engine: Engine) -> None:
+    # The queue shows only the requested profile's scores.
+    posting_id, p_a = _seed_refs(db_engine)
+    p_b = _second_profile(db_engine)
+    _create(db_engine, job_posting_id=posting_id, profile_id=p_a, score=70)
+    with session_scope(db_engine) as session:
+        a_rows = list_scored_postings(session, p_a)
+        assert [(posting.id, s.score) for posting, s in a_rows] == [(posting_id, 70)]
+        # Profile B has not scored it → empty queue.
+        assert list(list_scored_postings(session, p_b)) == []

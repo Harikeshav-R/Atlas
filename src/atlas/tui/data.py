@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from atlas.coverletter.repository import get_latest_cover_letter
 from atlas.db.models import Company, JobPosting, JobSource
 from atlas.matching.repository import get_latest_match_score, list_scored_postings
-from atlas.profiles.repository import get_active_profile
+from atlas.profiles.repository import get_active_profile, list_profiles
 from atlas.resume.repository import get_blocks, get_latest_master_resume
 from atlas.tailor.repository import get_application, get_latest_tailored_resume
 from atlas.tailor.structure import TailoredItem
@@ -43,6 +43,8 @@ __all__ = [
     "DiscoverQueue",
     "DiscoverRow",
     "MaterialSummary",
+    "ProfileChoice",
+    "ProfileChoices",
     "RecentApplication",
     "ResumeBlockView",
     "StatusCount",
@@ -52,6 +54,7 @@ __all__ = [
     "build_application_detail",
     "build_dashboard_report",
     "build_discover_queue",
+    "build_profile_choices",
     "build_tailor_workspace",
 ]
 
@@ -269,8 +272,9 @@ def build_application_detail(session: Session, application_id: int) -> Applicati
     :func:`atlas.tailor.repository.get_latest_tailored_resume`,
     :func:`atlas.coverletter.repository.get_latest_cover_letter`, and
     :func:`atlas.matching.repository.get_latest_match_score` (keyed on the
-    application's posting), and decodes the ``status_history`` JSON into a typed
-    timeline (oldest first).
+    application's posting **and its profile**, so the fit shown is the one this
+    application was prepared under), and decodes the ``status_history`` JSON into a
+    typed timeline (oldest first).
 
     Raises:
         ApplicationNotFoundError: If no application has ``application_id``.
@@ -279,7 +283,9 @@ def build_application_detail(session: Session, application_id: int) -> Applicati
     assert application.id is not None  # persisted rows always have an id
     posting, company = _posting_and_company(session, application.job_posting_id)
 
-    latest_score = get_latest_match_score(session, application.job_posting_id)
+    latest_score = get_latest_match_score(
+        session, application.job_posting_id, profile_id=application.profile_id
+    )
     tailored = get_latest_tailored_resume(session, application.id)
     letter = get_latest_cover_letter(session, application.id)
 
@@ -477,6 +483,30 @@ class DiscoverQueue(BaseModel):
     rows: list[DiscoverRow]
 
 
+class ProfileChoice(BaseModel):
+    """One selectable profile in the Discover profile switcher.
+
+    Attributes:
+        id: The profile's id.
+        name: The profile's display name.
+        active: Whether this is the currently active profile.
+    """
+
+    id: int
+    name: str
+    active: bool
+
+
+class ProfileChoices(BaseModel):
+    """The profile switcher's view model.
+
+    Attributes:
+        choices: One :class:`ProfileChoice` per profile, in creation order.
+    """
+
+    choices: list[ProfileChoice]
+
+
 def _salary_display(salary: dict[str, object]) -> str:
     """Render a posting's ``salary`` JSON as a compact display string.
 
@@ -496,15 +526,19 @@ def _salary_display(salary: dict[str, object]) -> str:
 
 
 def build_discover_queue(session: Session) -> DiscoverQueue:
-    """Build the :class:`DiscoverQueue` from the ranked scored postings.
+    """Build the :class:`DiscoverQueue` for the active profile's ranked scores.
 
     Pure over the session: maps
-    :func:`atlas.matching.repository.list_scored_postings` (already ranked by fit,
-    excluding dismissed) into rows, resolving each posting's company name, its
-    source type, and a salary display string.
+    :func:`atlas.matching.repository.list_scored_postings` for the **active
+    profile** (already ranked by fit, excluding dismissed) into rows, resolving each
+    posting's company name, its source type, and a salary display string. With no
+    active profile the queue is empty.
     """
+    profile = get_active_profile(session)
+    if profile is None or profile.id is None:
+        return DiscoverQueue(rows=[])
     rows: list[DiscoverRow] = []
-    for posting, score in list_scored_postings(session):
+    for posting, score in list_scored_postings(session, profile.id):
         assert posting.id is not None  # persisted rows always have an id
         company = session.get(Company, posting.company_id)
         assert company is not None  # a non-null foreign key never misses
@@ -525,3 +559,18 @@ def build_discover_queue(session: Session) -> DiscoverQueue:
             )
         )
     return DiscoverQueue(rows=rows)
+
+
+def build_profile_choices(session: Session) -> ProfileChoices:
+    """Build the :class:`ProfileChoices` for the Discover profile switcher.
+
+    Pure over the session: maps every profile (creation order) into a
+    :class:`ProfileChoice`, flagging the active one so the picker can mark it.
+    """
+    return ProfileChoices(
+        choices=[
+            ProfileChoice(id=profile.id, name=profile.name, active=profile.active)
+            for profile in list_profiles(session)
+            if profile.id is not None
+        ]
+    )

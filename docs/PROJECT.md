@@ -183,9 +183,12 @@ week, and is losing track of deadlines and which resume version went where.
 - **CLI subcommands**: thin scriptable entry points (`atlas add`, `atlas tailor`,
   `atlas status`, etc.) for automation and users who prefer flags over the TUI.
 
-Concurrency safety: SQLite in WAL mode; the daemon is the single writer for
-discovery/scoring rows, the TUI writes user-driven rows; short transactions; a lightweight
-row-level "owned by" convention to avoid double work.
+Concurrency safety: SQLite in WAL mode (with a `busy_timeout` so a contended write waits
+rather than failing); the daemon is the single writer for discovery/scoring rows, the TUI
+writes user-driven rows; short transactions; a lightweight row-level "owned by" convention
+to avoid double work — implemented as the `score_claim` scoring lease (`atlas.matching.claims`):
+a worker claims a `(posting, profile)` pair before scoring it and releases it after, and a
+concurrent worker skips a pair whose claim is still live.
 
 ---
 
@@ -676,6 +679,10 @@ Core tables (simplified):
   handled flag.
 - **ai_call** — id, task, prompt_version, backend, model, tokens/cost, latency,
   cache_hit, created_at (observability & spend caps).
+- **score_claim** — id, job_posting_id, profile_id, owner, claimed_at; unique on
+  (job_posting_id, profile_id). The §4.1 row-level "owned by" scoring lease: the daemon
+  claims a (posting, profile) pair before scoring it so a concurrent writer never
+  double-scores.
 - **alembic_version** — Alembic migration bookkeeping.
 
 Files (resumes, PDFs, HTML snapshots) live under the data dir
@@ -1146,7 +1153,14 @@ The document specs everything; build order is phased. Each phase is independentl
   open-URL actions and drill-in to Posting detail; dismiss/save persist via a new
   `JobPosting.queue_status` (migration), and opening the apply URL uses a new
   `atlas.platform.browser` `UrlOpener` seam. Cross-strategy dedup already lands with discovery.)*
-- [ ] **Multiple profiles** fully wired.
+- [x] **Multiple profiles** fully wired. *(✅ scoring + the Discover queue are now
+  per-profile: `match_score.profile_id` is read as a filter (`list_unscored_postings` /
+  `list_scored_postings` keyed by profile), `score_posting` takes the profile from its
+  caller, and the daemon poll scores **every** profile's backlog each tick so each
+  profile's queue is ready on switch. A TUI profile switcher (`p` on Discover),
+  `atlas score --profile`, the §4.1 row-level "owned by" scoring lease (`score_claim`
+  table + `atlas.matching.claims`) so a concurrent writer never double-scores, and a
+  `busy_timeout` PRAGMA. No score-table migration — `profile_id` already existed.)*
 
 ### Phase 3 — Scheduling & status intelligence
 - [ ] **CalDAV** calendar integration + `.ics` fallback; Calendar screen.

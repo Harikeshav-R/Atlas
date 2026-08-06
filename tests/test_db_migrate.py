@@ -41,6 +41,7 @@ def test_upgrade_to_head_creates_the_schema(tmp_path: Path) -> None:
         "application",
         "tailored_resume",
         "cover_letter",
+        "score_claim",
         "alembic_version",
     } <= tables
 

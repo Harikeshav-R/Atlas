@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import JSON, Column, Field, SQLModel
 
 from atlas.db.types import UtcDateTime
@@ -32,6 +33,7 @@ __all__ = [
     "MatchScore",
     "Profile",
     "ResumeBlock",
+    "ScoreClaim",
     "TailoredResume",
     "User",
 ]
@@ -439,3 +441,34 @@ class CoverLetter(SQLModel, table=True):
     rendered_pdf_ref: str | None = None
     version: int
     created_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
+
+
+class ScoreClaim(SQLModel, table=True):
+    """A lightweight lease claiming one (posting, profile) pair for scoring (§4.1).
+
+    Implements PROJECT.md §4.1's row-level "owned by" convention: before scoring a
+    posting for a profile, a worker claims the pair here; a concurrent worker that
+    finds a **live** claim (younger than the lease) skips it, so the daemon's
+    score-every-profile poll never double-scores even if a second writer appears.
+    A claim older than the lease is considered abandoned (a crashed worker) and may
+    be stolen. There is at most one claim per pair (:attr:`__table_args__` unique
+    constraint); the daemon is the single scoring writer, so the constraint documents
+    intent and backstops a stray second writer rather than being the primary guard.
+
+    Attributes:
+        id: Surrogate primary key (assigned on insert).
+        job_posting_id: The claimed :class:`JobPosting`.
+        profile_id: The :class:`Profile` the posting is being scored for.
+        owner: An opaque owner token (the daemon process's pid) for observability.
+        claimed_at: When the claim was taken/renewed (timezone-aware UTC); the lease
+            is measured from here.
+    """
+
+    __tablename__ = "score_claim"
+    __table_args__ = (UniqueConstraint("job_posting_id", "profile_id", name="uq_score_claim_pair"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_posting_id: int = Field(foreign_key="job_posting.id")
+    profile_id: int = Field(foreign_key="profile.id")
+    owner: str
+    claimed_at: datetime = Field(sa_column=Column(UtcDateTime, nullable=False))
