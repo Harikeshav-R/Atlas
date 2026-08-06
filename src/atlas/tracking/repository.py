@@ -12,20 +12,44 @@ listing query the tracking views (CLI ``atlas list`` and the later TUI) need.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
 from sqlmodel import col, desc, func, select
 
 from atlas.db.models import Application
+from atlas.tracking.status import TERMINAL_STATUSES, ApplicationStatus, StatusTransition
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from sqlmodel import Session
 
-    from atlas.tracking.status import ApplicationStatus
+__all__ = [
+    "DeadlineItem",
+    "count_applications_by_status",
+    "list_applications",
+    "upcoming_deadlines",
+]
 
-__all__ = ["count_applications_by_status", "list_applications"]
+
+class DeadlineItem(BaseModel):
+    """An application deadline coming up within the notification lead window.
+
+    Attributes:
+        application_id: The :class:`~atlas.db.models.Application` the deadline is on.
+        status: The stage whose transition recorded the deadline (e.g. ``"oa"``,
+            ``"interview"``).
+        due: When the deadline falls (timezone-aware UTC).
+        key: A stable per-deadline key (``"<application_id>:<due-iso>"``) the daemon
+            uses to notify about a given deadline exactly once.
+    """
+
+    application_id: int
+    status: str
+    due: datetime
+    key: str
 
 
 def list_applications(
@@ -76,3 +100,51 @@ def count_applications_by_status(
     if profile_id is not None:
         statement = statement.where(Application.profile_id == profile_id)
     return dict(session.exec(statement).all())
+
+
+def upcoming_deadlines(
+    session: Session,
+    *,
+    now: datetime,
+    lead_hours: int,
+) -> list[DeadlineItem]:
+    """Return deadlines falling within ``lead_hours`` of ``now``, soonest first.
+
+    Deadlines are advisory dates recorded per status transition
+    (:attr:`~atlas.tracking.status.StatusTransition.due`) and live only inside the
+    JSON ``status_history`` column — there is no queryable deadline column yet
+    (real calendar integration is a later phase, PROJECT.md §5.12). This scans the
+    history of every **non-terminal** application (a finished application has no
+    live deadline), collecting each entry whose ``due`` falls in the half-open
+    window ``[now, now + lead_hours)``. A malformed history entry is skipped rather
+    than crashing the daemon's notification pass.
+
+    The daemon's desktop notifications (PROJECT.md §5.16) use this; each item's
+    stable :attr:`~DeadlineItem.key` lets the daemon alert on a given deadline once.
+    """
+    horizon = now + timedelta(hours=lead_hours)
+    items: list[DeadlineItem] = []
+    for application in session.exec(select(Application)).all():
+        if application.id is None:  # pragma: no cover - persisted rows always have an id
+            continue
+        if application.status in {status.value for status in TERMINAL_STATUSES}:
+            continue
+        for entry in application.status_history:
+            try:
+                transition = StatusTransition.model_validate(entry)
+            except ValueError:
+                # A hand-mangled history entry must not sink the whole pass.
+                continue
+            due = transition.due
+            if due is None or not (now <= due < horizon):
+                continue
+            items.append(
+                DeadlineItem(
+                    application_id=application.id,
+                    status=transition.to_status,
+                    due=due,
+                    key=f"{application.id}:{due.isoformat()}",
+                )
+            )
+    items.sort(key=lambda item: item.due)
+    return items

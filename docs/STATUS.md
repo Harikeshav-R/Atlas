@@ -9,22 +9,24 @@
 > whenever a roadmap item lands, tick it here and move the "Next up" pointer. A stale
 > STATUS.md is a bug.
 
-- **Last updated:** 2026-08-06 (**daemon IPC surface** — a local socket
-  (`atlas.daemon.ipc`, PROJECT.md §4.1) so the TUI/CLI can trigger on-demand daemon
-  work and stream its progress: a newline-delimited-JSON protocol + pure
-  `handle_request` core (`status` / `poll`), a `sys.platform`-dispatched transport
-  (AF_UNIX / loopback TCP) behind the `platform/opener.py` seam pattern, a
-  progress-callback seam threaded through all three polls, `atlas daemon poll`, and
-  a TUI "poll now" binding (`g`) on the Discover screen. Earlier the same phase: the
-  daemon + scheduler, all four ATS adapters + watchlist, the TUI Discover queue, the
-  aggregator adapters (free + key-gated), and multiple profiles fully wired.
-  **Next:** desktop notifications — the last Phase-2 item)
-- **Current phase:** Phase 2 — Discovery & background 🚧 (daemon + scheduler +
-  **IPC ✅**; company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever ·
-  Ashby · Workday); scored Discover queue in the TUI ✅; **aggregator adapters +
-  saved searches ✅** — free (RemoteOK · Remotive) and key-gated (Adzuna · USAJOBS);
-  **multiple profiles fully wired ✅**; **desktop notifications next**). Phase 1 core
-  loop ✅ complete.
+- **Last updated:** 2026-08-06 (**desktop notifications** — the daemon now posts
+  native OS notifications (`atlas.notify` + `atlas.platform.notifier`, PROJECT.md
+  §5.16) for new high-fit matches and upcoming deadlines even when the TUI is
+  closed: a `Notifier` platform seam over `desktop-notifier` with a best-effort
+  fire-and-forget helper, a JSON run-state file (high-water mark + daily cap) so a
+  re-poll never re-notifies, `list_new_high_fit` + `upcoming_deadlines` queries, a
+  `[notifications]` config (ships disabled), and the `notify_after_poll`
+  orchestrator fired after scoring from both the scheduled tick and the IPC poll.
+  **This is the last Phase-2 item — Phase 2 is now complete.** Earlier the same
+  phase: the daemon + scheduler + IPC, all four ATS adapters + watchlist, the TUI
+  Discover queue, the aggregator adapters (free + key-gated), and multiple profiles
+  fully wired. **Next:** Phase 3 — Scheduling & status intelligence (CalDAV))
+- **Current phase:** Phase 2 — Discovery & background ✅ **complete** (daemon +
+  scheduler + **IPC ✅**; company watchlist + **all four ATS adapters ✅**
+  (Greenhouse · Lever · Ashby · Workday); scored Discover queue in the TUI ✅;
+  **aggregator adapters + saved searches ✅** — free (RemoteOK · Remotive) and
+  key-gated (Adzuna · USAJOBS); **multiple profiles fully wired ✅**; **desktop
+  notifications ✅**). Phase 1 core loop ✅ complete. **Next: Phase 3.**
 - **Design source of truth:** [`docs/PROJECT.md`](./PROJECT.md) — especially the
   [phased roadmap](./PROJECT.md#15-phased-roadmap).
 - **Working agreement:** [`AGENTS.md`](../AGENTS.md) (branching, commits, tests, PR flow).
@@ -33,24 +35,25 @@
 
 ## ▶ Next up (do this next)
 
-**Phase 2 (Discovery & background) is nearly complete.** The **daemon + scheduler + IPC**,
-the **company watchlist + all four ATS adapters** (Greenhouse, Lever, Ashby, Workday), the
+**Phase 2 (Discovery & background) is complete.** The **daemon + scheduler + IPC**, the
+**company watchlist + all four ATS adapters** (Greenhouse, Lever, Ashby, Workday), the
 **scored Discover queue in the TUI**, the **aggregator adapters + saved keyword searches**
-— free (RemoteOK, Remotive) **and key-gated (Adzuna, USAJOBS)** — and **multiple profiles
-fully wired** have landed (see "What has landed"). The daemon discovers postings from both
-watchlisted ATS boards and per-profile aggregator searches, **scores them for every profile**
-(behind a `score_claim` lease), and `DiscoverScreen` (press `w`) presents each profile's
-ranked queue — switchable in place with `p`, refreshable on demand with `g` (poll the daemon
-over IPC) — with tailor / dismiss / save / open-URL actions, so Journey B (background
-discovery → review → tailor) works end-to-end across strategies and profiles.
+— free (RemoteOK, Remotive) **and key-gated (Adzuna, USAJOBS)** — **multiple profiles fully
+wired**, and now **desktop notifications** have all landed (see "What has landed"). The
+daemon discovers postings from both watchlisted ATS boards and per-profile aggregator
+searches, **scores them for every profile** (behind a `score_claim` lease), presents each
+profile's ranked queue in `DiscoverScreen` (press `w`; switch with `p`, refresh with `g`),
+and (when `[notifications]` is enabled) posts native OS notifications for new high-fit
+matches and upcoming deadlines even when the TUI is closed — so Journey B works end-to-end.
 
-**Do this next to finish Phase 2 (PROJECT.md §5.16, §15):**
-1. **Desktop notifications** (`desktop-notifier`, §5.16) fired by the daemon for new high-fit
-   matches / upcoming deadlines even when the TUI is closed — the last unchecked Phase-2
-   item. Follow the platform-seam pattern (`atlas.platform` / `atlas.notify`): a `Notifier`
-   Protocol + a `sys.platform`-appropriate, pragma'd backend (`desktop-notifier` over D-Bus /
-   Notification Center / WinRT) with a no-op fallback, driven from the daemon tick behind the
-   `[notifications]` config (min score, quiet hours, daily cap).
+**Do this next — start Phase 3 (Scheduling & status intelligence, PROJECT.md §5.13–§5.15, §15):**
+1. **CalDAV calendar integration** + `.ics` fallback and a Calendar TUI screen — sync
+   Atlas-created deadline/interview events to the user's calendar (credentials in the
+   keychain; only Atlas-created events are modified, §12).
+2. **IMAP email scan** + AI classification → *proposed* status changes and events (read-only,
+   opt-in, app-password in the keychain, §5.14) — the notification's
+   "email-scan-detected status changes awaiting confirmation" trigger (§5.16) lands with this.
+3. **Application-question drafting** (§5.8) — the deferred Questions tab.
 
 **Smaller aggregator/ATS follow-ups (optional):** the free HN "Who is hiring" / arbeitnow
 aggregators (drop into the `atlas.discovery.aggregators` registry); Lever EU-region boards
@@ -107,6 +110,39 @@ The Phase-0 AI-provider checklist below is retained as historical reference.
 ---
 
 ## ✅ What has landed
+
+Phase 2 · Desktop notifications — `atlas.notify` + `atlas.platform.notifier` +
+`[notifications]` config (**the last Phase-2 item — Phase 2 is now complete**; the daemon
+alerts the user to new high-fit matches and upcoming deadlines even when the TUI is closed,
+PROJECT.md §5.16):
+
+- **Notifier platform seam** (`atlas.platform.notifier`): mirrors the file/URL openers — a
+  secret-free `NotifyError`, a `@runtime_checkable` `Notifier` protocol (a `(title, message)`
+  callable), and a pragma'd `default_notifier` over `desktop-notifier`'s `DesktopNotifierSync`
+  (which dispatches to the native backend — D-Bus / Notification Center / WinRT — and degrades
+  gracefully). The heavy import is lazy; any backend failure maps to the one domain error. A
+  `FakeNotifier` joins the shared conftest fakes.
+- **Best-effort dispatch + pure gating** (`atlas.notify.emit` / `window`): `notify_best_effort`
+  mirrors `emit_progress` (no-ops on a `None` notifier, logs-and-swallows a raising one, so a
+  dead backend never breaks a poll); `window` is pure quiet-hours parsing (a `"HH:MM-HH:MM"`
+  window that wraps past midnight; a malformed spec disables quiet hours) + a per-day key.
+- **Run-state + queries** (`atlas.notify.state` + two repository queries): a JSON `NotifyState`
+  under the state dir (`notify_state_file()`), mirroring the probe cache (missing/corrupt →
+  fresh default), holding the last-notified score-id high-water mark, the per-day count, and
+  the alerted deadline keys. `matching.repository.list_new_high_fit` returns a profile's
+  postings scored ≥ threshold with a score-id past the mark (new since the last notification);
+  `tracking.repository.upcoming_deadlines` scans the `status_history` JSON of non-terminal
+  applications for `StatusTransition.due` dates within the lead window (no schema change).
+- **Orchestrator + wiring** (`atlas.notify.service`): `notify_after_poll` short-circuits when
+  disabled / inside quiet hours, notifies new matches across every profile (one shared
+  baseline so interleaved score ids aren't skipped) then upcoming deadlines, bounded by the
+  daily cap, advancing the run-state. `run_after_poll_notifications` is the daemon-facing
+  wrapper (loads/saves state, wholly best-effort), fired after scoring from **both** the
+  scheduled tick (`atlas daemon start`) and the on-demand IPC poll (`_run_poll` / `handle_request`
+  gain an injected `notifier`). The `[notifications]` config (`enabled` — **ships disabled** —
+  `min_match_score`, `deadline_lead_hours`, `quiet_hours`, `daily_cap`) is no longer ignored.
+- 1206 tests at 100% line+branch; `mypy --strict` incl. win32; new dependency `desktop-notifier`
+  (ships a `py.typed`, so no mypy override); **no database migration**. **Phase 2 is complete.**
 
 Phase 2 · Daemon IPC surface — `atlas.daemon.ipc` + `atlas daemon poll` + a TUI "poll now"
 binding (the last "Daemon + scheduler + IPC" sub-item — the TUI/CLI can now drive the daemon
@@ -858,6 +894,6 @@ high-level state.
 |---|---|---|
 | 0 | Foundations (hygiene/CI · scaffold · config/DB/logging · AI providers) | ✅ **complete** — hygiene/CI · scaffold · config/keyring · data layer (SQLModel/SQLite WAL/Alembic) · logging · AI provider abstraction (core contract · CLI + API backends · failover · `atlas doctor` · capability probe) |
 | 1 | Core loop (onboarding · resume · scrape · scoring · tailoring · tracking · TUI) | ✅ **complete** — onboarding · master resume · paste-URL scrape · fit scoring · tailoring + cover letter + rendering · application tracking (state machine + CLI) · full TUI (Dashboard · Applications/Kanban · Application detail · Posting detail · Tailor workspace with background action workers). Optional depth (PR-2b tailoring / interactive editing) deferred |
-| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | 🚧 in progress — daemon + scheduler + **IPC ✅** (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`; **IPC surface** — `atlas.daemon.ipc` newline-JSON protocol + pure `handle_request` · `sys.platform`-dispatched transport (AF_UNIX / loopback TCP) · progress-callback seam on all three polls · `atlas daemon poll` · TUI `g` "poll now"); company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby · Workday, on the `atlas.discovery.ats` registry · `run_discovery_poll` discover→score in the daemon · `atlas company add\|list` · `atlas discover`); scored Discover queue in the TUI ✅ (`DiscoverScreen` · `list_scored_postings` · `queue_status` · `UrlOpener`); **aggregator adapters + saved searches ✅** (`atlas.discovery.aggregators` registry · free RemoteOK · Remotive **and key-gated Adzuna · USAJOBS** · per-profile `SavedSearch` sources · `run_aggregator_poll` · `[aggregators]` config · `atlas source add\|list\|key` · aggregator health in `atlas doctor`); **multiple profiles fully wired ✅** (per-profile `list_unscored_postings` / `list_scored_postings` · `score_posting(profile=…)` · daemon scores every profile behind a `score_claim` lease · `atlas score --profile` · TUI profile switcher `p` · `busy_timeout` PRAGMA); desktop notifications next |
+| 2 | Discovery & background (daemon · ATS · aggregators · Discover queue) | ✅ **complete** — daemon + scheduler + **IPC ✅** (APScheduler · `[discovery]` config · PID-file lifecycle · score-backlog poll · `atlas daemon start\|stop\|status`; **IPC surface** — `atlas.daemon.ipc` newline-JSON protocol + pure `handle_request` · `sys.platform`-dispatched transport (AF_UNIX / loopback TCP) · progress-callback seam on all three polls · `atlas daemon poll` · TUI `g` "poll now"); company watchlist + **all four ATS adapters ✅** (Greenhouse · Lever · Ashby · Workday, on the `atlas.discovery.ats` registry · `run_discovery_poll` discover→score in the daemon · `atlas company add\|list` · `atlas discover`); scored Discover queue in the TUI ✅ (`DiscoverScreen` · `list_scored_postings` · `queue_status` · `UrlOpener`); **aggregator adapters + saved searches ✅** (`atlas.discovery.aggregators` registry · free RemoteOK · Remotive **and key-gated Adzuna · USAJOBS** · per-profile `SavedSearch` sources · `run_aggregator_poll` · `[aggregators]` config · `atlas source add\|list\|key` · aggregator health in `atlas doctor`); **multiple profiles fully wired ✅** (per-profile `list_unscored_postings` / `list_scored_postings` · `score_posting(profile=…)` · daemon scores every profile behind a `score_claim` lease · `atlas score --profile` · TUI profile switcher `p` · `busy_timeout` PRAGMA); **desktop notifications ✅** (`atlas.notify` + `atlas.platform.notifier` seam over `desktop-notifier` · best-effort dispatch + JSON run-state · `list_new_high_fit` / `upcoming_deadlines` · `[notifications]` config · fired after scoring from the tick + IPC poll) |
 | 3 | Scheduling & status intelligence (CalDAV · email scan · Q&A drafting) | ⬜ not started |
 | 4 | Polish & depth (analytics · more adapters · scraping · DOCX · encryption) | ⬜ not started |

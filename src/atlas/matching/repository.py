@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 __all__ = [
     "create_match_score",
     "get_latest_match_score",
+    "list_new_high_fit",
     "list_scored_postings",
     "list_unscored_postings",
 ]
@@ -155,5 +156,40 @@ def list_scored_postings(
         .where(MatchScore.id == latest_id)
         .where(JobPosting.queue_status != QueueStatus.DISMISSED)
         .order_by(desc(col(MatchScore.score)), desc(col(JobPosting.id)))
+    ).all()
+    return [(posting, score) for posting, score in rows]
+
+
+def list_new_high_fit(
+    session: Session,
+    profile_id: int,
+    *,
+    min_score: int,
+    after_score_id: int,
+) -> Sequence[tuple[JobPosting, MatchScore]]:
+    """Return ``profile_id``'s freshly-scored high-fit postings for notification.
+
+    The daemon's desktop notifications (PROJECT.md §5.16) use this after a scoring
+    poll: each row is a (non-dismissed) posting paired with a
+    :class:`~atlas.db.models.MatchScore` for ``profile_id`` that (a) scores at or
+    above ``min_score`` and (b) has an ``id`` greater than ``after_score_id`` — the
+    high-water mark of the last score already notified. Because scores are
+    append-only with monotonic ids, that id filter is exactly "new since the last
+    notification", so a re-poll never re-alerts an already-announced match.
+
+    Unlike :func:`list_scored_postings`, this deliberately does **not** collapse to
+    the latest score per posting: every qualifying new row is a distinct event to
+    consider (a re-score that clears the threshold is itself news). Ordered by
+    ``MatchScore.id`` ascending so the caller can advance the high-water mark to the
+    last row it processes.
+    """
+    rows = session.exec(
+        select(JobPosting, MatchScore)
+        .where(MatchScore.job_posting_id == JobPosting.id)
+        .where(MatchScore.profile_id == profile_id)
+        .where(col(MatchScore.id) > after_score_id)
+        .where(col(MatchScore.score) >= min_score)
+        .where(JobPosting.queue_status != QueueStatus.DISMISSED)
+        .order_by(col(MatchScore.id))
     ).all()
     return [(posting, score) for posting, score in rows]

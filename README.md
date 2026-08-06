@@ -149,16 +149,40 @@ Run background work with the daemon:
 ```bash
 atlas daemon start          # run the scheduler in the foreground (blocking)
 atlas daemon status         # report running/stopped (--json for scripting)
+atlas daemon poll           # trigger one poll now over the running daemon's IPC link
 atlas daemon stop           # stop a running daemon
 ```
 
 `atlas daemon start` runs a scheduler that, on the `[discovery]`
-`poll_interval_minutes` interval, first **discovers** new postings from your ATS
-watchlist and then **scores** any not-yet-scored postings against your active
-profile — so newly-found roles are scored on the same pass. (Aggregator sources
-and the daemon's IPC link to the TUI arrive next.) It blocks the terminal;
-background it with your OS service manager (`systemd --user`, `launchd`, Task
-Scheduler).
+`poll_interval_minutes` interval, **discovers** new postings from your ATS
+watchlist and aggregator searches, **scores** any not-yet-scored postings for
+every profile — so newly-found roles are scored on the same pass — and then (if
+enabled) fires **desktop notifications**. It blocks the terminal; background it
+with your OS service manager (`systemd --user`, `launchd`, Task Scheduler). The
+TUI can trigger a poll on demand over the daemon's local IPC link (press `g` on
+the Discover screen, or run `atlas daemon poll`).
+
+### Desktop notifications
+
+With `[notifications]` enabled in your `config.toml`, the daemon posts native OS
+notifications (via [`desktop-notifier`](https://pypi.org/project/desktop-notifier/)
+— D-Bus on Linux, Notification Center on macOS, WinRT on Windows) for new
+high-fit matches and upcoming deadlines, even when the TUI is closed:
+
+```toml
+[notifications]
+enabled = true              # off by default
+min_match_score = 80        # only notify for matches at/above this fit score
+deadline_lead_hours = 24    # notify when an OA/interview deadline is this close
+quiet_hours = "22:00-08:00" # suppress notifications in this window (wraps midnight)
+daily_cap = 20              # most notifications per day, to avoid spam
+```
+
+Notifications ship **disabled** — a fresh install is quiet until you opt in. They
+degrade gracefully: if no notification backend is usable Atlas still runs, the
+alerts just don't appear. On macOS 10.14+, only a **signed** interpreter can post
+notifications (the python.org build is signed; Homebrew Python is not), so under
+an unsigned interpreter notifications silently no-op while everything else works.
 
 Logs go to stderr (so stdout / `--json` stays clean) and to a rotating file
 under your platform's state directory; verbosity follows `--log-level` / `-v` /

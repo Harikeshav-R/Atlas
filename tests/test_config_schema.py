@@ -145,6 +145,35 @@ def test_aggregators_section_loads() -> None:
     assert config.aggregators.usajobs.email == "sam@example.test"
 
 
+def test_notifications_defaults() -> None:
+    notifications = Config().notifications
+    # Ships disabled — a fresh install is quiet until the user opts in.
+    assert notifications.enabled is False
+    assert notifications.min_match_score == 80
+    assert notifications.deadline_lead_hours == 24
+    assert notifications.quiet_hours == "22:00-08:00"
+    assert notifications.daily_cap == 20
+
+
+def test_notifications_section_loads() -> None:
+    config = Config.model_validate(
+        {
+            "notifications": {
+                "enabled": True,
+                "min_match_score": 90,
+                "deadline_lead_hours": 12,
+                "quiet_hours": "",
+                "daily_cap": 5,
+            }
+        }
+    )
+    assert config.notifications.enabled is True
+    assert config.notifications.min_match_score == 90
+    assert config.notifications.deadline_lead_hours == 12
+    assert config.notifications.quiet_hours == ""
+    assert config.notifications.daily_cap == 5
+
+
 def test_values_override_defaults() -> None:
     config = Config.model_validate(
         {

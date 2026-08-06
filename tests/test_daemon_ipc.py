@@ -50,6 +50,7 @@ from tests.conftest import (
     FakeIpcServer,
     FakeKeyring,
     FakeLLMProvider,
+    FakeNotifier,
     FakeProcessControl,
     make_response,
 )
@@ -244,6 +245,59 @@ def test_handle_poll_empty_still_emits_result(db_engine: Engine, tmp_path: Path)
     assert isinstance(result, ResultEvent)
     assert result.discovered == 0
     assert result.scored == 0
+
+
+def _enabled_notifications() -> Config:
+    return Config.model_validate({"notifications": {"enabled": True, "quiet_hours": ""}})
+
+
+def test_handle_poll_fires_notifications_when_enabled(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The seeded posting scores 80 (== the default min_match_score), so an enabled
+    # config posts a "New job match" through the injected notifier after scoring.
+    _seed_scoreable(db_engine)
+    monkeypatch.setattr("atlas.notify.state.notify_state_file", lambda: tmp_path / "n.json")
+    notifier = FakeNotifier()
+    events: list[IpcEvent] = []
+    handle_request(
+        IpcRequest(action="poll"),
+        engine=db_engine,
+        config=_enabled_notifications(),
+        store=_store(),
+        provider=FakeLLMProvider([make_response(structured=_assessment())]),
+        owner="pid-1",
+        pid_path=tmp_path / "daemon.pid",
+        emit=events.append,
+        notifier=notifier,
+    )
+    assert isinstance(events[-1], ResultEvent)
+    assert [title for title, _ in notifier.notifications] == ["New job match"]
+
+
+def test_handle_poll_notification_failure_does_not_break_poll(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A raising notifier must not turn a successful poll into an ErrorEvent.
+    from atlas.platform.notifier import NotifyError
+
+    _seed_scoreable(db_engine)
+    monkeypatch.setattr("atlas.notify.state.notify_state_file", lambda: tmp_path / "n.json")
+    events: list[IpcEvent] = []
+    handle_request(
+        IpcRequest(action="poll"),
+        engine=db_engine,
+        config=_enabled_notifications(),
+        store=_store(),
+        provider=FakeLLMProvider([make_response(structured=_assessment())]),
+        owner="pid-1",
+        pid_path=tmp_path / "daemon.pid",
+        emit=events.append,
+        notifier=FakeNotifier(raises=NotifyError("no D-Bus")),
+    )
+    # The poll still lands its terminal ResultEvent, not an ErrorEvent.
+    assert isinstance(events[-1], ResultEvent)
+    assert events[-1].scored == 1
 
 
 def test_handle_poll_failure_emits_error_event(

@@ -109,6 +109,7 @@ from atlas.logging import setup_logging
 from atlas.matching.errors import MatchingError, NoActiveProfileError
 from atlas.matching.service import ScoreOutcome, score_posting
 from atlas.materials.service import open_application, rerender_application
+from atlas.notify.service import run_after_poll_notifications
 from atlas.platform.opener import FileOpenError, default_file_opener
 from atlas.profiles.errors import ProfileNotFoundError
 from atlas.profiles.onboarding import ask_profile, run_onboarding
@@ -1060,10 +1061,11 @@ def daemon_start() -> None:
     Runs Atlas's scheduled work on the ``[discovery]`` ``poll_interval_minutes``
     interval: first a **discovery poll** over the enabled ATS watchlist (fetching
     and persisting new postings), then a **scoring poll** that clears the fit-score
-    backlog — including whatever discovery just added — for **every** profile. This
-    blocks the terminal until stopped (``atlas daemon stop`` or Ctrl-C); background
-    it with your OS service manager. Exits ``1`` if config/secrets can't load or a
-    daemon is already running.
+    backlog — including whatever discovery just added — for **every** profile, then
+    (if ``[notifications]`` is enabled) **desktop notifications** for new high-fit
+    matches and upcoming deadlines. This blocks the terminal until stopped
+    (``atlas daemon stop`` or Ctrl-C); background it with your OS service manager.
+    Exits ``1`` if config/secrets can't load or a daemon is already running.
     """
     try:
         config = load_config()
@@ -1092,6 +1094,9 @@ def daemon_start() -> None:
             )
         with session_scope(engine) as session:
             run_scoring_poll(session, provider=provider, owner=owner)
+        # Scores are committed; notify about new high-fit matches / deadlines
+        # (best-effort — a notification failure never fails the tick).
+        run_after_poll_notifications(engine, config=config.notifications)
 
     def dispatch(request: IpcRequest, emit: Callable[[IpcEvent], None]) -> None:
         """Service one IPC request against the daemon's own engine/config/owner."""

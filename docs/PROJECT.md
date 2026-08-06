@@ -1126,8 +1126,7 @@ The document specs everything; build order is phased. Each phase is independentl
   and a pure `handle_request` core (`status` / `poll`, reusing the daemon's claim owner). A
   progress-callback seam threaded through all three polls streams a poll live; the framing is pure
   and fully tested against an in-memory fake, only the real socket I/O pragma'd. `atlas daemon
-  poll` (CLI client) and a TUI `g` "poll now" binding drive it. **Remaining Phase-2 work:** desktop
-  notifications.)*
+  poll` (CLI client) and a TUI `g` "poll now" binding drive it.)*
 - [x] **Company watchlist** + ATS adapters (Greenhouse, Lever, Ashby, Workday). *(✅ an
   extensible `AtsAdapter` Protocol + registry (`atlas.discovery.ats`) with URL-based provider
   detection; a watchlist on the existing `company`/`job_source` tables (no migration);
@@ -1165,6 +1164,21 @@ The document specs everything; build order is phased. Each phase is independentl
   `atlas score --profile`, the §4.1 row-level "owned by" scoring lease (`score_claim`
   table + `atlas.matching.claims`) so a concurrent writer never double-scores, and a
   `busy_timeout` PRAGMA. No score-table migration — `profile_id` already existed.)*
+- [x] **Desktop notifications** (§5.16). *(✅ `atlas.notify` + a `Notifier` platform seam
+  (`atlas.platform.notifier`) over `desktop-notifier` (D-Bus / Notification Center / WinRT,
+  degrading gracefully; a pragma'd `default_notifier`, a `FakeNotifier` in tests). The daemon
+  posts native notifications for new high-fit matches and upcoming deadlines even when the TUI
+  is closed. Best-effort dispatch (`notify_best_effort`, mirroring `emit_progress`) + a JSON
+  run-state under the state dir (high-water mark of the last-notified score id, per-day count,
+  alerted deadline keys) so a re-poll never re-notifies — no DB migration. New queries
+  `matching.repository.list_new_high_fit` (score ≥ threshold, id past the mark) and
+  `tracking.repository.upcoming_deadlines` (scanning `status_history` for `due` dates in the
+  lead window). Pure quiet-hours parsing (midnight-wrapping) + a daily cap. A `[notifications]`
+  config (`enabled` — ships disabled — `min_match_score`, `deadline_lead_hours`, `quiet_hours`,
+  `daily_cap`), fired after scoring from both the scheduled tick and the on-demand IPC poll.
+  **This is the last Phase-2 item — Phase 2 is complete.** Follow-ups (Phase 3): actionable
+  click-to-open callbacks, and the "ready-but-not-applied" / no-response / email-scan
+  triggers, which depend on Phase-3 features.)*
 
 ### Phase 3 — Scheduling & status intelligence
 - [ ] **CalDAV** calendar integration + `.ics` fallback; Calendar screen.

@@ -11,6 +11,7 @@ from atlas.db import session_scope
 from atlas.matching.repository import (
     create_match_score,
     get_latest_match_score,
+    list_new_high_fit,
     list_scored_postings,
     list_unscored_postings,
 )
@@ -274,3 +275,54 @@ def test_list_scored_postings_is_per_profile(db_engine: Engine) -> None:
         assert [(posting.id, s.score) for posting, s in a_rows] == [(posting_id, 70)]
         # Profile B has not scored it → empty queue.
         assert list(list_scored_postings(session, p_b)) == []
+
+
+# --- list_new_high_fit (notification query) -------------------------------------
+
+
+def test_list_new_high_fit_filters_by_threshold(db_engine: Engine) -> None:
+    p1, profile_id = _seed_refs(db_engine)
+    p2 = _add_posting(db_engine, dedupe="h2")
+    _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=70)  # below
+    _create(db_engine, job_posting_id=p2, profile_id=profile_id, score=88)  # at/above
+    with session_scope(db_engine) as session:
+        rows = list_new_high_fit(session, profile_id, min_score=80, after_score_id=0)
+        assert [(posting.id, s.score) for posting, s in rows] == [(p2, 88)]
+
+
+def test_list_new_high_fit_only_above_high_water_mark(db_engine: Engine) -> None:
+    # Rows already notified (id <= after_score_id) are excluded; newer ones remain.
+    p1, profile_id = _seed_refs(db_engine)
+    p2 = _add_posting(db_engine, dedupe="h2")
+    first = _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=85)
+    _create(db_engine, job_posting_id=p2, profile_id=profile_id, score=92)
+    with session_scope(db_engine) as session:
+        rows = list_new_high_fit(session, profile_id, min_score=80, after_score_id=first)
+        # Only the score inserted after `first` (p2) is returned.
+        assert [posting.id for posting, _ in rows] == [p2]
+
+
+def test_list_new_high_fit_orders_by_score_id_ascending(db_engine: Engine) -> None:
+    # Every qualifying row is returned (not collapsed to latest), id-ascending.
+    p1, profile_id = _seed_refs(db_engine)
+    _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=81)
+    _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=95)
+    with session_scope(db_engine) as session:
+        rows = list_new_high_fit(session, profile_id, min_score=80, after_score_id=0)
+        assert [s.score for _, s in rows] == [81, 95]
+
+
+def test_list_new_high_fit_excludes_dismissed(db_engine: Engine) -> None:
+    p1, profile_id = _seed_refs(db_engine)
+    _create(db_engine, job_posting_id=p1, profile_id=profile_id, score=90)
+    with session_scope(db_engine) as session:
+        set_posting_queue_status(session, p1, QueueStatus.DISMISSED)
+    with session_scope(db_engine) as session:
+        rows = list_new_high_fit(session, profile_id, min_score=80, after_score_id=0)
+        assert list(rows) == []
+
+
+def test_list_new_high_fit_empty(db_engine: Engine) -> None:
+    _, profile_id = _seed_refs(db_engine)
+    with session_scope(db_engine) as session:
+        assert list(list_new_high_fit(session, profile_id, min_score=80, after_score_id=0)) == []
