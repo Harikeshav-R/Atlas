@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop notifications** (`atlas.notify` + `atlas.platform.notifier`): the
+  daemon now posts native OS notifications for new high-fit matches and upcoming
+  deadlines even when the TUI is closed (PROJECT.md §5.16) — the **last Phase-2
+  item**, so Phase 2 (Discovery & background) is complete. A `Notifier` platform
+  seam mirrors the file/URL openers (a `@runtime_checkable` protocol + a pragma'd
+  `default_notifier` over [`desktop-notifier`](https://pypi.org/project/desktop-notifier/)'s
+  cross-platform backend — D-Bus / Notification Center / WinRT — degrading
+  gracefully). A best-effort `notify_best_effort` (mirroring `emit_progress`) and
+  a JSON run-state file under the state dir (mirroring the probe cache) mean a
+  dead backend never breaks a poll and a re-poll never re-notifies (a monotonic
+  score-id high-water mark for matches, stable per-deadline keys for deadlines).
+  New queries: `matching.repository.list_new_high_fit` and
+  `tracking.repository.upcoming_deadlines` (scanning `status_history` for advisory
+  due dates — no schema change). The `notify_after_poll` orchestrator honors a
+  `[notifications]` config section (`enabled` — **ships disabled** — plus
+  `min_match_score`, `deadline_lead_hours`, `quiet_hours` with midnight wrap, and
+  a `daily_cap`), and is fired after scoring from both the scheduled tick and the
+  on-demand IPC poll. No new database migration.
+- New runtime dependency: `desktop-notifier` (native OS notifications).
 - **Daemon IPC surface** (`atlas.daemon.ipc`): the local socket the TUI/CLI use
   to trigger on-demand daemon work and stream its progress (PROJECT.md §4.1) —
   the last unchecked "Daemon + scheduler + IPC" sub-item. A newline-delimited-JSON
