@@ -25,7 +25,7 @@ from atlas.ai.base import LLMError
 from atlas.ai.router import build_provider_chain
 from atlas.cli.console import console, error_console, print_json_line
 from atlas.cli.coverletter import render_cover_letter_outcome
-from atlas.cli.daemon import render_daemon_status
+from atlas.cli.daemon import render_daemon_status, render_poll_progress, render_poll_result
 from atlas.cli.discovery import (
     build_saved_search_report,
     build_watchlist_report,
@@ -66,11 +66,25 @@ from atlas.cli.tracking import (
 )
 from atlas.config.errors import ConfigError
 from atlas.config.loader import load_config
-from atlas.config.paths import pid_file
+from atlas.config.paths import pid_file, socket_file
 from atlas.config.secrets import default_secret_store
 from atlas.coverletter.errors import CoverLetterError
 from atlas.coverletter.service import write_application_cover_letter
-from atlas.daemon.errors import DaemonAlreadyRunningError, DaemonNotRunningError
+from atlas.daemon.errors import (
+    DaemonAlreadyRunningError,
+    DaemonNotRunningError,
+    IpcUnavailableError,
+)
+from atlas.daemon.ipc import (
+    ErrorEvent,
+    IpcEvent,
+    IpcRequest,
+    ProgressEvent,
+    ResultEvent,
+    default_ipc_server,
+    handle_request,
+    ipc_request,
+)
 from atlas.daemon.poll import run_scoring_poll
 from atlas.daemon.scheduler import default_scheduler
 from atlas.daemon.service import (
@@ -114,6 +128,8 @@ from atlas.tracking.service import mark_applied, set_application_status
 from atlas.tracking.status import ApplicationStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.engine import Engine
 
     from atlas.ai.base import LLMProvider
@@ -1076,12 +1092,29 @@ def daemon_start() -> None:
         with session_scope(engine) as session:
             run_scoring_poll(session, provider=provider, owner=owner)
 
+    def dispatch(request: IpcRequest, emit: Callable[[IpcEvent], None]) -> None:
+        """Service one IPC request against the daemon's own engine/config/owner."""
+        handle_request(
+            request,
+            engine=engine,
+            config=config,
+            store=store,
+            provider=provider,
+            owner=owner,
+            pid_path=pid_file(),
+            emit=emit,
+            fetcher=default_fetcher,
+        )
+
     try:
         start_daemon(
             pid_file(),
             config.discovery,
             scheduler=default_scheduler(),
             run=run,
+            ipc_server=default_ipc_server(),
+            dispatch=dispatch,
+            socket_path=socket_file(),
         )
     except DaemonAlreadyRunningError as exc:
         error_console.print(f"[error]atlas daemon start:[/error] {exc}")
@@ -1119,6 +1152,48 @@ def daemon_status_command(
         print_json_line(status.model_dump_json(indent=2))
     else:
         console.print(render_daemon_status(status))
+
+
+@daemon_app.command("poll")
+def daemon_poll(
+    as_json: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the poll result as JSON for scripting instead of streamed text.",
+    ),
+) -> None:
+    """Ask the running daemon to poll now, streaming progress (PROJECT.md §4.1, §9).
+
+    Connects to the daemon's local IPC socket and triggers one discovery +
+    aggregator + scoring pass, printing each phase's progress as it streams (to
+    stderr, so ``--json`` on stdout stays pipe-safe) and then the summary. Exits
+    ``1`` if the daemon is not running or the poll reports an error.
+    """
+    events: list[IpcEvent] = []
+
+    def on_event(event: IpcEvent) -> None:
+        events.append(event)
+        if not as_json and isinstance(event, ProgressEvent):
+            error_console.print(render_poll_progress(event))
+
+    try:
+        ipc_request(socket_file(), IpcRequest(action="poll"), on_event=on_event)
+    except IpcUnavailableError as exc:
+        error_console.print(f"[error]atlas daemon poll:[/error] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    error = next((e for e in events if isinstance(e, ErrorEvent)), None)
+    if error is not None:
+        error_console.print(f"[error]atlas daemon poll:[/error] {error.message}")
+        raise typer.Exit(code=1)
+    result = next((e for e in events if isinstance(e, ResultEvent)), None)
+    if result is None:  # pragma: no cover - the daemon always ends a poll with a result/error
+        error_console.print("[error]atlas daemon poll:[/error] the daemon sent no result.")
+        raise typer.Exit(code=1)
+    if as_json:
+        print_json_line(result.model_dump_json(indent=2))
+    else:
+        console.print(render_poll_result(result))
 
 
 def _display_name_from_token(token: str) -> str:
