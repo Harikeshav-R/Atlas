@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -450,6 +451,59 @@ class FakeProcessControl:
         """Record a terminate request and drop ``pid`` from the alive set."""
         self.terminated.append(pid)
         self.alive.discard(pid)
+
+
+class FakeConnection:
+    """An in-memory :class:`~atlas.daemon.ipc.Connection` for the IPC framing tests.
+
+    Reads from a preloaded byte buffer and captures every write, so the client /
+    server framing loops are exercised without a real socket (AGENTS.md §6.2).
+    """
+
+    def __init__(self, incoming: bytes = b"") -> None:
+        """Preload ``incoming`` bytes to be read; start with empty writes."""
+        self._incoming = BytesIO(incoming)
+        self.written = BytesIO()
+        self.closed = False
+
+    def readline(self) -> bytes:
+        """Read one line from the preloaded buffer (``b""`` at end)."""
+        return self._incoming.readline()
+
+    def write(self, data: bytes) -> int:
+        """Capture written bytes and return the count."""
+        return self.written.write(data)
+
+    def flush(self) -> None:
+        """No-op flush (the buffer is always current)."""
+
+    def close(self) -> None:
+        """Record that the connection was closed."""
+        self.closed = True
+
+
+class FakeIpcServer:
+    """A scripted, offline :class:`~atlas.daemon.ipc.IpcServer` for tests.
+
+    Records the ``serve`` / ``stop`` calls (and the socket path + dispatch it was
+    given) instead of binding a real socket or spawning a thread, so the daemon
+    lifecycle wiring is testable hermetically (AGENTS.md §6.2).
+    """
+
+    def __init__(self) -> None:
+        """Start not-yet-served and not-yet-stopped."""
+        self.served: list[Path] = []
+        self.stopped = False
+        self.dispatch: object | None = None
+
+    def serve(self, socket_path: Path, dispatch: object) -> None:
+        """Record the serve call (a real one would bind + start a thread)."""
+        self.served.append(socket_path)
+        self.dispatch = dispatch
+
+    def stop(self) -> None:
+        """Record the stop call (a real one would close the socket + join)."""
+        self.stopped = True
 
 
 @dataclass

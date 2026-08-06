@@ -18,9 +18,11 @@ from atlas.config.schema import Config
 from atlas.config.secrets import SecretStore
 from atlas.daemon.errors import IpcError, IpcProtocolError, IpcUnavailableError
 from atlas.daemon.ipc import (
+    Connection,
     ErrorEvent,
     IpcEvent,
     IpcRequest,
+    IpcServer,
     ProgressEvent,
     ResultEvent,
     StatusEvent,
@@ -28,7 +30,10 @@ from atlas.daemon.ipc import (
     decode_request,
     encode_event,
     encode_request,
+    handle_connection,
     handle_request,
+    ipc_request,
+    stream_events,
 )
 from atlas.daemon.service import write_pid
 from atlas.db import session_scope
@@ -41,7 +46,13 @@ from atlas.scrape.repository import (
     get_or_create_company,
     get_or_create_url_source,
 )
-from tests.conftest import FakeKeyring, FakeLLMProvider, make_response
+from tests.conftest import (
+    FakeConnection,
+    FakeIpcServer,
+    FakeKeyring,
+    FakeLLMProvider,
+    make_response,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -248,3 +259,97 @@ def test_handle_poll_failure_emits_error_event(
     )
     assert len(events) == 1
     assert isinstance(events[0], ErrorEvent)
+
+
+# --- transport: server-side framing (handle_connection) -----------------------
+
+
+def test_handle_connection_dispatches_and_frames_events() -> None:
+    # A valid request line → dispatch runs and each emitted event is framed back.
+    conn = FakeConnection(encode_request(IpcRequest(action="status")))
+
+    def dispatch(request: IpcRequest, emit: object) -> None:
+        assert request.action == "status"
+        emit(StatusEvent(running=True, pid=7))  # type: ignore[operator]
+
+    handle_connection(conn, dispatch)
+    reply = decode_event(conn.written.getvalue())
+    assert reply == StatusEvent(running=True, pid=7)
+
+
+def test_handle_connection_rejects_malformed_request() -> None:
+    # A malformed request line → an ErrorEvent, and dispatch is never called.
+    conn = FakeConnection(b"not json\n")
+    called = False
+
+    def dispatch(_request: IpcRequest, _emit: object) -> None:
+        nonlocal called
+        called = True
+
+    handle_connection(conn, dispatch)
+    assert called is False
+    reply = decode_event(conn.written.getvalue())
+    assert isinstance(reply, ErrorEvent)
+
+
+# --- transport: client-side framing (stream_events / ipc_request) -------------
+
+
+def test_stream_events_sends_request_and_decodes_replies() -> None:
+    # The server's framed events are decoded and pushed to on_event in order.
+    incoming = encode_event(ProgressEvent(phase="scoring", stage="start")) + encode_event(
+        ResultEvent(discovered=1, scored=1, skipped=0, failed_sources=0, inactive=0, claimed=0)
+    )
+    conn = FakeConnection(incoming)
+    received: list[IpcEvent] = []
+    stream_events(conn, IpcRequest(action="poll"), received.append)
+    # The request was written first, then all events decoded.
+    assert decode_request(conn.written.getvalue()) == IpcRequest(action="poll")
+    assert [type(e).__name__ for e in received] == ["ProgressEvent", "ResultEvent"]
+
+
+def test_ipc_request_streams_via_injected_connect(tmp_path: Path) -> None:
+    conn = FakeConnection(encode_event(StatusEvent(running=False, pid=None)))
+    received: list[IpcEvent] = []
+    ipc_request(
+        tmp_path / "daemon.socket",
+        IpcRequest(action="status"),
+        on_event=received.append,
+        connect=lambda _path: conn,
+    )
+    assert received == [StatusEvent(running=False, pid=None)]
+    assert conn.closed is True  # the connection is closed even on the happy path
+
+
+def test_ipc_request_closes_connection_on_error(tmp_path: Path) -> None:
+    # An undecodable event mid-stream raises, but the connection is still closed.
+    conn = FakeConnection(b"garbage\n")
+    with pytest.raises(IpcProtocolError):
+        ipc_request(
+            tmp_path / "daemon.socket",
+            IpcRequest(action="status"),
+            on_event=lambda _e: None,
+            connect=lambda _path: conn,
+        )
+    assert conn.closed is True
+
+
+def test_ipc_request_raises_when_connect_refuses(tmp_path: Path) -> None:
+    def refuse(_path: Path) -> Connection:
+        raise IpcUnavailableError
+
+    with pytest.raises(IpcUnavailableError):
+        ipc_request(
+            tmp_path / "daemon.socket",
+            IpcRequest(action="status"),
+            on_event=lambda _e: None,
+            connect=refuse,
+        )
+
+
+# --- transport: Protocol conformance ------------------------------------------
+
+
+def test_fakes_satisfy_the_protocols() -> None:
+    assert isinstance(FakeIpcServer(), IpcServer)
+    assert isinstance(FakeConnection(), Connection)
