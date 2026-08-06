@@ -8,7 +8,6 @@ appends to a list, the in-memory ``db_engine``, a scripted ``FakeLLMProvider`` /
 
 from __future__ import annotations
 
-import os
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -51,6 +50,7 @@ from tests.conftest import (
     FakeIpcServer,
     FakeKeyring,
     FakeLLMProvider,
+    FakeProcessControl,
     make_response,
 )
 
@@ -160,9 +160,17 @@ def test_decode_event_rejects_bad_input(bad: bytes) -> None:
 # --- handle_request: status ---------------------------------------------------
 
 
-def test_handle_status_running(db_engine: Engine, tmp_path: Path) -> None:
+def test_handle_status_running(
+    db_engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     pid_path = tmp_path / "daemon.pid"
-    write_pid(pid_path, os.getpid())  # this process is alive → running
+    write_pid(pid_path, 4242)
+    # Inject a fake process control so liveness never touches a real OS process.
+    # (The real control's os.kill(pid, 0) is a no-op probe on POSIX but delivers a
+    # console CTRL_C_EVENT on Windows, since signal.CTRL_C_EVENT == 0.)
+    monkeypatch.setattr(
+        "atlas.daemon.service.default_process_control", FakeProcessControl(alive={4242})
+    )
     events: list[IpcEvent] = []
     handle_request(
         IpcRequest(action="status"),
@@ -178,6 +186,7 @@ def test_handle_status_running(db_engine: Engine, tmp_path: Path) -> None:
     status = events[0]
     assert isinstance(status, StatusEvent)
     assert status.running is True
+    assert status.pid == 4242
 
 
 def test_handle_status_stopped_when_no_pidfile(db_engine: Engine, tmp_path: Path) -> None:

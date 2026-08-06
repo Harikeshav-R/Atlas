@@ -97,6 +97,11 @@ def test_start_registers_job_and_starts(
     monkeypatch.setattr(app_module, "default_scheduler", lambda: scheduler)
     ipc = FakeIpcServer()
     monkeypatch.setattr(app_module, "default_ipc_server", lambda: ipc)
+    # A fake process control so the dispatch's status probe never runs a real
+    # os.kill (a no-op on POSIX, but a console CTRL_C_EVENT on Windows).
+    monkeypatch.setattr(
+        "atlas.daemon.service.default_process_control", FakeProcessControl(pid=4242, alive={4242})
+    )
     result = runner.invoke(app, ["daemon", "start"])
     assert result.exit_code == 0
     assert scheduler.started is True
