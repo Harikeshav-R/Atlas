@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from atlas.config.schema import AggregatorsConfig
 from atlas.config.secrets import SecretStore
+from atlas.daemon.progress import ProgressUpdate
 from atlas.db import session_scope
 from atlas.db.models import JobSource
 from atlas.discovery.aggregators.structure import SavedSearch
@@ -262,6 +263,48 @@ def test_poll_empty_watchlist_makes_no_fetch(db_engine: Engine) -> None:
     assert outcome.skipped == 0
     assert outcome.failed_sources == 0
     assert fetcher.calls == []
+
+
+def test_poll_reports_progress(db_engine: Engine) -> None:
+    # start (total=1) → one item per source → done.
+    profile_id = _profile(db_engine)
+    _saved_search(db_engine, profile_id)
+    updates: list[ProgressUpdate] = []
+    with session_scope(db_engine) as session:
+        run_aggregator_poll(
+            session,
+            config=_CONFIG,
+            store=_store(),
+            fetcher=FakeFetcher(_result(_feed(1))),
+            clock=_fixed_clock,
+            on_progress=updates.append,
+        )
+    assert [u.stage for u in updates] == ["start", "item", "done"]
+    assert updates[0].total == 1
+    assert updates[1].label == "remoteok"
+
+
+def test_poll_progress_emits_item_for_inactive_source(db_engine: Engine) -> None:
+    # An inactive (key-gated, unconfigured) source still emits an item update,
+    # so the streamed progress reflects every source touched.
+    profile_id = _profile(db_engine)
+    with session_scope(db_engine) as session:
+        get_or_create_aggregator_source(
+            session, aggregator="adzuna", spec=SavedSearch(query="python"), profile_id=profile_id
+        )
+    updates: list[ProgressUpdate] = []
+    with session_scope(db_engine) as session:
+        outcome = run_aggregator_poll(
+            session,
+            config=_CONFIG,
+            store=_store(),
+            fetcher=FakeFetcher(_result(_feed(1))),
+            clock=_fixed_clock,
+            on_progress=updates.append,
+        )
+    assert outcome.inactive == 1
+    assert [u.stage for u in updates] == ["start", "item", "done"]
+    assert updates[1].label == "adzuna"
 
 
 def test_poll_skips_key_gated_source_without_key(db_engine: Engine) -> None:

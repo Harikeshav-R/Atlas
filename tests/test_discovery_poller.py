@@ -10,6 +10,7 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from atlas.daemon.progress import ProgressUpdate
 from atlas.db import session_scope
 from atlas.db.models import JobSource
 from atlas.discovery.poller import run_discovery_poll
@@ -171,3 +172,31 @@ def test_poll_empty_watchlist_makes_no_fetch(db_engine: Engine) -> None:
     assert outcome.skipped == 0
     assert outcome.failed_sources == 0
     assert fetcher.calls == []
+
+
+def test_poll_reports_progress(db_engine: Engine) -> None:
+    # start (total=1) → one item per source → done; a failed source still emits.
+    _watchlist(db_engine)
+    updates: list[ProgressUpdate] = []
+    with session_scope(db_engine) as session:
+        run_discovery_poll(
+            session,
+            fetcher=FakeFetcher(_result(_board(1, 2))),
+            clock=_fixed_clock,
+            on_progress=updates.append,
+        )
+    assert [u.stage for u in updates] == ["start", "item", "done"]
+    assert updates[0].total == 1
+    assert updates[1].label == "greenhouse:acme"
+    assert updates[-1].done == 1
+
+
+def test_poll_progress_on_empty_watchlist(db_engine: Engine) -> None:
+    # No sources: still brackets with start (total=0) and done, no item.
+    updates: list[ProgressUpdate] = []
+    with session_scope(db_engine) as session:
+        run_discovery_poll(
+            session, fetcher=FakeFetcher(_result(_board(1))), on_progress=updates.append
+        )
+    assert [u.stage for u in updates] == ["start", "done"]
+    assert updates[0].total == 0

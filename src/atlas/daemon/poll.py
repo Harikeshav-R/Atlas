@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from atlas.daemon.progress import ProgressUpdate, emit_progress
 from atlas.matching.claims import release_claim, try_claim
 from atlas.matching.errors import MatchingError
 from atlas.matching.repository import list_unscored_postings
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from atlas.ai.base import LLMProvider
+    from atlas.daemon.progress import ProgressCallback
 
 __all__ = ["PollOutcome", "run_scoring_poll"]
 
@@ -61,6 +63,7 @@ def run_scoring_poll(
     provider: LLMProvider,
     owner: str,
     clock: Callable[[], datetime] = utcnow,
+    on_progress: ProgressCallback | None = None,
 ) -> PollOutcome:
     """Score every profile's backlog, best-effort, claiming each pair first.
 
@@ -74,6 +77,10 @@ def run_scoring_poll(
         owner: This worker's claim token (the daemon process's pid, as a string).
         clock: The clock for each score's ``created_at`` and claim timestamps
             (injectable for tests).
+        on_progress: Optional sink for progress updates (:mod:`atlas.daemon.progress`).
+            The IPC surface wires this to stream the poll's progress; ``None`` (the
+            default) leaves every existing caller unaffected. The pair total is not
+            known up front (nested profile x posting loops), so ``total`` is ``None``.
 
     Returns:
         A :class:`PollOutcome` with the scored / skipped / claimed counts.
@@ -81,6 +88,7 @@ def run_scoring_poll(
     scored = 0
     skipped = 0
     claimed = 0
+    emit_progress(on_progress, ProgressUpdate(stage="start", total=None))
     for profile in list_profiles(session):
         assert profile.id is not None  # persisted rows always have an id
         for posting in list_unscored_postings(session, profile.id):
@@ -94,15 +102,30 @@ def run_scoring_poll(
             ):
                 # Another worker is scoring this pair — leave it to them.
                 claimed += 1
-                continue
-            try:
-                score_posting(session, posting.id, profile=profile, provider=provider, clock=clock)
-            except MatchingError:
-                # No master resume / AI failure — leave this pair for a later poll
-                # rather than aborting the whole batch.
-                skipped += 1
             else:
-                scored += 1
-            finally:
-                release_claim(session, job_posting_id=posting.id, profile_id=profile.id)
+                try:
+                    score_posting(
+                        session, posting.id, profile=profile, provider=provider, clock=clock
+                    )
+                except MatchingError:
+                    # No master resume / AI failure — leave this pair for a later
+                    # poll rather than aborting the whole batch.
+                    skipped += 1
+                else:
+                    scored += 1
+                finally:
+                    release_claim(session, job_posting_id=posting.id, profile_id=profile.id)
+            emit_progress(
+                on_progress,
+                ProgressUpdate(
+                    stage="item",
+                    label=f"{profile.name} x posting {posting.id}",
+                    done=scored + skipped + claimed,
+                    total=None,
+                ),
+            )
+    emit_progress(
+        on_progress,
+        ProgressUpdate(stage="done", done=scored + skipped + claimed, total=None),
+    )
     return PollOutcome(scored=scored, skipped=skipped, claimed=claimed)
