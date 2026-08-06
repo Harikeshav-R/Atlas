@@ -17,6 +17,7 @@ __all__ = [
     "config_dir",
     "config_file",
     "data_dir",
+    "notify_state_file",
     "pid_file",
     "socket_file",
     "state_dir",
@@ -30,6 +31,9 @@ _PID_FILENAME = "daemon.pid"
 
 #: The daemon's IPC socket file name, under the state dir.
 _SOCKET_FILENAME = "daemon.socket"
+
+#: The desktop-notification run-state file name, under the state dir.
+_NOTIFY_STATE_FILENAME = "notify-state.json"
 
 
 def config_dir() -> Path:
@@ -71,3 +75,15 @@ def socket_file() -> Path:
     helpers, it computes the path and never touches the filesystem.
     """
     return state_dir() / _SOCKET_FILENAME
+
+
+def notify_state_file() -> Path:
+    """Return the path to the desktop-notification state file in :func:`state_dir`.
+
+    The daemon records its notification run-state here — the high-water mark of
+    the last match score it notified about, the day's notification count, and the
+    deadline keys already alerted (PROJECT.md §5.16) — so a re-poll never
+    re-notifies. Pure — like the sibling path helpers, it computes the path and
+    never touches the filesystem.
+    """
+    return state_dir() / _NOTIFY_STATE_FILENAME
