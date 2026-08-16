@@ -22,7 +22,7 @@ classifiers = [
 ]
 dynamic = ["version"]
 dependencies = [
-    "alembic>=1.18.5",
+    "alembic>=1.19.1",
     "apscheduler>=3.11.3",
     "beautifulsoup4>=4.15.0",
     "desktop-notifier>=6.2.0",
