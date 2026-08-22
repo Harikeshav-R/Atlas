@@ -62,11 +62,11 @@ packages = ["src/atlas"]
 
 [dependency-groups]
 dev = [
-    "mypy>=1.18",
+    "mypy>=2.3.1",
     "pytest>=8.4",
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.0",
-    "ruff==0.16.1",
+    "ruff==0.16.3",
 ]
 
 # --- Ruff (formatter + linter) --------------------------------------------------
